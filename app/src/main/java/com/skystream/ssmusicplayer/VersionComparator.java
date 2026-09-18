@@ -1,31 +1,37 @@
 package com.skystream.ssmusicplayer;
 
+import java.math.BigInteger;
+
 final class VersionComparator {
     private VersionComparator() {
     }
 
     static int compare(String remoteTag, String current) {
-        String[] remoteParts = remoteTag.replaceFirst("^[vV]", "").split("\\.");
-        String[] currentParts = current.replaceFirst("^[vV]", "").split("\\.");
+        String[] remoteParts = components(remoteTag);
+        String[] currentParts = components(current);
         for (int index = 0; index < Math.max(remoteParts.length, currentParts.length); index++) {
-            int remote = index < remoteParts.length ? parsePart(remoteParts[index]) : 0;
-            int local = index < currentParts.length ? parsePart(currentParts[index]) : 0;
-            if (remote != local) {
-                return Integer.compare(remote, local);
+            BigInteger remote = index < remoteParts.length
+                    ? new BigInteger(remoteParts[index]) : BigInteger.ZERO;
+            BigInteger local = index < currentParts.length
+                    ? new BigInteger(currentParts[index]) : BigInteger.ZERO;
+            int comparison = remote.compareTo(local);
+            if (comparison != 0) {
+                return comparison;
             }
         }
         return 0;
     }
 
-    private static int parsePart(String part) {
-        int end = 0;
-        while (end < part.length() && Character.isDigit(part.charAt(end))) {
-            end++;
+    static String displayVersion(String version) {
+        components(version);
+        return version.replaceFirst("^[vV]", "");
+    }
+
+    private static String[] components(String version) {
+        if (version == null || version.length() > 128
+                || !version.matches("[vV]?[0-9]+(?:\\.[0-9]+)*")) {
+            throw new IllegalArgumentException("Not a stable numeric version");
         }
-        try {
-            return end == 0 ? 0 : Integer.parseInt(part.substring(0, end));
-        } catch (NumberFormatException exception) {
-            return 0;
-        }
+        return version.replaceFirst("^[vV]", "").split("\\.");
     }
 }
