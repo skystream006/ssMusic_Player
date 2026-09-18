@@ -99,9 +99,10 @@ public final class MainActivity extends AppCompatActivity {
             Song song = songs.remove(from);
             songs.add(to, song);
             adapter.notifyDataSetChanged();
+            List<Song> reorderedSongs = new ArrayList<>(songs);
             executor.execute(() -> {
                 try {
-                    new ServerClient(serverUrl).reorder(songs);
+                    new ServerClient(serverUrl).reorder(reorderedSongs);
                 } catch (Exception exception) {
                     showMessage("Could not save queue order.");
                 }
@@ -164,6 +165,10 @@ public final class MainActivity extends AppCompatActivity {
     }
 
     private void queueSong(Song song) {
+        if (serverUrl.isEmpty()) {
+            configureServer();
+            return;
+        }
         executor.execute(() -> {
             try {
                 new ServerClient(serverUrl).queue(song);
@@ -175,6 +180,10 @@ public final class MainActivity extends AppCompatActivity {
     }
 
     private void requestDownload() {
+        if (serverUrl.isEmpty()) {
+            configureServer();
+            return;
+        }
         EditText input = new EditText(this);
         input.setHint("YouTube Music URL");
         new AlertDialog.Builder(this).setTitle("Download music").setView(input)

@@ -4,7 +4,7 @@ import static org.junit.Assert.assertEquals;
 
 import org.junit.Test;
 
-public class UpdateCheckerTest {
+public class VersionComparatorTest {
     @Test
     public void comparesReleaseVersionsNumerically() {
         assertEquals(1, VersionComparator.compare("v0.10.0", "0.9.9"));
