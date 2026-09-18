@@ -71,7 +71,7 @@ public final class MainActivity extends AppCompatActivity {
             view.startDragAndDrop(null, new View.DragShadowBuilder(view), position, 0);
             return true;
         });
-        list.setOnDragListener((view, event) -> onSongDrag(event));
+        list.setOnDragListener((view, event) -> onSongDrag((ListView) view, event));
         page.addView(list, new LinearLayout.LayoutParams(
                 LinearLayout.LayoutParams.MATCH_PARENT, 0, 1));
 
@@ -89,13 +89,13 @@ public final class MainActivity extends AppCompatActivity {
         }
     }
 
-    private boolean onSongDrag(DragEvent event) {
+    private boolean onSongDrag(ListView list, DragEvent event) {
         if (event.getAction() != DragEvent.ACTION_DROP) {
             return true;
         }
         int from = (Integer) event.getLocalState();
-        int to = Math.min(songs.size() - 1, Math.max(0,
-                (int) (event.getY() / Math.max(1, ((ListView) event.getView()).getHeight() / songs.size()))));
+        int position = list.pointToPosition((int) event.getX(), (int) event.getY());
+        int to = position == ListView.INVALID_POSITION ? songs.size() - 1 : position;
         if (from != to) {
             Collections.swap(songs, from, to);
             adapter.notifyDataSetChanged();
@@ -200,10 +200,10 @@ public final class MainActivity extends AppCompatActivity {
     }
 
     private void checkForUpdates() {
-        UpdateChecker.check(this, executor, (message, url) -> runOnUiThread(() -> {
+        UpdateChecker.check(this, executor, (message, url, updateAvailable) -> runOnUiThread(() -> {
             AlertDialog.Builder dialog = new AlertDialog.Builder(this).setMessage(message)
                     .setPositiveButton("OK", null);
-            if (url != null && message.startsWith("Update ")) {
+            if (updateAvailable) {
                 dialog.setNegativeButton("Open", (ignored, ignoredWhich) ->
                         UpdateChecker.openRelease(this, url));
             }

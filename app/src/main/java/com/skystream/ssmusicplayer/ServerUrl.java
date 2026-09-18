@@ -8,6 +8,9 @@ final class ServerUrl {
     }
 
     static String normalize(String value) {
+        if (value == null) {
+            throw new IllegalArgumentException("Enter a valid HTTPS server URL.");
+        }
         try {
             URI uri = new URI(value.trim());
             if (!"https".equalsIgnoreCase(uri.getScheme()) || uri.getHost() == null
