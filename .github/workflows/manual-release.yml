@@ -34,4 +34,14 @@ jobs:
       - env:
           GH_TOKEN: ${{ github.token }}
           VERSION: ${{ steps.version.outputs.name }}
-        run: gh release create "v${VERSION}" "ssMusic-Player-v${VERSION}.apk" --target "${GITHUB_SHA}" --title "ssMusic Player ${VERSION}" --generate-notes --latest
+        run: |
+          tag="v${VERSION}"
+          if gh release view "$tag" > /dev/null 2>&1; then
+            echo "Release $tag already exists; the rebuilt APK is available as a workflow artifact."
+            exit 0
+          fi
+          gh release create "$tag" "ssMusic-Player-v${VERSION}.apk" \
+            --target "${GITHUB_SHA}" \
+            --title "ssMusic Player ${VERSION}" \
+            --generate-notes \
+            --latest
