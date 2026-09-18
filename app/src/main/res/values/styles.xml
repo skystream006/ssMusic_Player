@@ -1,6 +1,6 @@
 <resources>
     <style name="Theme.SsMusicPlayer" parent="Theme.AppCompat.DayNight.NoActionBar">
         <item name="android:fontFamily">sans</item>
-        <item name="android:colorAccent">#006C4C</item>
+        <item name="colorAccent">#006C4C</item>
     </style>
 </resources>

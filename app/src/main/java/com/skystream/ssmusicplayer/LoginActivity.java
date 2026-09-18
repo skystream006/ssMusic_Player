@@ -30,10 +30,14 @@ public final class LoginActivity extends AppCompatActivity {
                 Uri destination = Uri.parse(url);
                 return !"https".equalsIgnoreCase(destination.getScheme())
                         || !serverUri.getHost().equalsIgnoreCase(destination.getHost())
-                        || serverUri.getPort() != destination.getPort();
+                        || effectiveHttpsPort(serverUri) != effectiveHttpsPort(destination);
             }
         });
         webView.loadUrl(loginUrl);
         setContentView(webView);
+    }
+
+    private static int effectiveHttpsPort(Uri uri) {
+        return uri.getPort() == -1 ? 443 : uri.getPort();
     }
 }

@@ -19,7 +19,6 @@ import androidx.appcompat.app.AlertDialog;
 import androidx.appcompat.app.AppCompatActivity;
 
 import java.util.ArrayList;
-import java.util.Collections;
 import java.util.List;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
@@ -97,7 +96,8 @@ public final class MainActivity extends AppCompatActivity {
         int position = list.pointToPosition((int) event.getX(), (int) event.getY());
         int to = position == ListView.INVALID_POSITION ? songs.size() - 1 : position;
         if (from != to) {
-            Collections.swap(songs, from, to);
+            Song song = songs.remove(from);
+            songs.add(to, song);
             adapter.notifyDataSetChanged();
             executor.execute(() -> {
                 try {
