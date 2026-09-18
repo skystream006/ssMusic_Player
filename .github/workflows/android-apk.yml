@@ -1,0 +1,42 @@
+name: Android APK
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pull-requests: read
+
+jobs:
+  build-main:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
+      - name: Set up JDK 17
+        uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: '17'
+      - name: Build APK
+        run: ./gradlew test assembleDebug
+      - name: Read built APK version
+        id: version
+        run: |
+          python3 - <<'PY' >> "$GITHUB_OUTPUT"
+          import json
+          from pathlib import Path
+          apk = json.loads(Path("app/build/outputs/apk/debug/output-metadata.json").read_text())["elements"][0]
+          print(f'version_name={apk["versionName"]}')
+          PY
+      - name: Upload APK
+        uses: actions/upload-artifact@v6
+        with:
+          name: ssMusic-Player-v${{ steps.version.outputs.version_name }}
+          path: app/build/outputs/apk/debug/app-debug.apk
+          if-no-files-found: error
