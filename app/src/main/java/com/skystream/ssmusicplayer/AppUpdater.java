@@ -56,13 +56,15 @@ final class AppUpdater {
             // A recreated activity returning from Settings must not reopen Settings on denial.
             awaitingPermission = preferences.getBoolean("permission_requested", false);
             permissionScreenLeft = awaitingPermission;
+            if (pendingApk == null || !pendingApk.isFile()) discardPending();
         }
     }
 
     void checkForUpdates(boolean manual) {
         if (destroyed) return;
-        if (manual && (awaitingPermission || installRequested)) {
-            message(R.string.update_busy, null);
+        // A launch check must not supersede a user-requested install restored after recreation.
+        if (awaitingPermission || installRequested) {
+            if (manual) message(R.string.update_busy, null);
             return;
         }
         if (checking || downloading) {
@@ -102,6 +104,10 @@ final class AppUpdater {
                 main.post(() -> failed(R.string.update_failed));
             }
         });
+    }
+
+    boolean isManualUpdateInProgress() {
+        return manualRequested && (checking || downloading);
     }
 
     void onResume() {
@@ -189,11 +195,9 @@ final class AppUpdater {
             return;
         }
         downloading = false;
-        File old = storedApk();
         preferences.edit().putString("file", apk.getName()).putString("version", version)
                 .putBoolean("pending", true).putBoolean("auto_install", true)
                 .putBoolean("permission_requested", false).apply();
-        if (old != null && !old.equals(apk)) old.delete();
         pendingApk = apk;
         pendingVersion = version;
         installRequested = true;
@@ -207,7 +211,7 @@ final class AppUpdater {
     }
 
     private void discardPending() {
-        if (pendingApk != null) pendingApk.delete();
+        // Completed files may still be open in the installer; stale-file cleanup removes them later.
         pendingApk = null;
         pendingVersion = null;
         installRequested = false;
@@ -285,9 +289,10 @@ final class AppUpdater {
                     .setDataAndType(uri, "application/vnd.android.package-archive")
                     .addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION);
             intent.setClipData(ClipData.newRawUri("ssMusic Player update", uri));
+            pendingApk.setLastModified(System.currentTimeMillis());
             activity.startActivity(intent);
             installRequested = false;
-            preferences.edit().putBoolean("pending", false)
+            preferences.edit().putBoolean("pending", true)
                     .putBoolean("permission_requested", false)
                     .putBoolean("auto_install", false).apply();
         } catch (Exception e) {

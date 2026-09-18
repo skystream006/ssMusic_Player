@@ -24,6 +24,7 @@ import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 
 public final class MainActivity extends AppCompatActivity {
+    private static final String MANUAL_UPDATE_REQUESTED = "manual_update_requested";
     private final ExecutorService executor = Executors.newSingleThreadExecutor();
     private final List<Song> songs = new ArrayList<>();
     private ArrayAdapter<Song> adapter;
@@ -36,7 +37,13 @@ public final class MainActivity extends AppCompatActivity {
         updater = new AppUpdater(this);
         serverUrl = getSharedPreferences("settings", MODE_PRIVATE).getString("server_url", "");
         showLibrary();
-        updater.checkForUpdates(false);
+        updater.checkForUpdates(state != null && state.getBoolean(MANUAL_UPDATE_REQUESTED, false));
+    }
+
+    @Override
+    protected void onSaveInstanceState(Bundle state) {
+        super.onSaveInstanceState(state);
+        state.putBoolean(MANUAL_UPDATE_REQUESTED, updater.isManualUpdateInProgress());
     }
 
     private void showLibrary() {
