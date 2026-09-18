@@ -28,12 +28,15 @@ public final class MainActivity extends AppCompatActivity {
     private final List<Song> songs = new ArrayList<>();
     private ArrayAdapter<Song> adapter;
     private String serverUrl;
+    private AppUpdater updater;
 
     @Override
     protected void onCreate(Bundle state) {
         super.onCreate(state);
+        updater = new AppUpdater(this);
         serverUrl = getSharedPreferences("settings", MODE_PRIVATE).getString("server_url", "");
         showLibrary();
+        updater.checkForUpdates(false);
     }
 
     private void showLibrary() {
@@ -78,7 +81,7 @@ public final class MainActivity extends AppCompatActivity {
         Button settings = button("Settings");
         settings.setOnClickListener(view -> showSettings());
         Button updates = button("Updates");
-        updates.setOnClickListener(view -> checkForUpdates());
+        updates.setOnClickListener(view -> updater.checkForUpdates(true));
         footer.addView(settings);
         footer.addView(updates);
         page.addView(footer);
@@ -208,24 +211,25 @@ public final class MainActivity extends AppCompatActivity {
                 .setNegativeButton("Cancel", null).show();
     }
 
-    private void checkForUpdates() {
-        UpdateChecker.check(this, executor, (message, url, updateAvailable) -> runOnUiThread(() -> {
-            AlertDialog.Builder dialog = new AlertDialog.Builder(this).setMessage(message)
-                    .setPositiveButton("OK", null);
-            if (updateAvailable) {
-                dialog.setNegativeButton("Open", (ignored, ignoredWhich) ->
-                        UpdateChecker.openRelease(this, url));
-            }
-            dialog.show();
-        }));
-    }
-
     private void showMessage(String message) {
         runOnUiThread(() -> Toast.makeText(this, message, Toast.LENGTH_SHORT).show());
     }
 
     @Override
+    protected void onResume() {
+        super.onResume();
+        updater.onResume();
+    }
+
+    @Override
+    protected void onPause() {
+        updater.onPause();
+        super.onPause();
+    }
+
+    @Override
     protected void onDestroy() {
+        updater.destroy();
         executor.shutdownNow();
         super.onDestroy();
     }

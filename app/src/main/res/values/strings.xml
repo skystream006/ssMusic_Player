@@ -1,3 +1,15 @@
 <resources>
     <string name="app_name">ssMusic Player</string>
+    <string name="update_checking">Checking for updates…</string>
+    <string name="update_busy">An update is already in progress.</string>
+    <string name="update_available">Update %1$s is available. Tap Updates to download and install.</string>
+    <string name="update_up_to_date">You are up to date (%1$s).</string>
+    <string name="update_newer_installed">Your installed version is newer than the latest release.</string>
+    <string name="update_no_release">No stable release is available yet.</string>
+    <string name="update_downloading">Downloading update…</string>
+    <string name="update_failed">Unable to check or download the update. Please try again.</string>
+    <string name="update_invalid_apk">The downloaded APK is no longer a valid update. Tap Updates to check again.</string>
+    <string name="update_install_permission">Allow installs from ssMusic Player, then return to finish updating.</string>
+    <string name="update_install_denied">Install permission was not granted. Tap Updates when ready to retry.</string>
+    <string name="update_install_failed">Unable to open the installer. Tap Updates to retry.</string>
 </resources>
