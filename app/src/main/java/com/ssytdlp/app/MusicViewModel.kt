@@ -187,7 +187,7 @@ class MusicViewModel(application: Application) : AndroidViewModel(application) {
             refreshTracks()
         } catch (error: ApiException) {
             if (error.payload?.get("code")?.jsonPrimitive?.content == "JOB_ALREADY_EXISTS") {
-                message("This URL already has a job. Open Downloads to view it or rerun it.")
+                message("This URL already has a job. Open Jobs to view it or rerun it.")
                 pollJobs()
             } else throw error
         }

@@ -119,7 +119,7 @@ it does not prove an installed app's identity. Authorize only sign-ins you start
 | Organization | Create/rename/remove/move folders, move playlists, add/move/remove song memberships, reorder complete unfiltered playlists |
 | Playback | Authenticated audio/video streams, persistent mini-player, full player, seek, next/previous, queue editing, shuffle, repeat, instrumental companions |
 | Lyrics and tags | Album artwork, timestamp-highlighted seekable SYLT lyrics, plain USLT lyrics, MP3 title/artist/album/genre/year/rating editing, transcription requests |
-| Downloads | Add audio/video YouTube jobs, metadata-only jobs, status polling, search, owner filter, rerun, rename, delete, contributors, add existing files to playlists, save ZIPs |
+| Jobs | Add audio/video YouTube jobs, metadata-only jobs, status polling, search, owner filter, rerun, rename, delete, contributors, add existing files to playlists, save ZIPs |
 | Import | Android document picker for media files or iTunes XML + ZIP; server-local XML + ZIP imports; server upload limits enforced while streaming |
 | Backup | Android/iTunes exports, progress, download latest ZIP, daily/weekly UTC schedules |
 | Settings | Blue Wave appearance, optional server-synced theme and light/dark mode, account expiry, server media count, notification/battery settings, browser account/admin access |
@@ -132,6 +132,8 @@ deletes it for all users. Both require confirmation.
 
 Playback queues initially contain the displayed page; **Add to queue** can add
 tracks from other pages. Browsing another page or tab does not replace playback.
+In **Now Playing**, swipe left for the next song or right for the previous song.
+The playback position slider still seeks within the current song.
 Organization remains shared with the web client; selecting **Server theme** also
 uses the web client's saved colors and light/dark preference. Advanced server
 administration and passkey enrollment use the existing browser settings UI;

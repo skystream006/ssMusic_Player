@@ -92,6 +92,7 @@ class PlaybackConnection(private val context: Context, private val api: ServerAp
     fun seek(position: Long) { controller?.seekTo(position.coerceAtLeast(0)) }
     fun next() { controller?.seekToNextMediaItem() }
     fun previous() { controller?.seekToPrevious() }
+    fun previousTrack() { controller?.seekToPreviousMediaItem() }
     fun shuffle() { controller?.let { it.shuffleModeEnabled = !it.shuffleModeEnabled } }
     fun repeat() { controller?.let { it.repeatMode = (it.repeatMode + 1) % 3 } }
     fun select(index: Int) { controller?.let { it.seekToDefaultPosition(index); it.play() } }

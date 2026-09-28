@@ -71,7 +71,7 @@ fun MusicTopBar(userName: String, refreshEnabled: Boolean, onRefresh: () -> Unit
 fun MusicNavigation(selected: Int, onSelect: (Int) -> Unit) {
     HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.6f))
     NavigationBar(containerColor = MaterialTheme.colorScheme.background, tonalElevation = 0.dp) {
-        listOf("Library" to Icons.Rounded.LibraryMusic, "Downloads" to Icons.Rounded.Download, "Settings" to Icons.Rounded.Settings)
+        listOf("Library" to Icons.Rounded.LibraryMusic, "Jobs" to Icons.Rounded.Download, "Settings" to Icons.Rounded.Settings)
             .forEachIndexed { index, (label, icon) ->
                 NavigationBarItem(selected = selected == index, onClick = { onSelect(index) }, icon = { Icon(icon, label, Modifier.size(22.dp)) },
                     label = { Text(label) }, colors = NavigationBarItemDefaults.colors(

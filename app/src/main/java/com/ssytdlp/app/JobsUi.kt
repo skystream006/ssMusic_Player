@@ -48,7 +48,7 @@ fun JobsScreen(model: MusicViewModel, requestNotifications: () -> Unit, download
     }
     Column(Modifier.fillMaxSize()) {
         Row(Modifier.fillMaxWidth().padding(horizontal = 16.dp), verticalAlignment = Alignment.CenterVertically) {
-            Text("Downloads", style = MaterialTheme.typography.titleLarge, modifier = Modifier.weight(1f))
+            Text("Jobs", style = MaterialTheme.typography.titleLarge, modifier = Modifier.weight(1f))
             ToolButton(Icons.Rounded.UploadFile, "Import music", enabled = !model.busy) { importing = true }
             ToolButton(Icons.Rounded.Add, "Add YouTube URL", enabled = !model.busy) { add = true }
         }
