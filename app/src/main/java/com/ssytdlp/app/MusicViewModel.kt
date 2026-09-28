@@ -251,8 +251,8 @@ class MusicViewModel(application: Application) : AndroidViewModel(application) {
         message("Song information saved.")
     }
 
-    fun transcribe(track: Track, language: String, noVocals: Boolean) = launchAction {
-        api.request("/api/jobs/${encode(track.jobId)}/files/${encode(track.name)}/transcribe", "POST", json("language" to language, "NoVocals" to noVocals))
+    fun transcribe(track: Track, options: TranscriptionOptions) = launchAction {
+        api.request("/api/jobs/${encode(track.jobId)}/files/${encode(track.name)}/transcribe", "POST", options.toRequestBody())
         message("Transcription queued.")
     }
 
