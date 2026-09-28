@@ -30,6 +30,17 @@ require(primaryUri.scheme == "https" && primaryUri.host.equals(primaryRpId, igno
 val primaryOrigin = URI("https", null, primaryRpId, if (primaryUri.port == 443) -1 else primaryUri.port,
     null, null, null).toASCIIString()
 
+fun gitOutput(vararg arguments: String): String = providers.exec {
+    workingDir(rootDir)
+    commandLine("git", *arguments)
+}.standardOutput.asText.get().trim()
+
+require(gitOutput("rev-parse", "--is-shallow-repository") == "false") {
+    "APK versioning requires full Git history. Run git fetch --unshallow."
+}
+val revision = gitOutput("rev-list", "--first-parent", "--count", "HEAD").toInt()
+val signingStore = providers.environmentVariable("APK_SIGNING_STORE_FILE").orNull
+
 android {
     namespace = "com.ssytdlp.app"
     compileSdk = 36
@@ -38,11 +49,26 @@ android {
         applicationId = "com.ssytdlp.app"
         minSdk = 26
         targetSdk = 36
-        versionCode = 1
-        versionName = "1.0.0"
+        versionCode = revision + 1
+        versionName = "1.0.$revision"
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
         buildConfigField("String", "PASSKEY_RP_ID", "\"$primaryRpId\"")
         buildConfigField("String", "PASSKEY_ORIGIN", "\"$primaryOrigin\"")
+    }
+
+    signingConfigs {
+        if (signingStore != null) create("distribution") {
+            storeFile = file(signingStore)
+            storePassword = providers.environmentVariable("APK_SIGNING_STORE_PASSWORD").get()
+            keyAlias = providers.environmentVariable("APK_SIGNING_KEY_ALIAS").get()
+            keyPassword = providers.environmentVariable("APK_SIGNING_KEY_PASSWORD").get()
+        }
+    }
+    buildTypes {
+        if (signingStore != null) {
+            getByName("debug").signingConfig = signingConfigs.getByName("distribution")
+            getByName("release").signingConfig = signingConfigs.getByName("distribution")
+        }
     }
 
     buildFeatures { compose = true; buildConfig = true }

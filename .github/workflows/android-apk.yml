@@ -1,0 +1,42 @@
+name: Android APK
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    env:
+      PASSKEY_RP_ID: ${{ vars.PASSKEY_RP_ID || 'buytdlp.duckdns.org' }}
+      PASSKEY_ORIGIN: ${{ vars.PASSKEY_ORIGIN }}
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: '17'
+      - name: Test, lint, and build APK
+        run: sh ./gradlew :core:test :app:testDebugUnitTest :app:lintDebug :app:assembleDebug
+      - name: Name APK
+        id: apk
+        env:
+          PR_NUMBER: ${{ github.event.pull_request.number || '0' }}
+        run: |
+          version=$(python3 -c 'import json; print(json.load(open("app/build/outputs/apk/debug/output-metadata.json"))["elements"][0]["versionName"])')
+          name="ssMusic-Player-v${version}-pr${PR_NUMBER}"
+          cp app/build/outputs/apk/debug/app-debug.apk "${name}.apk"
+          echo "name=${name}" >> "$GITHUB_OUTPUT"
+      - uses: actions/upload-artifact@v6
+        with:
+          name: ${{ steps.apk.outputs.name }}
+          path: ${{ steps.apk.outputs.name }}.apk
+          if-no-files-found: error
+
