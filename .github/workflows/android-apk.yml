@@ -13,7 +13,7 @@ jobs:
   build:
     runs-on: ubuntu-latest
     env:
-      PASSKEY_RP_ID: ${{ vars.PASSKEY_RP_ID || 'buytdlp.duckdns.org' }}
+      PASSKEY_RP_ID: ${{ vars.PASSKEY_RP_ID }}
       PASSKEY_ORIGIN: ${{ vars.PASSKEY_ORIGIN }}
     steps:
       - uses: actions/checkout@v5
@@ -39,4 +39,3 @@ jobs:
           name: ${{ steps.apk.outputs.name }}
           path: ${{ steps.apk.outputs.name }}.apk
           if-no-files-found: error
-
