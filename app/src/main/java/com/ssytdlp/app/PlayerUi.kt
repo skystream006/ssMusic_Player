@@ -8,6 +8,7 @@ import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.gestures.detectHorizontalDragGestures
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.itemsIndexed
@@ -27,7 +28,9 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.ImageBitmap
 import androidx.compose.ui.graphics.asImageBitmap
+import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
@@ -80,7 +83,10 @@ fun PlayerSheet(model: MusicViewModel, state: PlaybackState, dismiss: () -> Unit
     var tab by rememberSaveable { mutableIntStateOf(0) }
     ModalBottomSheet(onDismissRequest = dismiss, sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true),
         containerColor = MaterialTheme.colorScheme.background, tonalElevation = 0.dp) {
-        Column(Modifier.fillMaxHeight(0.94f)) {
+        Column(Modifier.fillMaxHeight(0.94f).playerTrackSwipes(
+            enabled = state.track != null, nextEnabled = state.queue.size > 1,
+            previous = model.playback::previousTrack, next = model.playback::next
+        )) {
             Row(Modifier.fillMaxWidth().padding(horizontal = 20.dp), verticalAlignment = Alignment.CenterVertically) {
                 Column(Modifier.weight(1f)) {
                     Text("NOW PLAYING", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.primary)
@@ -108,6 +114,30 @@ fun PlayerSheet(model: MusicViewModel, state: PlaybackState, dismiss: () -> Unit
             PlayerTransport(state, model.playback::seek, model.playback::previous, model.playback::toggle,
                 model.playback::next, model.playback::shuffle, model.playback::repeat)
         }
+    }
+}
+
+@Composable
+internal fun Modifier.playerTrackSwipes(enabled: Boolean, nextEnabled: Boolean,
+    previous: () -> Unit, next: () -> Unit): Modifier {
+    val currentPrevious by rememberUpdatedState(previous)
+    val currentNext by rememberUpdatedState(next)
+    val threshold = with(LocalDensity.current) { 64.dp.toPx() }
+    return if (!enabled) this else pointerInput(nextEnabled, threshold) {
+        var distance = 0f
+        detectHorizontalDragGestures(
+            onDragStart = { distance = 0f },
+            onDragCancel = { distance = 0f },
+            onDragEnd = {
+                if (distance <= -threshold && nextEnabled) currentNext()
+                else if (distance >= threshold) currentPrevious()
+                distance = 0f
+            },
+            onHorizontalDrag = { change, amount ->
+                change.consume()
+                distance += amount
+            }
+        )
     }
 }
 

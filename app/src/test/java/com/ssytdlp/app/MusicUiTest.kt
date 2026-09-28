@@ -17,8 +17,10 @@ import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.test.*
 import androidx.compose.ui.test.junit4.createAndroidComposeRule
 import androidx.compose.ui.unit.dp
@@ -91,6 +93,66 @@ class MusicUiTest {
         compose.onNodeWithContentDescription("Play this page").assertIsDisplayed()
         compose.onNodeWithText("Quiet signal").assertIsDisplayed()
         savePreview("library-phone")
+    }
+
+    @Test fun navigationShowsJobsInsteadOfDownloads() {
+        var selected = -1
+        compose.setContent { MusicTheme { MusicNavigation(0) { selected = it } } }
+        compose.onNodeWithText("Downloads").assertDoesNotExist()
+        compose.onNodeWithText("Jobs").assertIsDisplayed().performClick()
+        compose.runOnIdle { assertEquals(1, selected) }
+    }
+
+    @Test fun nowPlayingSwipesSkipExactlyOneSongInEachDirection() {
+        var previous = 0
+        var next = 0
+        showSwipePlayer(previous = { previous++ }, next = { next++ })
+        compose.onNodeWithTag("swipe-artwork").performTouchInput { swipeLeft() }
+        compose.runOnIdle { assertEquals(1, next); assertEquals(0, previous) }
+        compose.onNodeWithTag("swipe-artwork").performTouchInput { swipeRight() }
+        compose.runOnIdle { assertEquals(1, next); assertEquals(1, previous) }
+    }
+
+    @Test fun nowPlayingIgnoresShortCancelledAndVerticalSwipes() {
+        var skips = 0
+        showSwipePlayer(previous = { skips++ }, next = { skips++ })
+        val artwork = compose.onNodeWithTag("swipe-artwork")
+        artwork.performTouchInput { swipe(center, center + Offset(30f, 0f)) }
+        artwork.performTouchInput {
+            down(centerRight)
+            moveTo(centerLeft, delayMillis = 200)
+            cancel()
+        }
+        artwork.performTouchInput { swipeUp() }
+        artwork.performTouchInput { swipeDown() }
+        compose.runOnIdle { assertEquals(0, skips) }
+        artwork.performTouchInput { swipeLeft() }
+        compose.runOnIdle { assertEquals(1, skips) }
+    }
+
+    @Test fun seekingDoesNotSkipSongs() {
+        var skips = 0
+        var sought: Long? = null
+        showSwipePlayer(previous = { skips++ }, next = { skips++ }, onSeek = { sought = it })
+        compose.onNodeWithContentDescription("Playback position").performTouchInput { swipeRight() }
+        compose.runOnIdle { assertNotNull(sought); assertEquals(0, skips) }
+    }
+
+    @Test fun singleSongQueueDoesNotSwipeNext() {
+        var previous = 0
+        var next = 0
+        val playback = previewPlayback()
+        showSwipePlayer(playback.copy(queue = listOf(playback.track!!)), { previous++ }, { next++ })
+        compose.onNodeWithTag("swipe-artwork").performTouchInput { swipeLeft() }
+        compose.onNodeWithTag("swipe-artwork").performTouchInput { swipeRight() }
+        compose.runOnIdle { assertEquals(0, next); assertEquals(1, previous) }
+    }
+
+    @Test fun emptyPlayerDoesNotHandleTrackSwipes() {
+        var skips = 0
+        showSwipePlayer(PlaybackState(), { skips++ }, { skips++ })
+        compose.onNodeWithTag("swipe-player").performTouchInput { swipeLeft(); swipeRight() }
+        compose.runOnIdle { assertEquals(0, skips) }
     }
 
     @Test fun loginOffersUpdatesAndDiagnosticsWithoutSigningIn() {
@@ -201,6 +263,21 @@ class MusicUiTest {
     private fun previewPlayback(): PlaybackState {
         val tracks = previewTracks()
         return PlaybackState(connected = true, track = tracks.first(), queue = tracks, playing = true, position = 86_000, duration = 234_000)
+    }
+
+    private fun showSwipePlayer(state: PlaybackState = previewPlayback(), previous: () -> Unit,
+        next: () -> Unit, onSeek: (Long) -> Unit = {}) {
+        compose.setContent {
+            MusicTheme {
+                Column(Modifier.fillMaxSize().testTag("swipe-player").playerTrackSwipes(
+                    enabled = state.track != null, nextEnabled = state.queue.size > 1,
+                    previous = previous, next = next
+                )) {
+                    PlayerArtwork(state, null, Modifier.weight(1f).testTag("swipe-artwork"))
+                    PlayerTransport(state, onSeek, previous, {}, next, {}, {})
+                }
+            }
+        }
     }
 
     private fun showLibraryPreview(fontScale: Float = 1f) {
