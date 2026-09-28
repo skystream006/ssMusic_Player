@@ -15,6 +15,7 @@ import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.selection.toggleable
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.rounded.*
@@ -33,6 +34,7 @@ import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
@@ -311,17 +313,61 @@ fun MetadataDialog(model: MusicViewModel, track: Track, dismiss: () -> Unit) {
 
 @Composable
 fun TranscribeDialog(model: MusicViewModel, track: Track, dismiss: () -> Unit) {
-    var language by rememberSaveable { mutableStateOf("en") }
+    TranscribeDialog(dismiss, { options -> model.transcribe(track, options); dismiss() }, model.busy)
+}
+
+@Composable
+fun TranscribeDialog(dismiss: () -> Unit, submit: (TranscriptionOptions) -> Unit, busy: Boolean = false) {
+    var language by rememberSaveable { mutableStateOf("") }
+    var multilingual by rememberSaveable { mutableStateOf(false) }
     var instrumental by rememberSaveable { mutableStateOf(false) }
-    AlertDialog(onDismissRequest = dismiss, title = { Text("Transcribe lyrics") }, text = {
-        Column {
-            OutlinedTextField(language, { language = it.take(8) }, label = { Text("Language code") }, singleLine = true)
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                Checkbox(instrumental, { instrumental = it }); Text("Create instrumental version", modifier = Modifier.weight(1f))
+    var vietLyricsFallback by rememberSaveable { mutableStateOf(false) }
+    var addLyrics by rememberSaveable { mutableStateOf(false) }
+    var lyricsMode by rememberSaveable { mutableStateOf("prompt") }
+    var lyrics by rememberSaveable { mutableStateOf("") }
+    val options = TranscriptionOptions(language, multilingual, instrumental, vietLyricsFallback, addLyrics, lyricsMode, lyrics)
+    AlertDialog(onDismissRequest = { if (!busy) dismiss() }, title = { Text("Transcribe Song") }, text = {
+        Column(Modifier.verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+            Text("Language (optional)")
+            ChoiceField("Language (optional)", transcriptionLanguages.first { it.first == language }.second,
+                transcriptionLanguages.map { it.second }, enabled = !busy && !vietLyricsFallback) { selected ->
+                language = transcriptionLanguages.first { it.second == selected }.first
+            }
+            TranscriptionToggle("Multilingual", multilingual, !busy) { multilingual = it }
+            TranscriptionToggle("Create no-vocals version [Karaoke version]", instrumental, !busy) { instrumental = it }
+            TranscriptionToggle("Viet Lyrics Fallback", vietLyricsFallback, !busy) {
+                vietLyricsFallback = it
+                if (it) language = "vi"
+            }
+            Text("Enable the Viet Lyrics fallback pass when the service's opening retry triggers.",
+                style = MaterialTheme.typography.bodySmall)
+            TranscriptionToggle("Add lyrics", addLyrics, !busy) { addLyrics = it }
+            if (addLyrics) {
+                Text("Lyrics mode")
+                ChoiceField("Lyrics mode", transcriptionLyricsModes.first { it.first == lyricsMode }.second,
+                    transcriptionLyricsModes.map { it.second }, enabled = !busy) { selected ->
+                    lyricsMode = transcriptionLyricsModes.first { it.second == selected }.first
+                }
+                Text(when (lyricsMode) {
+                    "align" -> "Maps authoritative lyric lines onto ASR timing."
+                    "correct" -> "Replaces recognized text while preserving ASR segment timing."
+                    else -> "Biases recognition toward known words."
+                }, style = MaterialTheme.typography.bodySmall)
+                OutlinedTextField(lyrics, { lyrics = it.take(100_000) }, label = { Text("Lyrics") },
+                    enabled = !busy, minLines = 4, maxLines = 8, modifier = Modifier.fillMaxWidth())
             }
         }
-    }, confirmButton = { TextButton(onClick = { model.transcribe(track, language, instrumental); dismiss() }, enabled = language.isNotBlank()) { Text("Transcribe") } },
-        dismissButton = { TextButton(onClick = dismiss) { Text("Cancel") } })
+    }, confirmButton = { TextButton(onClick = { submit(options) }, enabled = options.isValid && !busy) { Text("Transcribe") } },
+        dismissButton = { TextButton(onClick = dismiss, enabled = !busy) { Text("Cancel") } })
+}
+
+@Composable
+private fun TranscriptionToggle(label: String, checked: Boolean, enabled: Boolean, onChange: (Boolean) -> Unit) {
+    Row(Modifier.fillMaxWidth().toggleable(checked, enabled = enabled, role = Role.Checkbox, onValueChange = onChange),
+        verticalAlignment = Alignment.CenterVertically) {
+        Checkbox(checked, onCheckedChange = null, enabled = enabled)
+        Text(label, Modifier.weight(1f).padding(start = 8.dp))
+    }
 }
 
 fun timestamp(milliseconds: Long): String {

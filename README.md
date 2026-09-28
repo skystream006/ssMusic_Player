@@ -124,6 +124,12 @@ it does not prove an installed app's identity. Authorize only sign-ins you start
 | Backup | Android/iTunes exports, progress, download latest ZIP, daily/weekly UTC schedules |
 | Settings | Blue Wave appearance, optional server-synced theme and light/dark mode, account expiry, server media count, notification/battery settings, browser account/admin access |
 
+**Transcribe lyrics** opens the server-compatible **Transcribe Song** options:
+auto-detect or a supported language, Multilingual, a no-vocals karaoke version,
+Viet Lyrics Fallback (locks the language to Vietnamese), and optional supplied
+lyrics in Prompt, Align, or Correct mode. All toggles start off; supplied lyrics
+must be nonblank and at most 100,000 characters.
+
 Library mutations use the server's compact, version-checked endpoints. Conflicts
 refresh the library and require retrying the intended action. Ownership and
 contributor restrictions are preserved; the server remains authoritative.
