@@ -9,9 +9,11 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.detectHorizontalDragGestures
+import androidx.compose.foundation.interaction.collectIsDraggedAsState
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.itemsIndexed
+import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -26,10 +28,14 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.ImageBitmap
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.input.nestedscroll.NestedScrollConnection
+import androidx.compose.ui.input.nestedscroll.NestedScrollSource
+import androidx.compose.ui.input.nestedscroll.nestedScroll
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.res.painterResource
@@ -47,6 +53,8 @@ import androidx.media3.session.MediaController
 import androidx.media3.ui.PlayerView
 import com.ssytdlp.app.core.*
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.withContext
 import kotlinx.serialization.json.decodeFromJsonElement
 
@@ -201,17 +209,86 @@ fun PlayerTransport(state: PlaybackState, onSeek: (Long) -> Unit, previous: () -
 
 @Composable
 fun Lyrics(model: MusicViewModel, state: PlaybackState, modifier: Modifier) {
-    val lyrics = model.metadata
-    val active = lyrics?.sylt?.indexOfLast { it.time * 1000 <= state.position } ?: -1
-    if (lyrics?.sylt?.isNotEmpty() == true) LazyColumn(modifier.fillMaxWidth(), contentPadding = PaddingValues(horizontal = 28.dp, vertical = 24.dp)) {
-        itemsIndexed(lyrics.sylt) { index, line ->
-            Text(line.text, modifier = Modifier.fillMaxWidth().clickable { model.playback.seek((line.time * 1000).toLong()) }.padding(vertical = 12.dp),
-                style = if (index == active) MaterialTheme.typography.titleLarge else MaterialTheme.typography.titleMedium,
-                color = if (index == active) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant)
+    LyricsContent(model.metadata, state.position, state.track?.key, model.playback::seek, modifier,
+        model.metadataError, state.track?.mediaType == "video")
+}
+
+@Composable
+internal fun LyricsContent(lyrics: SongMetadata?, position: Long, trackKey: String?, onSeek: (Long) -> Unit,
+    modifier: Modifier = Modifier, error: String? = null, isVideo: Boolean = false) {
+    key(trackKey, lyrics?.sylt, lyrics?.uslt) {
+        if (lyrics?.sylt?.isNotEmpty() == true) {
+            val active = lyrics.sylt.indexOfLast { it.time * 1000 <= position }
+            val listState = rememberLazyListState()
+            val dragging by listState.interactionSource.collectIsDraggedAsState()
+            var following by remember { mutableStateOf(true) }
+            var manualScroll by remember { mutableStateOf(false) }
+            var tap by remember { mutableIntStateOf(0) }
+            var seekTarget by remember { mutableStateOf<Int?>(null) }
+            val target = seekTarget ?: active
+            val currentActive by rememberUpdatedState(target)
+            val linePadding = with(LocalDensity.current) { 12.dp.toPx() }
+            val scrollConnection = remember(listState, linePadding) {
+                object : NestedScrollConnection {
+                    private var highlightedWasVisible = false
+
+                    private fun highlightVisible(): Boolean {
+                        val layout = listState.layoutInfo
+                        val line = layout.visibleItemsInfo.find { it.index == currentActive } ?: return false
+                        return line.offset + line.size - linePadding > layout.viewportStartOffset &&
+                            line.offset + linePadding < layout.viewportEndOffset
+                    }
+
+                    override fun onPreScroll(available: Offset, source: NestedScrollSource): Offset {
+                        if (source == NestedScrollSource.UserInput && available.y != 0f) manualScroll = true
+                        highlightedWasVisible = highlightVisible()
+                        return Offset.Zero
+                    }
+
+                    override fun onPostScroll(consumed: Offset, available: Offset, source: NestedScrollSource): Offset {
+                        // Keep tracking the user's fling, but never treat follow animations as manual scrolling.
+                        if (manualScroll && consumed.y != 0f && highlightedWasVisible && !highlightVisible()) following = false
+                        return Offset.Zero
+                    }
+                }
+            }
+            LaunchedEffect(manualScroll, dragging) {
+                if (manualScroll) snapshotFlow { listState.isScrollInProgress || dragging }.collectLatest { busy ->
+                    if (!busy) {
+                        // A drag can hand off to a fling between idle notifications. Wheel input has no fling.
+                        withFrameNanos { }
+                        if (!listState.isScrollInProgress && !dragging) manualScroll = false
+                    }
+                }
+            }
+            LaunchedEffect(tap, active == seekTarget) {
+                if (seekTarget != null) {
+                    // Playback position is polled asynchronously; do not follow the old line after a tap.
+                    if (active != seekTarget) delay(1_500)
+                    seekTarget = null
+                }
+            }
+            LaunchedEffect(target, following, manualScroll, dragging, tap) {
+                if (following && !manualScroll && !dragging && target >= 0) listState.animateScrollToItem(target)
+            }
+            LazyColumn(modifier.fillMaxWidth().nestedScroll(scrollConnection), state = listState,
+                contentPadding = PaddingValues(horizontal = 28.dp, vertical = 24.dp)) {
+                itemsIndexed(lyrics.sylt) { index, line ->
+                    Text(line.text, modifier = Modifier.fillMaxWidth().clickable {
+                        onSeek((line.time * 1000).toLong())
+                        seekTarget = index.takeUnless { it == active }
+                        manualScroll = listState.isScrollInProgress || dragging
+                        following = true
+                        tap++
+                    }.padding(vertical = 12.dp),
+                        style = if (index == active) MaterialTheme.typography.titleLarge else MaterialTheme.typography.titleMedium,
+                        color = if (index == active) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant)
+                }
+            }
+        } else Column(modifier.fillMaxWidth().verticalScroll(rememberScrollState()).padding(28.dp)) {
+            Text(lyrics?.uslt?.ifBlank { null } ?: error ?: if (lyrics == null && !isVideo) "Loading lyrics..." else "No lyrics available",
+                style = MaterialTheme.typography.bodyLarge)
         }
-    } else Column(modifier.fillMaxWidth().verticalScroll(rememberScrollState()).padding(28.dp)) {
-        Text(lyrics?.uslt?.ifBlank { null } ?: model.metadataError ?: if (lyrics == null && state.track?.mediaType != "video") "Loading lyrics..." else "No lyrics available",
-            style = MaterialTheme.typography.bodyLarge)
     }
 }
 
