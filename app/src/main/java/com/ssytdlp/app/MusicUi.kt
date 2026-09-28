@@ -106,6 +106,7 @@ fun MusicTheme(preferences: Preferences = Preferences(), waveAppearance: Boolean
 @Composable
 fun MusicApp(model: MusicViewModel, requestNotifications: () -> Unit) {
     UpdateNotification()
+    val serverOrigin by model.serverOrigin.collectAsStateWithLifecycle()
     val account by model.sessions.account.collectAsStateWithLifecycle()
     val playback by model.playback.state.collectAsStateWithLifecycle()
     val snackbar = remember { SnackbarHostState() }
@@ -133,13 +134,16 @@ fun MusicApp(model: MusicViewModel, requestNotifications: () -> Unit) {
                     MusicNavigation(screen) { screen = it }
                 }
             }) { padding ->
-                if (account == null) LoginScreen(model, Modifier.padding(padding))
-                else Column(Modifier.padding(padding).fillMaxSize()) {
-                    if (model.busy) LinearProgressIndicator(Modifier.fillMaxWidth())
-                    when (screen) {
-                        0 -> LibraryScreen(model, playback, requestNotifications, download)
-                        1 -> JobsScreen(model, requestNotifications, download)
-                        else -> SettingsScreen(model, download)
+                when {
+                    serverOrigin == null -> ServerSetupScreen(model, Modifier.padding(padding))
+                    account == null -> LoginScreen(model, Modifier.padding(padding))
+                    else -> Column(Modifier.padding(padding).fillMaxSize()) {
+                        if (model.busy) LinearProgressIndicator(Modifier.fillMaxWidth())
+                        when (screen) {
+                            0 -> LibraryScreen(model, playback, requestNotifications, download)
+                            1 -> JobsScreen(model, requestNotifications, download)
+                            else -> SettingsScreen(model, download)
+                        }
                     }
                 }
             }
@@ -150,12 +154,21 @@ fun MusicApp(model: MusicViewModel, requestNotifications: () -> Unit) {
 }
 
 @Composable
+fun ServerSetupScreen(model: MusicViewModel, modifier: Modifier = Modifier) {
+    var value by rememberSaveable { mutableStateOf("") }
+    var error by remember { mutableStateOf<String?>(null) }
+    ServerSetupContent(value, error, false, modifier, onValueChange = { value = it; error = null },
+        onContinue = { error = model.setServerOrigin(value) })
+}
+
+@Composable
 fun LoginScreen(model: MusicViewModel, modifier: Modifier = Modifier) {
     val context = LocalContext.current
-    val server = model.serverOrigin
+    val server by model.serverOrigin.collectAsStateWithLifecycle()
+    val serverOrigin = server ?: return
     var pending by rememberSaveable { mutableStateOf(model.sessions.pending != null) }
     var appSettings by rememberSaveable { mutableStateOf(false) }
-    LoginContent(server, model.signingIn, pending, modifier, onSignIn = {
+    LoginContent(serverOrigin, model.signingIn, pending, modifier, onSignIn = {
             val url = model.beginLogin()
             if (url != null) {
                 try { CustomTabsIntent.Builder().build().launchUrl(context, Uri.parse(url)); pending = true }
@@ -163,10 +176,10 @@ fun LoginScreen(model: MusicViewModel, modifier: Modifier = Modifier) {
             }
         }, onCancel = { model.cancelLogin(); pending = false }, onRegister = {
             try {
-                val origin = AuthProtocol.normalizeOrigin(server)
+                val origin = AuthProtocol.normalizeOrigin(serverOrigin)
                 CustomTabsIntent.Builder().build().launchUrl(context, Uri.parse(origin))
             } catch (error: Exception) { model.message(error.message ?: "Unable to open registration.") }
-        }, onAppSettings = { appSettings = true })
+        }, onAppSettings = { appSettings = true }, onChangeServer = { model.changeServer() })
     if (appSettings) ModalBottomSheet(onDismissRequest = { appSettings = false },
         sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)) {
         Column(Modifier.fillMaxWidth().verticalScroll(rememberScrollState()).padding(20.dp),

@@ -51,10 +51,12 @@ callback contract.
 
 1. Start the existing ssYTDLP server. Its API and `/app-login` must be available
    on the same HTTPS origin, without an additional reverse-proxy login wall.
-2. The app is bound to the primary `PASSKEY_RP_ID` and matching `PASSKEY_ORIGIN`
-   at build time. No default server address is included in the repository; configure
-   your own primary server before building. The configured server address is
-   read-only; secondary passkey settings are never used by the Android app.
+2. On first launch, enter your server's hostname (for example
+   `music.example.com`) on the **Set up your server** screen. A bare hostname is
+   promoted to an HTTPS origin automatically; you can also type a full
+   `https://host[:port]` address. The value is validated and saved on-device;
+   there is no build-time or bundled server address. Use **Change** on the
+   sign-in screen to reset it and enter a different server.
 3. Select **Sign in with passkey**. A browser Custom Tab opens the existing
    server login page and performs a fresh passkey confirmation. Registration and
    approval work exactly as in the web application.
@@ -62,20 +64,10 @@ callback contract.
    **Return to app** on the server page. Closing the browser does not sign in;
    **Cancel sign-in** in the app discards the pending request.
 
-The build reads the primary values from the parent `.env`. Gradle properties
-(`-PPASSKEY_RP_ID=...`, `-PPASSKEY_ORIGIN=...`) or matching environment variables
-can supply them for standalone/CI builds, in that precedence order. Both APK
-workflows use the repository Actions variables `PASSKEY_RP_ID` and
-`PASSKEY_ORIGIN`, without a bundled server fallback. `PASSKEY_RP_ID` is required;
-builds fail with a configuration error if it is missing. The only exception is the
-**Android APK** verification workflow, which uses the reserved placeholder
-`example.com` when the variable is unset so tests, lint, and the debug build still
-run; that APK cannot sign in. The manual release workflow never falls back.
-If the origin is omitted,
-it defaults to `https://<PASSKEY_RP_ID>`. The origin's hostname must
-match the primary RP ID, and only these two public values are embedded in the APK.
-Rebuild after changing them. Stored sessions and unfinished logins for other
-origins are cleared when the app starts, requiring a fresh primary passkey login.
+The configured server address is stored only on the device that entered it;
+only this one value is used by passkey sign-in. Rebuilding the app is never
+required to change servers. Stored sessions and unfinished logins for other
+origins are cleared automatically if the configured server changes.
 The server's secondary web login remains available and unchanged.
 
 Both Android and the browser must resolve the hostname and trust its HTTPS

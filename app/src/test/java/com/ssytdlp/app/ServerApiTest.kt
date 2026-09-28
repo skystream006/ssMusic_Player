@@ -31,6 +31,7 @@ class ServerApiTest {
     private var account: Account? = null
     private val cleared = mutableListOf<String>()
     private val token = "T".repeat(43)
+    private val origin = "https://primary.example"
 
     @Before fun setup() {
         val certificate = HeldCertificate.Builder().commonName("localhost").addSubjectAlternativeName("localhost").build()
@@ -45,25 +46,25 @@ class ServerApiTest {
 
     @After fun teardown() { server.shutdown() }
 
-    @Test fun `app login targets the configured primary RP hostname`() {
-        val pending = AppServer.beginLogin()
+    @Test fun `app login targets the configured server hostname`() {
+        val pending = AppServer.beginLogin(origin)
         val login = URI(AuthProtocol.loginUrl(pending))
-        assertEquals(BuildConfig.PASSKEY_RP_ID, login.host)
+        assertEquals(URI(origin).host, login.host)
         assertEquals("https", login.scheme)
         assertEquals("/app-login", login.path)
-        assertEquals(BuildConfig.PASSKEY_ORIGIN, pending.origin)
+        assertEquals(origin, pending.origin)
     }
 
-    @Test fun `primary callbacks retain the primary token exchange origin`() {
-        val pending = AppServer.beginLogin()
+    @Test fun `callbacks retain the configured token exchange origin`() {
+        val pending = AppServer.beginLogin(origin)
         val callback = "${AuthProtocol.REDIRECT_URI}?code=${"C".repeat(43)}&state=${pending.state}"
-        assertEquals(AppServer.origin, AppServer.acceptCallback(callback, pending).origin)
+        assertEquals(origin, AppServer.acceptCallback(callback, pending, origin).origin)
     }
 
-    @Test fun `stored secondary login requests cannot be exchanged by the primary app`() {
+    @Test fun `stored login requests for a different server cannot be exchanged`() {
         val pending = AuthProtocol.begin("https://secondary.example:4123")
         val callback = "${AuthProtocol.REDIRECT_URI}?code=${"C".repeat(43)}&state=${pending.state}"
-        assertThrows(IllegalArgumentException::class.java) { AppServer.acceptCallback(callback, pending) }
+        assertThrows(IllegalArgumentException::class.java) { AppServer.acceptCallback(callback, pending, origin) }
     }
 
     @Test fun `authenticated requests send bearer only in the header`() = runBlocking {

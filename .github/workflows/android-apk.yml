@@ -12,11 +12,6 @@ permissions:
 jobs:
   build:
     runs-on: ubuntu-latest
-    env:
-      # Verification builds fall back to the reserved example.com placeholder
-      # (RFC 2606) when the repository variable is unset; releases stay strict.
-      PASSKEY_RP_ID: ${{ vars.PASSKEY_RP_ID || 'example.com' }}
-      PASSKEY_ORIGIN: ${{ vars.PASSKEY_RP_ID && vars.PASSKEY_ORIGIN || '' }}
     steps:
       - uses: actions/checkout@v5
         with:
