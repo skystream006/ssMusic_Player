@@ -35,6 +35,12 @@ jobs:
           test -n "$APK_SIGNING_KEY_ALIAS" && test -n "$APK_SIGNING_KEY_PASSWORD"
           umask 077
           printf '%s' "$KEYSTORE_BASE64" | base64 --decode > "$APK_SIGNING_STORE_FILE"
+          if ! keytool -list -keystore "$APK_SIGNING_STORE_FILE" \
+            -storepass "$APK_SIGNING_STORE_PASSWORD" \
+            -alias "$APK_SIGNING_KEY_ALIAS" >/dev/null; then
+            echo "::error::The release keystore is invalid, or its store password/key alias does not match the configured signing secrets."
+            exit 1
+          fi
       - name: Test, lint, and build signed APK
         run: sh ./gradlew :core:test :app:testDebugUnitTest :app:lintRelease :app:assembleRelease
       - name: Name APK
