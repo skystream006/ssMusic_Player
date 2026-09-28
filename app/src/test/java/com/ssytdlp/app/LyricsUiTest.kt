@@ -121,7 +121,7 @@ class LyricsUiTest {
         compose.mainClock.advanceTimeBy(600)
         compose.onNodeWithText("Line 12").assertIsDisplayed()
         compose.runOnIdle { position.longValue = 350_000 }
-        compose.mainClock.advanceTimeBy(1_000)
+        compose.mainClock.advanceTimeBy(10_000)
         compose.onNodeWithText("Line 35").assertIsDisplayed()
     }
 

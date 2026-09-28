@@ -24,18 +24,29 @@ import androidx.lifecycle.LifecycleOwner
 import androidx.lifecycle.LifecycleRegistry
 import androidx.lifecycle.compose.LocalLifecycleOwner
 import org.junit.Assert.*
+import org.junit.After
+import org.junit.Before
 import org.junit.Rule
 import org.junit.Test
 import org.junit.runner.RunWith
 import org.robolectric.RobolectricTestRunner
 import org.robolectric.annotation.Config
 import org.robolectric.annotation.GraphicsMode
+import org.robolectric.shadows.ShadowValueAnimator
 
 @RunWith(RobolectricTestRunner::class)
 @Config(sdk = [34], application = Application::class, qualifiers = "w360dp-h800dp")
 @GraphicsMode(GraphicsMode.Mode.NATIVE)
 class EdgeLightingTest {
     @get:Rule val compose = createAndroidComposeRule<ComponentActivity>()
+
+    @Before fun disableAnimations() {
+        ShadowValueAnimator.setDurationScale(0f)
+    }
+
+    @After fun enableAnimations() {
+        ShadowValueAnimator.setDurationScale(1f)
+    }
 
     @Test fun onlyPlayingShowsLightingAndOverlayDoesNotBlockControls() {
         var playing by mutableStateOf(false)
