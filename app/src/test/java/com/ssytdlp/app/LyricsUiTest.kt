@@ -5,6 +5,7 @@ import androidx.activity.ComponentActivity
 import androidx.compose.foundation.layout.size
 import androidx.compose.runtime.mutableLongStateOf
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.snapshots.Snapshot
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.platform.testTag
@@ -117,10 +118,15 @@ class LyricsUiTest {
             assertEquals(listOf(120_000L), seeks)
             assertEquals(300_000L, position.longValue)
             position.longValue = 120_000
+            // With a paused clock, writes must be applied explicitly so the recomposer sees them.
+            Snapshot.sendApplyNotifications()
         }
         compose.mainClock.advanceTimeBy(600)
         compose.onNodeWithText("Line 12").assertIsDisplayed()
-        compose.runOnIdle { position.longValue = 350_000 }
+        compose.runOnIdle {
+            position.longValue = 350_000
+            Snapshot.sendApplyNotifications()
+        }
         compose.mainClock.advanceTimeBy(10_000)
         compose.onNodeWithText("Line 35").assertIsDisplayed()
     }

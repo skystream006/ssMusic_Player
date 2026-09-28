@@ -2,6 +2,9 @@ package com.ssytdlp.app
 
 import android.animation.ValueAnimator
 import android.app.Application
+import android.graphics.Bitmap
+import android.graphics.Canvas
+import android.view.ViewGroup
 import androidx.activity.ComponentActivity
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Box
@@ -14,8 +17,11 @@ import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
+import androidx.compose.runtime.snapshots.Snapshot
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.PixelMap
+import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.graphics.toPixelMap
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.test.*
@@ -51,6 +57,16 @@ class EdgeLightingTest {
 
     @After fun enableAnimations() = setDurationScale(1f)
 
+    // With a paused clock, writes must be applied explicitly so the recomposer sees them.
+    private fun update(block: () -> Unit) = compose.runOnIdle { block(); Snapshot.sendApplyNotifications() }
+
+    // captureToImage() waits for a draw that never happens on Robolectric, so draw the host directly.
+    private fun captureContent(): PixelMap = compose.runOnIdle {
+        val view = compose.activity.findViewById<ViewGroup>(android.R.id.content).getChildAt(0)
+        Bitmap.createBitmap(view.width, view.height, Bitmap.Config.ARGB_8888)
+            .also { view.draw(Canvas(it)) }.asImageBitmap().toPixelMap()
+    }
+
     @Test fun onlyPlayingShowsLightingAndOverlayDoesNotBlockControls() {
         var playing by mutableStateOf(false)
         var clicks = 0
@@ -64,11 +80,12 @@ class EdgeLightingTest {
             }
         }
         compose.onNodeWithTag("edges").assertDoesNotExist()
-        compose.runOnIdle { playing = true }
+        update { playing = true }
         compose.mainClock.advanceTimeBy(100)
         compose.onNodeWithTag("edges").assertIsDisplayed()
         compose.onNodeWithText("Playback control").performClick()
-        compose.runOnIdle { assertEquals(1, clicks); playing = false }
+        compose.runOnIdle { assertEquals(1, clicks) }
+        update { playing = false }
         compose.mainClock.advanceTimeByFrame()
         compose.onNodeWithTag("edges").assertDoesNotExist()
     }
@@ -99,14 +116,14 @@ class EdgeLightingTest {
         compose.mainClock.autoAdvance = false
         compose.setContent {
             MaterialTheme(colorScheme = darkColorScheme(primary = accent)) {
-                Box(Modifier.fillMaxSize().background(Color.Black).testTag("host")) {
+                Box(Modifier.fillMaxSize().background(Color.Black)) {
                     EdgeLighting(true, { 0f }, Modifier.matchParentSize())
                 }
             }
         }
         compose.mainClock.advanceTimeBy(100)
         fun assertTint(red: Boolean) {
-            val pixels = compose.onNodeWithTag("host").captureToImage().toPixelMap()
+            val pixels = captureContent()
             var litPixels = 0
             for (y in 0 until pixels.height) for (x in 0 until pixels.width) {
                 val pixel = pixels[x, y]
@@ -119,7 +136,7 @@ class EdgeLightingTest {
             assertEquals(Color.Black, pixels[pixels.width / 2, pixels.height / 2])
         }
         assertTint(red = true)
-        compose.runOnIdle { accent = Color.Blue }
+        update { accent = Color.Blue }
         compose.mainClock.advanceTimeByFrame()
         assertTint(red = false)
     }
