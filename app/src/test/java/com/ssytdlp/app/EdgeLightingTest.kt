@@ -1,5 +1,6 @@
 package com.ssytdlp.app
 
+import android.animation.ValueAnimator
 import android.app.Application
 import androidx.activity.ComponentActivity
 import androidx.compose.foundation.background
@@ -32,7 +33,8 @@ import org.junit.runner.RunWith
 import org.robolectric.RobolectricTestRunner
 import org.robolectric.annotation.Config
 import org.robolectric.annotation.GraphicsMode
-import org.robolectric.shadows.ShadowValueAnimator
+import org.robolectric.util.ReflectionHelpers
+import org.robolectric.util.ReflectionHelpers.ClassParameter
 
 @RunWith(RobolectricTestRunner::class)
 @Config(sdk = [34], application = Application::class, qualifiers = "w360dp-h800dp")
@@ -40,13 +42,14 @@ import org.robolectric.shadows.ShadowValueAnimator
 class EdgeLightingTest {
     @get:Rule val compose = createAndroidComposeRule<ComponentActivity>()
 
-    @Before fun disableAnimations() {
-        ShadowValueAnimator.setDurationScale(0f)
+    private fun setDurationScale(scale: Float) {
+        ReflectionHelpers.callStaticMethod<Any?>(ValueAnimator::class.java, "setDurationScale",
+            ClassParameter.from(Float::class.javaPrimitiveType, scale))
     }
 
-    @After fun enableAnimations() {
-        ShadowValueAnimator.setDurationScale(1f)
-    }
+    @Before fun disableAnimations() = setDurationScale(0f)
+
+    @After fun enableAnimations() = setDurationScale(1f)
 
     @Test fun onlyPlayingShowsLightingAndOverlayDoesNotBlockControls() {
         var playing by mutableStateOf(false)
