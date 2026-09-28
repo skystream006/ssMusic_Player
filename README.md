@@ -161,6 +161,14 @@ and Manrope body text. Real album covers remain unchanged. **Settings > Appearan
 can switch back to **Server theme** without overwriting the web client's preferences.
 The choice is stored on this device. Authentication still uses the primary server.
 
+While music is playing, two soft trails circulate around the app and expanded
+player edges in the current theme's accent color. Their glow and subtle visual
+vibration respond to decoded audio levels, without changing the sound, recording
+the microphone, or vibrating the phone. Lighting stops when paused, buffering, or
+in the background; disabling system animations leaves a stationary glow.
+Audio outputs that bypass PCM processing still show the circulating glow, without
+audio-reactive motion.
+
 Artwork and fonts ship in the APK and work offline. Both fonts use the SIL Open Font
 License; their notices are bundled under `app/src/main/assets/font-licenses`.
 The original ribbon assets can be regenerated on Windows with PowerShell 7.6:
