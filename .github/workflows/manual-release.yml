@@ -14,7 +14,7 @@ jobs:
   release:
     runs-on: ubuntu-latest
     env:
-      PASSKEY_RP_ID: ${{ vars.PASSKEY_RP_ID || 'buytdlp.duckdns.org' }}
+      PASSKEY_RP_ID: ${{ vars.PASSKEY_RP_ID }}
       PASSKEY_ORIGIN: ${{ vars.PASSKEY_ORIGIN }}
       APK_SIGNING_STORE_FILE: ${{ github.workspace }}/distribution.jks
       APK_SIGNING_STORE_PASSWORD: ${{ secrets.APK_SIGNING_STORE_PASSWORD }}
