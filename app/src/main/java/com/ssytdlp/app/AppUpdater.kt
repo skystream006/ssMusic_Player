@@ -157,9 +157,10 @@ private fun updateClient(): OkHttpClient {
 
 internal fun updateInstallIntent(context: Context, apk: File): Intent {
     val uri = FileProvider.getUriForFile(context, "${context.packageName}.updates", apk)
-    return Intent(Intent.ACTION_VIEW).setDataAndType(uri, "application/vnd.android.package-archive")
+    val intent = Intent(Intent.ACTION_VIEW).setDataAndType(uri, "application/vnd.android.package-archive")
         .addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
-        .setClipData(ClipData.newRawUri("App update", uri))
+    intent.clipData = ClipData.newRawUri("App update", uri)
+    return intent
 }
 
 internal fun updatePermissionIntent(context: Context): Intent =
