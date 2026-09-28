@@ -124,23 +124,26 @@ fun MusicApp(model: MusicViewModel, requestNotifications: () -> Unit) {
     }
     MusicTheme(model.preferences, waveAppearance = model.waveAppearance) {
         SystemBarAppearance()
-        Scaffold(containerColor = MaterialTheme.colorScheme.background, snackbarHost = { SnackbarHost(snackbar) }, topBar = {
-            if (account != null) MusicTopBar(account!!.user.name, !model.busy, model::refresh)
-        }, bottomBar = {
-            if (account != null) Column {
-                if (playback.track != null) PlayerDock(playback, model, { playerOpen = true }, requestNotifications)
-                MusicNavigation(screen) { screen = it }
-            }
-        }) { padding ->
-            if (account == null) LoginScreen(model, Modifier.padding(padding))
-            else Column(Modifier.padding(padding).fillMaxSize()) {
-                if (model.busy) LinearProgressIndicator(Modifier.fillMaxWidth())
-                when (screen) {
-                    0 -> LibraryScreen(model, playback, requestNotifications, download)
-                    1 -> JobsScreen(model, requestNotifications, download)
-                    else -> SettingsScreen(model, download)
+        Box(Modifier.fillMaxSize()) {
+            Scaffold(containerColor = MaterialTheme.colorScheme.background, snackbarHost = { SnackbarHost(snackbar) }, topBar = {
+                if (account != null) MusicTopBar(account!!.user.name, !model.busy, model::refresh)
+            }, bottomBar = {
+                if (account != null) Column {
+                    if (playback.track != null) PlayerDock(playback, model, { playerOpen = true }, requestNotifications)
+                    MusicNavigation(screen) { screen = it }
+                }
+            }) { padding ->
+                if (account == null) LoginScreen(model, Modifier.padding(padding))
+                else Column(Modifier.padding(padding).fillMaxSize()) {
+                    if (model.busy) LinearProgressIndicator(Modifier.fillMaxWidth())
+                    when (screen) {
+                        0 -> LibraryScreen(model, playback, requestNotifications, download)
+                        1 -> JobsScreen(model, requestNotifications, download)
+                        else -> SettingsScreen(model, download)
+                    }
                 }
             }
+            PlaybackEdgeLighting(account != null && playback.playing && !playerOpen, Modifier.matchParentSize())
         }
         if (account != null && playerOpen) PlayerSheet(model, playback, { playerOpen = false })
     }

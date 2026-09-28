@@ -45,6 +45,11 @@ class PlaybackConnection(private val context: Context, private val api: ServerAp
             .setListener(object : MediaController.Listener {
                 override fun onDisconnected(controller: MediaController) {
                     DebugLog.event(DebugEvent.PLAYBACK_DISCONNECTED)
+                    if (this@PlaybackConnection.controller !== controller) return
+                    positionJob?.cancel()
+                    this@PlaybackConnection.controller = null
+                    future = null
+                    mutableState.value = PlaybackState()
                 }
             }).buildAsync()
         future = connection

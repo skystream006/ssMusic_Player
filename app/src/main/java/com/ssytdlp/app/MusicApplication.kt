@@ -5,6 +5,7 @@ import com.ssytdlp.app.core.AuthProtocol
 import com.ssytdlp.app.core.PendingLogin
 
 class MusicApplication : Application() {
+    val audioLevels = AudioLevelMeter()
     lateinit var sessions: SessionStore
         private set
     lateinit var api: ServerApi

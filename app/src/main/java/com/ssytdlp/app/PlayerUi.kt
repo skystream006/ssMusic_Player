@@ -85,36 +85,39 @@ fun PlayerSheet(model: MusicViewModel, state: PlaybackState, dismiss: () -> Unit
     var tab by rememberSaveable { mutableIntStateOf(0) }
     ModalBottomSheet(onDismissRequest = dismiss, sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true),
         containerColor = MaterialTheme.colorScheme.background, tonalElevation = 0.dp) {
-        Column(Modifier.fillMaxHeight(0.94f).playerTrackSwipes(
-            enabled = state.track != null, nextEnabled = state.queue.size > 1,
-            previous = model.playback::previousTrack, next = model.playback::next
-        )) {
-            Row(Modifier.fillMaxWidth().padding(horizontal = 20.dp), verticalAlignment = Alignment.CenterVertically) {
-                Column(Modifier.weight(1f)) {
-                    Text("NOW PLAYING", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.primary)
-                    Text(state.track?.playlistTitle?.ifBlank { null } ?: "Your queue", style = MaterialTheme.typography.titleLarge,
-                        maxLines = 1, overflow = TextOverflow.Ellipsis)
+        Box {
+            Column(Modifier.fillMaxHeight(0.94f).playerTrackSwipes(
+                enabled = state.track != null, nextEnabled = state.queue.size > 1,
+                previous = model.playback::previousTrack, next = model.playback::next
+            )) {
+                Row(Modifier.fillMaxWidth().padding(horizontal = 20.dp), verticalAlignment = Alignment.CenterVertically) {
+                    Column(Modifier.weight(1f)) {
+                        Text("NOW PLAYING", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.primary)
+                        Text(state.track?.playlistTitle?.ifBlank { null } ?: "Your queue", style = MaterialTheme.typography.titleLarge,
+                            maxLines = 1, overflow = TextOverflow.Ellipsis)
+                    }
+                    ToolButton(Icons.Rounded.Close, "Close player", onClick = dismiss)
                 }
-                ToolButton(Icons.Rounded.Close, "Close player", onClick = dismiss)
-            }
-            PrimaryTabRow(selectedTabIndex = tab, containerColor = Color.Transparent) {
-                listOf("Player", "Lyrics", "Queue").forEachIndexed { index, title -> Tab(selected = tab == index, onClick = { tab = index }, text = { Text(title) }) }
-            }
-            when (tab) {
-                0 -> PlayerArtwork(state, model.metadata, Modifier.weight(1f), model.playback.controller) {
-                    model.playback.play(listOfNotNull(state.track?.noVocalsVersion))
+                PrimaryTabRow(selectedTabIndex = tab, containerColor = Color.Transparent) {
+                    listOf("Player", "Lyrics", "Queue").forEachIndexed { index, title -> Tab(selected = tab == index, onClick = { tab = index }, text = { Text(title) }) }
                 }
-                1 -> Lyrics(model, state, Modifier.weight(1f))
-                else -> LazyColumn(Modifier.weight(1f)) {
-                    itemsIndexed(state.queue, key = { index, item -> "${item.key}:$index" }) { index, queued ->
-                        TrackRow(queued, active = index == state.index, onClick = { model.playback.select(index) }) {
-                            ToolButton(Icons.Rounded.Close, "Remove from queue") { model.playback.remove(index) }
+                when (tab) {
+                    0 -> PlayerArtwork(state, model.metadata, Modifier.weight(1f), model.playback.controller) {
+                        model.playback.play(listOfNotNull(state.track?.noVocalsVersion))
+                    }
+                    1 -> Lyrics(model, state, Modifier.weight(1f))
+                    else -> LazyColumn(Modifier.weight(1f)) {
+                        itemsIndexed(state.queue, key = { index, item -> "${item.key}:$index" }) { index, queued ->
+                            TrackRow(queued, active = index == state.index, onClick = { model.playback.select(index) }) {
+                                ToolButton(Icons.Rounded.Close, "Remove from queue") { model.playback.remove(index) }
+                            }
                         }
                     }
                 }
+                PlayerTransport(state, model.playback::seek, model.playback::previous, model.playback::toggle,
+                    model.playback::next, model.playback::shuffle, model.playback::repeat)
             }
-            PlayerTransport(state, model.playback::seek, model.playback::previous, model.playback::toggle,
-                model.playback::next, model.playback::shuffle, model.playback::repeat)
+            PlaybackEdgeLighting(state.playing, Modifier.matchParentSize())
         }
     }
 }
