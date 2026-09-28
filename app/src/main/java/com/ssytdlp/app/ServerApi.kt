@@ -36,6 +36,14 @@ class ServerApi(
     constructor(sessions: SessionStore) : this({ sessions.account.value }, { sessions.clear(it) })
 
     private val transport = client.newBuilder()
+        .addInterceptor { chain ->
+            try {
+                chain.proceed(chain.request()).also { DebugLog.event(DebugEvent.API_STATUS, status = it.code) }
+            } catch (error: IOException) {
+                DebugLog.event(DebugEvent.API_FAILURE, error = error)
+                throw error
+            }
+        }
         .followRedirects(false).followSslRedirects(false)
         .connectTimeout(20, TimeUnit.SECONDS).readTimeout(60, TimeUnit.SECONDS)
         .writeTimeout(10, TimeUnit.MINUTES).build()
@@ -107,7 +115,10 @@ class ServerApi(
                 throw ApiException(response.code, payload?.get("error")?.jsonPrimitive?.content
                     ?: "Server request failed (${response.code}).", payload)
             }
-            if (text.isBlank()) JsonNull else data ?: throw IOException("The server returned an invalid response.")
+            if (text.isBlank()) JsonNull else data ?: run {
+                DebugLog.event(DebugEvent.API_INVALID_RESPONSE, status = response.code)
+                throw IOException("The server returned an invalid response.")
+            }
         }
     }
 

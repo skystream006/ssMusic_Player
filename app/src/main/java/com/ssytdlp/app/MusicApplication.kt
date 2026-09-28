@@ -12,6 +12,8 @@ class MusicApplication : Application() {
 
     override fun onCreate() {
         super.onCreate()
+        DebugLog.initialize(this)
+        DebugLog.event(DebugEvent.APP_STARTED)
         sessions = SessionStore(this)
         if (sessions.account.value?.origin?.let { it != AppServer.origin } == true) sessions.clear()
         if (sessions.pending?.origin?.let { it != AppServer.origin } == true) sessions.pending = null

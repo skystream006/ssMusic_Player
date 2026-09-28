@@ -16,7 +16,7 @@ jobs:
     env:
       PASSKEY_RP_ID: ${{ vars.PASSKEY_RP_ID || 'buytdlp.duckdns.org' }}
       PASSKEY_ORIGIN: ${{ vars.PASSKEY_ORIGIN }}
-      APK_SIGNING_STORE_FILE: ${{ runner.temp }}/distribution.jks
+      APK_SIGNING_STORE_FILE: ${{ github.workspace }}/distribution.jks
       APK_SIGNING_STORE_PASSWORD: ${{ secrets.APK_SIGNING_STORE_PASSWORD }}
       APK_SIGNING_KEY_ALIAS: ${{ secrets.APK_SIGNING_KEY_ALIAS }}
       APK_SIGNING_KEY_PASSWORD: ${{ secrets.APK_SIGNING_KEY_PASSWORD }}

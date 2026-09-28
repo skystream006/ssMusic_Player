@@ -105,6 +105,7 @@ fun MusicTheme(preferences: Preferences = Preferences(), waveAppearance: Boolean
 
 @Composable
 fun MusicApp(model: MusicViewModel, requestNotifications: () -> Unit) {
+    UpdateNotification()
     val account by model.sessions.account.collectAsStateWithLifecycle()
     val playback by model.playback.state.collectAsStateWithLifecycle()
     val snackbar = remember { SnackbarHostState() }
@@ -150,6 +151,7 @@ fun LoginScreen(model: MusicViewModel, modifier: Modifier = Modifier) {
     val context = LocalContext.current
     val server = model.serverOrigin
     var pending by rememberSaveable { mutableStateOf(model.sessions.pending != null) }
+    var appSettings by rememberSaveable { mutableStateOf(false) }
     LoginContent(server, model.signingIn, pending, modifier, onSignIn = {
             val url = model.beginLogin()
             if (url != null) {
@@ -161,7 +163,17 @@ fun LoginScreen(model: MusicViewModel, modifier: Modifier = Modifier) {
                 val origin = AuthProtocol.normalizeOrigin(server)
                 CustomTabsIntent.Builder().build().launchUrl(context, Uri.parse(origin))
             } catch (error: Exception) { model.message(error.message ?: "Unable to open registration.") }
-        })
+        }, onAppSettings = { appSettings = true })
+    if (appSettings) ModalBottomSheet(onDismissRequest = { appSettings = false },
+        sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)) {
+        Column(Modifier.fillMaxWidth().verticalScroll(rememberScrollState()).padding(20.dp),
+            verticalArrangement = Arrangement.spacedBy(12.dp)) {
+            Text("Updates and diagnostics", style = MaterialTheme.typography.titleLarge)
+            UpdateSettings()
+            HorizontalDivider()
+            DebugLogSettings()
+        }
+    }
 }
 
 @Composable
