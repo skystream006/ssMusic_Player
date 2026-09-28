@@ -1,0 +1,100 @@
+package com.ssytdlp.app.core
+
+import kotlinx.serialization.Serializable
+import kotlinx.serialization.encodeToString
+import kotlinx.serialization.json.Json
+import java.net.URI
+
+val ApiJson = Json { ignoreUnknownKeys = true; coerceInputValues = true; encodeDefaults = true }
+
+@Serializable
+data class User(val id: String = "", val name: String = "", val role: String = "user", val status: String = "approved")
+
+@Serializable
+data class Session(val token: String, val expiresAt: String, val tokenType: String = "Bearer")
+
+@Serializable
+data class LoginResponse(val user: User, val session: Session)
+
+@Serializable
+data class Account(val origin: String, val user: User, val session: Session)
+
+@Serializable
+data class UserResponse(val user: User)
+
+@Serializable
+data class LibraryEntry(
+    val id: String, val type: String, val name: String = "", val parentId: String? = null,
+    val protected: Boolean = false
+)
+
+@Serializable
+data class LibraryPlaylist(
+    val id: String, val playlistTitle: String = "", val songCount: Int = 0, val jobId: String? = null
+)
+
+@Serializable
+data class Library(
+    val version: Long = 0,
+    val songCount: Int = 0,
+    val entries: List<LibraryEntry> = emptyList(),
+    val playlists: List<LibraryPlaylist> = emptyList(),
+    val jobs: List<Job> = emptyList()
+)
+
+@Serializable
+data class Track(
+    val jobId: String = "", val name: String, val title: String = "", val artist: String = "",
+    val album: String = "", val rating: Int = 0, val playlistId: String? = null,
+    val playlistTitle: String = "", val streamUrl: String? = null, val downloadUrl: String? = null,
+    val isPlayable: Boolean = true, val mediaType: String = "audio", val sizeBytes: Long = 0,
+    val noVocalsVersion: Track? = null
+) {
+    val key: String get() = ApiJson.encodeToString(listOf(jobId, name))
+    val displayTitle: String get() = title.ifBlank { name.substringAfterLast('/').substringBeforeLast('.') }
+    val displayArtist: String get() = artist.ifBlank { playlistTitle.ifBlank { "Unknown artist" } }
+}
+
+@Serializable
+data class TrackPage(
+    val files: List<Track> = emptyList(), val version: Long = 0, val page: Int = 1,
+    val pageSize: Int = 50, val total: Int = 0, val totalPages: Int = 1
+)
+
+@Serializable
+data class LyricLine(val time: Double, val text: String)
+
+@Serializable
+data class SongMetadata(
+    val title: String = "", val artist: String = "", val album: String = "", val genre: String = "",
+    val year: String = "", val rating: Int = 0, val artwork: String? = null,
+    val sylt: List<LyricLine> = emptyList(), val uslt: String = ""
+)
+
+@Serializable
+data class Job(
+    val id: String, val playlistTitle: String = "", val status: String = "", val source: String = "",
+    val url: String = "", val error: String? = null, val files: List<String> = emptyList(),
+    val initiatedBy: User? = null, val contributors: List<User> = emptyList(), val updatedAt: String = "",
+    val isPlaylist: Boolean = true
+) {
+    val active: Boolean get() = status == "queued" || status == "running"
+    fun canModify(user: User) = user.role == "admin" || isMember(user)
+    fun isMember(user: User) = initiatedBy?.id == user.id || contributors.any { it.id == user.id }
+}
+
+@Serializable
+data class Preferences(val theme: String = "light", val mode: String? = null)
+
+object ServerResource {
+    fun resolve(origin: String, path: String): String {
+        val base = URI(AuthProtocol.normalizeOrigin(origin))
+        val resource = base.resolve(path)
+        require(resource.scheme == base.scheme && resource.rawAuthority == base.rawAuthority &&
+            resource.rawUserInfo == null && resource.fragment == null && resource.path.startsWith("/api/") &&
+            resource.normalize().path.startsWith("/api/")) {
+            "Refused a resource outside the selected server."
+        }
+        return resource.toASCIIString()
+    }
+}

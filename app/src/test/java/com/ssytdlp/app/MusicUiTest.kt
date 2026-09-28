@@ -1,0 +1,236 @@
+package com.ssytdlp.app
+
+import android.Manifest
+import android.app.Application
+import android.content.pm.PackageManager
+import android.graphics.Bitmap
+import androidx.activity.ComponentActivity
+import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.background
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.rounded.MoreVert
+import androidx.compose.material.icons.rounded.Close
+import androidx.compose.material3.ColorScheme
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.Scaffold
+import androidx.compose.material3.Surface
+import androidx.compose.material3.Text
+import androidx.compose.runtime.CompositionLocalProvider
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.test.*
+import androidx.compose.ui.test.junit4.createAndroidComposeRule
+import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.Density
+import androidx.test.core.app.ApplicationProvider
+import androidx.core.view.drawToBitmap
+import com.ssytdlp.app.core.Track
+import com.ssytdlp.app.core.Preferences
+import com.ssytdlp.app.core.TrackPage
+import com.ssytdlp.app.core.Library
+import com.ssytdlp.app.core.SongMetadata
+import java.io.File
+import org.junit.Assert.*
+import org.junit.Rule
+import org.junit.Test
+import org.junit.runner.RunWith
+import org.robolectric.RobolectricTestRunner
+import org.robolectric.annotation.Config
+import org.robolectric.annotation.GraphicsMode
+
+@RunWith(RobolectricTestRunner::class)
+@Config(sdk = [34], application = Application::class, qualifiers = "w360dp-h800dp")
+@GraphicsMode(GraphicsMode.Mode.NATIVE)
+class MusicUiTest {
+    @get:Rule val compose = createAndroidComposeRule<ComponentActivity>()
+
+    @Test fun waveAppearanceUsesBlackAndCyanEvenWithLightServerPreferences() {
+        lateinit var colors: ColorScheme
+        compose.setContent {
+            MusicTheme(Preferences(theme = "light", mode = "light")) {
+                colors = MaterialTheme.colorScheme
+            }
+        }
+        compose.runOnIdle {
+            assertEquals(Color(0xFF030508), colors.background)
+            assertEquals(Color(0xFF68DEFF), colors.primary)
+            assertEquals(Color(0xFFEDF3FC), colors.onSurface)
+        }
+    }
+
+    @Test fun serverAppearanceStillHonorsSavedLightMode() {
+        lateinit var colors: ColorScheme
+        compose.setContent {
+            MusicTheme(Preferences(theme = "light", mode = "light"), waveAppearance = false) {
+                colors = MaterialTheme.colorScheme
+            }
+        }
+        compose.runOnIdle { assertEquals(Color(0xFFF6F8F6), colors.background) }
+    }
+
+    @Test fun loginWaveArtworkAndPasskeyControlsRenderOnPhone() {
+        var signIn = false
+        compose.setContent {
+            MusicTheme {
+                Surface(Modifier.fillMaxSize(), color = MaterialTheme.colorScheme.background) {
+                    LoginContent(AppServer.origin, false, false, onSignIn = { signIn = true }, onCancel = {}, onRegister = {})
+                }
+            }
+        }
+        compose.onNodeWithText("Sign in with passkey").assertIsDisplayed()
+        compose.onNodeWithText(BuildConfig.PASSKEY_RP_ID).assertIsDisplayed()
+        savePreview("login-phone")
+        compose.onNodeWithText("Sign in with passkey").performClick()
+        compose.runOnIdle { assertTrue(signIn) }
+    }
+
+    @Test fun libraryWaveLayoutRendersOnPhone() {
+        showLibraryPreview()
+        compose.onNodeWithText("All Music").assertIsDisplayed()
+        compose.onNodeWithContentDescription("Play this page").assertIsDisplayed()
+        compose.onNodeWithText("Quiet signal").assertIsDisplayed()
+        savePreview("library-phone")
+    }
+
+    @Test
+    @Config(qualifiers = "w800dp-h1100dp")
+    fun libraryWaveLayoutRendersOnTablet() {
+        showLibraryPreview()
+        compose.onNodeWithContentDescription("Browse library").assertIsDisplayed()
+        compose.onNodeWithContentDescription("Pause").assertIsDisplayed()
+        savePreview("library-tablet")
+    }
+
+    @Test
+    @Config(qualifiers = "w320dp-h780dp")
+    fun libraryControlsFitOnNarrowScreensWithLargeText() {
+        showLibraryPreview(1.5f)
+        compose.onNodeWithContentDescription("Play this page").assertIsDisplayed()
+        compose.onNodeWithContentDescription("Pause").assertIsDisplayed()
+        val play = compose.onNodeWithContentDescription("Play this page").getUnclippedBoundsInRoot()
+        val pause = compose.onNodeWithContentDescription("Pause").getUnclippedBoundsInRoot()
+        assertTrue(play.left >= 0.dp && play.right <= 320.dp)
+        assertTrue(pause.left >= 0.dp && pause.right <= 320.dp)
+        savePreview("library-large-text")
+    }
+
+    @Test fun playerArtworkAndTransportRenderOnPhone() {
+        var paused = false
+        val playback = previewPlayback()
+        compose.setContent {
+            MusicTheme {
+                Surface(Modifier.fillMaxSize(), color = MaterialTheme.colorScheme.background) {
+                Column(Modifier.fillMaxSize().background(MaterialTheme.colorScheme.background)) {
+                    Row(Modifier.fillMaxWidth().padding(horizontal = 24.dp, vertical = 16.dp)) {
+                        Text("Now playing", Modifier.weight(1f), style = MaterialTheme.typography.titleLarge, color = MaterialTheme.colorScheme.onBackground)
+                        ToolButton(Icons.Rounded.Close, "Close player") {}
+                    }
+                    PlayerArtwork(playback, SongMetadata(title = "Blue hour", artist = "Northbound", album = "Night Sessions"), Modifier.weight(1f))
+                    PlayerTransport(playback, {}, {}, { paused = true }, {}, {}, {})
+                }
+                }
+            }
+        }
+        compose.onNodeWithContentDescription("Playback position").assertIsDisplayed()
+        compose.onNodeWithContentDescription("Album artwork unavailable").assertIsDisplayed()
+        savePreview("player-phone")
+        compose.onNodeWithContentDescription("Pause").performClick()
+        compose.runOnIdle { assertTrue(paused) }
+    }
+
+    @Test fun longTrackNamesLeaveTheirMenuAccessibleOnNarrowScreens() {
+        val title = "A long song title with enough words to wrap across several lines on a phone"
+        var selected = false
+        var menu = false
+        compose.setContent {
+            MusicTheme {
+                Box(Modifier.width(320.dp)) {
+                    TrackRow(Track("job", "song.mp3", title, "An artist with a long name"), onClick = { selected = true }) {
+                        ToolButton(Icons.Rounded.MoreVert, "Song options") { menu = true }
+                    }
+                }
+            }
+        }
+        compose.onNodeWithText(title).assertIsDisplayed().performClick()
+        compose.runOnIdle { assertTrue(selected) }
+        compose.onNodeWithContentDescription("Song options").assertIsDisplayed().performClick()
+        compose.runOnIdle { assertTrue(menu) }
+        val menuBounds = compose.onNodeWithContentDescription("Song options").getUnclippedBoundsInRoot()
+        assertTrue(menuBounds.right <= 320.dp)
+    }
+
+    @Test fun playlistChoiceUsesStableIdentifiers() {
+        var selected: String? = null
+        compose.setContent {
+            MusicTheme { DestinationDialog("Move to playlist", listOf("first-id" to "Morning", "second-id" to "Evening"), {}) { selected = it } }
+        }
+        compose.onNodeWithText("Evening").performClick()
+        compose.runOnIdle { assertEquals("second-id", selected) }
+    }
+
+    @Test fun manifestDeclaresMediaServiceAndNotificationPermissionsWithoutBroadStorageAccess() {
+        val context = ApplicationProvider.getApplicationContext<Application>()
+        @Suppress("DEPRECATION")
+        val permissions = context.packageManager.getPackageInfo(context.packageName, PackageManager.GET_PERMISSIONS).requestedPermissions.orEmpty().toSet()
+        assertTrue(permissions.containsAll(setOf(Manifest.permission.INTERNET, Manifest.permission.WAKE_LOCK,
+            Manifest.permission.FOREGROUND_SERVICE, Manifest.permission.FOREGROUND_SERVICE_MEDIA_PLAYBACK, Manifest.permission.POST_NOTIFICATIONS)))
+        assertFalse(permissions.contains(Manifest.permission.READ_MEDIA_AUDIO))
+        assertFalse(permissions.contains(Manifest.permission.MANAGE_EXTERNAL_STORAGE))
+        assertFalse(permissions.contains(Manifest.permission.REQUEST_IGNORE_BATTERY_OPTIMIZATIONS))
+    }
+
+    private fun previewTracks() = listOf(
+        "Blue hour" to "Northbound", "Quiet signal" to "Lena Sol", "Tidal" to "Aster & Vale",
+        "After the rain" to "The Meridian", "Night drive" to "Northbound", "Open water" to "Lena Sol",
+        "Still here" to "Aster & Vale", "Slow motion" to "The Meridian"
+    ).mapIndexed { index, (title, artist) -> Track("preview", "track-$index.mp3", title, artist, playlistTitle = "Night Sessions") }
+
+    private fun previewPlayback(): PlaybackState {
+        val tracks = previewTracks()
+        return PlaybackState(connected = true, track = tracks.first(), queue = tracks, playing = true, position = 86_000, duration = 234_000)
+    }
+
+    private fun showLibraryPreview(fontScale: Float = 1f) {
+        val playback = previewPlayback()
+        val library = LibraryState(library = Library(songCount = 248), tracks = TrackPage(files = playback.queue, total = 248, totalPages = 5))
+        compose.setContent {
+            CompositionLocalProvider(LocalDensity provides Density(LocalDensity.current.density, fontScale)) {
+                MusicTheme {
+                    Scaffold(containerColor = MaterialTheme.colorScheme.background, topBar = { MusicTopBar("Alex", true) {} }, bottomBar = {
+                        Column {
+                            MiniPlayer(playback, null, {}, {}, {})
+                            MusicNavigation(0) {}
+                        }
+                    }) { padding ->
+                        Box(Modifier.padding(padding)) {
+                            LibraryContent(library, playback, {}, {}, {}, {}) { track, _ ->
+                                ToolButton(Icons.Rounded.MoreVert, "Options for ${track.displayTitle}") {}
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    private fun savePreview(name: String) {
+        val image = compose.runOnIdle { compose.activity.window.decorView.drawToBitmap() }
+        val directory = File("build/outputs/ui-previews").apply { mkdirs() }
+        File(directory, "$name.png").outputStream().use { image.compress(Bitmap.CompressFormat.PNG, 100, it) }
+        var bluePixels = 0
+        var textPixels = 0
+        for (vertical in 0 until image.height step 4) {
+            for (horizontal in 0 until image.width step 4) {
+                val pixel = image.getPixel(horizontal, vertical)
+                val red = android.graphics.Color.red(pixel)
+                val green = android.graphics.Color.green(pixel)
+                val blue = android.graphics.Color.blue(pixel)
+                if (blue > 80 && blue > red + 30 && green > 40) bluePixels++
+                if (red > 190 && green > 190 && blue > 190) textPixels++
+            }
+        }
+        assertTrue("The ribbon artwork and cyan controls must be visible", bluePixels > 100)
+        assertTrue("The UI must contain readable light text", textPixels > 30)
+    }
+}
