@@ -67,7 +67,11 @@ The build reads the primary values from the parent `.env`. Gradle properties
 can supply them for standalone/CI builds, in that precedence order. Both APK
 workflows use the repository Actions variables `PASSKEY_RP_ID` and
 `PASSKEY_ORIGIN`, without a bundled server fallback. `PASSKEY_RP_ID` is required;
-builds fail with a configuration error if it is missing. If the origin is omitted,
+builds fail with a configuration error if it is missing. The only exception is the
+**Android APK** verification workflow, which uses the reserved placeholder
+`example.com` when the variable is unset so tests, lint, and the debug build still
+run; that APK cannot sign in. The manual release workflow never falls back.
+If the origin is omitted,
 it defaults to `https://<PASSKEY_RP_ID>`. The origin's hostname must
 match the primary RP ID, and only these two public values are embedded in the APK.
 Rebuild after changing them. Stored sessions and unfinished logins for other
