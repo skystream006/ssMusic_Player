@@ -23,6 +23,17 @@ Build from a full Git checkout (`git fetch --unshallow` if needed). As in ssMusi
 versions advance with first-parent commits: version name `1.0.<commit count>` and
 version code `<commit count> + 1`. Rebuilding the same commit keeps its version.
 
+On Windows, install or update the JDKs with WinGet:
+
+```powershell
+winget install --id EclipseAdoptium.Temurin.26.JDK --exact --source winget
+winget install --id EclipseAdoptium.Temurin.17.JDK --exact --source winget
+```
+
+Keep `JAVA_HOME` and Android Studio's **Settings > Build, Execution, Deployment >
+Build Tools > Gradle > Gradle JDK** pointed at JDK 26, not the Java 17 toolchain.
+Restart Android Studio and terminals after changing environment variables.
+
 The installable development APK is `app/build/outputs/apk/debug/app-debug.apk`.
 Install it through Android Studio or, with a connected test device:
 
@@ -35,62 +46,6 @@ use Android Studio's **Generate Signed Bundle / APK** and your own signing key;
 no release signing secrets are stored in this project. `applicationId` is
 `com.ssytdlp.app`. Changing it also requires updating the server's fixed app
 callback contract.
-
-### APK workflows and releases
-
-**Android APK** builds, tests, and lints pushes to `main`, pull requests, and manual
-runs. Download its `ssMusic-Player-v<version>-pr<number>` artifact for testing
-(`pr0` when no pull-request event is available).
-
-**Manual Android Release** builds the latest `main`, runs tests and release lint,
-and publishes `ssMusic-Player-v<version>.apk` in a latest GitHub release tagged
-`v<version>`. Existing releases are left unchanged. Only this manually dispatched
-workflow publishes releases; CI artifacts are not offered by the app updater.
-
-Set repository variables `PASSKEY_RP_ID` and optionally `PASSKEY_ORIGIN` for your
-server. Without them, workflows use `buytdlp.duckdns.org` and its HTTPS origin.
-Distribution requires these repository Actions secrets:
-
-- `APK_SIGNING_KEYSTORE_BASE64`: base64-encoded private distribution keystore.
-- `APK_SIGNING_STORE_PASSWORD`, `APK_SIGNING_KEY_ALIAS`, `APK_SIGNING_KEY_PASSWORD`.
-
-Keep the same signing key for every release and back it up securely. Unlike the
-reference app's checked-in debug key, this project never commits signing keys.
-The release workflow fails rather than publishing an unsigned APK when secrets
-are absent. For local signed builds, set `APK_SIGNING_STORE_FILE` to the absolute
-keystore path and the three signing environment variables above.
-
-Test artifacts use a development key, so they cannot update a distribution-signed
-installation (and vice versa). Start with a signed release APK for in-app updates.
-Migrating an existing differently signed development installation requires
-uninstalling it first, which removes local settings and the saved login.
-
-### Updates and diagnostics
-
-Use **Settings** or **Updates and diagnostics** on the sign-in screen without a
-server session. **Check for updates** queries the latest stable release of
-`skystream006/ssMusic_Player`, not ssMusic or the media server. Confirm the download
-to fetch the APK and open Android's package installer. If prompted, allow
-**Install unknown apps** for ssMusic Player, then return to finish installation.
-Android still requires final installation approval; there is no silent install.
-An automatic startup check only notifies you when a newer release is available;
-it never downloads or installs without your approval.
-
-Downloads use a separate unauthenticated HTTPS client, bounded private cache
-storage, and trusted GitHub release hosts. Package identity, increasing version,
-and signing identity are checked before installation. Network failures, missing
-releases, and incompatible APKs leave the installed app unchanged. A differently
-signed APK is rejected rather than requesting an unsafe uninstall.
-Rotation preserves an active transfer. If Android terminates the app process,
-check again and redownload; abandoned update files are cleared on the next start.
-
-Debug logging is off by default. Enable **Full** logging for bounded rotating
-diagnostics or **Reactive** logging for the latest 100 events. View, refresh,
-share, or clear the log from the same screen. Diagnostics contain fixed event
-names and status codes, not credentials, request URLs, server response bodies, or
-music/account metadata. Review the snapshot before sharing. Disable logging when
-finished; clear retained logs separately. Logs and update files are private and
-excluded from backup.
 
 ## Connect and Sign In
 
@@ -216,7 +171,6 @@ use sample track metadata, not account data.
 | `FOREGROUND_SERVICE`, `FOREGROUND_SERVICE_MEDIA_PLAYBACK` | Media3 foreground playback service |
 | `WAKE_LOCK` | Keep CPU/network active only while Media3 needs them for playback |
 | `POST_NOTIFICATIONS` | Requested on the first playback action on Android 13+ |
-| `REQUEST_INSTALL_PACKAGES` | Open Android's installer for a user-approved app update |
 
 Notification denial does not block music. Media-session notifications are exempt
 from Android's general notification permission requirement; the runtime request
@@ -271,10 +225,6 @@ Android version you support:
   seeking, lyrics, queue changes, and real album artwork.
 - Imports, expired document grants, canceled transfers, large exports, library
   version conflicts, permissions for contributors, and private-CA trust.
-- Stable-key release upgrades, unknown-app permission allow/deny, canceled
-  downloads/installers, rotation, missing releases, and differently signed APKs.
-- Both logging modes, disable/restart persistence, viewing/refreshing, sharing,
-  clearing, and access to diagnostics before signing in.
 
 No physical device/emulator was connected during initial implementation; real
 passkey-provider behavior, foreground-service behavior on devices, and the
