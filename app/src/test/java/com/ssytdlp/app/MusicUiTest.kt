@@ -77,12 +77,12 @@ class MusicUiTest {
         compose.setContent {
             MusicTheme {
                 Surface(Modifier.fillMaxSize(), color = MaterialTheme.colorScheme.background) {
-                    LoginContent(AppServer.origin, false, false, onSignIn = { signIn = true }, onCancel = {}, onRegister = {})
+                    LoginContent("https://music.example.com", false, false, onSignIn = { signIn = true }, onCancel = {}, onRegister = {})
                 }
             }
         }
         compose.onNodeWithText("Sign in with passkey").assertIsDisplayed()
-        compose.onNodeWithText(BuildConfig.PASSKEY_RP_ID).assertIsDisplayed()
+        compose.onNodeWithText("music.example.com").assertIsDisplayed()
         savePreview("login-phone")
         compose.onNodeWithText("Sign in with passkey").performClick()
         compose.runOnIdle { assertTrue(signIn) }
@@ -162,7 +162,7 @@ class MusicUiTest {
         var opened = false
         compose.setContent {
             MusicTheme {
-                LoginContent(AppServer.origin, false, false, onSignIn = {}, onCancel = {},
+                LoginContent("https://music.example.com", false, false, onSignIn = {}, onCancel = {},
                     onRegister = {}, onAppSettings = { opened = true })
             }
         }

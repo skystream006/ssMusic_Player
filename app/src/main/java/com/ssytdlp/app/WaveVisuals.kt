@@ -106,7 +106,8 @@ fun LibraryHeading(title: String, count: Int, folder: Boolean, onBrowse: () -> U
 
 @Composable
 fun LoginContent(server: String, signingIn: Boolean, pending: Boolean, modifier: Modifier = Modifier,
-    onSignIn: () -> Unit, onCancel: () -> Unit, onRegister: () -> Unit, onAppSettings: (() -> Unit)? = null) {
+    onSignIn: () -> Unit, onCancel: () -> Unit, onRegister: () -> Unit, onAppSettings: (() -> Unit)? = null,
+    onChangeServer: (() -> Unit)? = null) {
     BoxWithConstraints(modifier.fillMaxSize().background(MaterialTheme.colorScheme.background)) {
         val compactHeight = maxHeight < 500.dp
         val artworkHeight = if (compactHeight) 180.dp else 300.dp
@@ -129,6 +130,7 @@ fun LoginContent(server: String, signingIn: Boolean, pending: Boolean, modifier:
                         Text("SERVER", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                         Text(server.removePrefix("https://"), style = MaterialTheme.typography.bodyMedium)
                     }
+                    if (onChangeServer != null && !signingIn) TextButton(onClick = onChangeServer) { Text("Change") }
                 }
                 Spacer(Modifier.height(20.dp))
                 Button(onClick = onSignIn, modifier = Modifier.fillMaxWidth().heightIn(min = 56.dp), shape = RoundedCornerShape(8.dp), enabled = server.isNotBlank() && !signingIn) {
@@ -143,6 +145,37 @@ fun LoginContent(server: String, signingIn: Boolean, pending: Boolean, modifier:
                 if (onAppSettings != null) TextButton(onClick = onAppSettings, modifier = Modifier.align(Alignment.CenterHorizontally)) {
                     Text("Updates and diagnostics")
                 }
+            }
+        }
+    }
+}
+
+@Composable
+fun ServerSetupContent(value: String, error: String?, busy: Boolean, modifier: Modifier = Modifier,
+    onValueChange: (String) -> Unit, onContinue: () -> Unit) {
+    BoxWithConstraints(modifier.fillMaxSize().background(MaterialTheme.colorScheme.background)) {
+        val compactHeight = maxHeight < 500.dp
+        val artworkHeight = if (compactHeight) 180.dp else 300.dp
+        WaveBackdrop(Modifier.fillMaxWidth().height(artworkHeight).align(Alignment.TopCenter))
+        Column(Modifier.fillMaxSize().imePadding().verticalScroll(rememberScrollState()).padding(horizontal = 28.dp, vertical = 32.dp),
+            horizontalAlignment = Alignment.CenterHorizontally) {
+            Column(Modifier.widthIn(max = 420.dp).fillMaxWidth()) {
+                Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                    Icon(Icons.Rounded.GraphicEq, null, Modifier.size(24.dp), tint = MaterialTheme.colorScheme.primary)
+                    Text("ssMusic", style = MaterialTheme.typography.titleMedium)
+                }
+                Spacer(Modifier.height(if (compactHeight) 72.dp else 184.dp))
+                Text("Set up your server", style = MaterialTheme.typography.displayMedium)
+                Spacer(Modifier.height(16.dp))
+                Text("Enter your ssYTDLP server's hostname. Passkey sign-in on this device is bound to this address.",
+                    style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                Spacer(Modifier.height(20.dp))
+                OutlinedTextField(value, onValueChange, modifier = Modifier.fillMaxWidth(),
+                    label = { Text("Server address") }, placeholder = { Text("music.example.com") }, singleLine = true,
+                    isError = error != null, supportingText = error?.let { message -> { Text(message) } }, enabled = !busy)
+                Spacer(Modifier.height(20.dp))
+                Button(onClick = onContinue, modifier = Modifier.fillMaxWidth().heightIn(min = 56.dp),
+                    shape = RoundedCornerShape(8.dp), enabled = value.isNotBlank() && !busy) { Text("Continue") }
             }
         }
     }

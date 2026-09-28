@@ -1,33 +1,8 @@
-import java.net.URI
-import java.util.Properties
-
 plugins {
     id("com.android.application")
     kotlin("plugin.compose")
     kotlin("plugin.serialization")
 }
-
-val serverEnvironment = Properties().apply {
-    val environmentFile = rootProject.file("../.env")
-    if (environmentFile.isFile) environmentFile.inputStream().use { load(it) }
-}
-
-fun primarySetting(name: String): String? = (
-    providers.gradleProperty(name).orElse(providers.environmentVariable(name)).orNull
-        ?: serverEnvironment.getProperty(name)
-    )?.trim()?.removeSurrounding("\"")?.removeSurrounding("'")?.takeIf { it.isNotBlank() }
-
-val primaryRpId = requireNotNull(primarySetting("PASSKEY_RP_ID")) {
-    "Set primary PASSKEY_RP_ID in ../.env, the environment, or -PPASSKEY_RP_ID."
-}.lowercase()
-val primaryUri = URI(primarySetting("PASSKEY_ORIGIN") ?: "https://$primaryRpId")
-require(primaryUri.scheme == "https" && primaryUri.host.equals(primaryRpId, ignoreCase = true)
-    && primaryUri.rawUserInfo == null && primaryUri.rawQuery == null && primaryUri.rawFragment == null
-    && primaryUri.rawPath.orEmpty() in listOf("", "/") && (primaryUri.port == -1 || primaryUri.port in 1..65535)) {
-    "Primary PASSKEY_ORIGIN must be an HTTPS origin whose hostname matches PASSKEY_RP_ID."
-}
-val primaryOrigin = URI("https", null, primaryRpId, if (primaryUri.port == 443) -1 else primaryUri.port,
-    null, null, null).toASCIIString()
 
 fun gitOutput(vararg arguments: String): String = providers.exec {
     workingDir(rootDir)
@@ -51,8 +26,6 @@ android {
         versionCode = revision + 1
         versionName = "1.0.$revision"
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
-        buildConfigField("String", "PASSKEY_RP_ID", "\"$primaryRpId\"")
-        buildConfigField("String", "PASSKEY_ORIGIN", "\"$primaryOrigin\"")
     }
 
     signingConfigs {

@@ -52,7 +52,7 @@ class MusicViewModel(application: Application) : AndroidViewModel(application) {
         private set
     var health by mutableStateOf<JsonObject?>(null)
         private set
-    val serverOrigin = AppServer.origin
+    val serverOrigin = app.serverConfig.origin
     private var trackRequest: CoroutineJob? = null
     private var operation: CoroutineJob? = null
 
@@ -94,17 +94,34 @@ class MusicViewModel(application: Application) : AndroidViewModel(application) {
         }
     }
 
-    fun beginLogin(): String? = try {
-        val pending = AppServer.beginLogin()
-        sessions.pending = pending
-        AuthProtocol.loginUrl(pending)
-    } catch (error: Exception) { message(error.message ?: "Unable to start sign-in."); null }
+    fun setServerOrigin(input: String): String? = try {
+        app.serverConfig.set(input)
+        null
+    } catch (error: Exception) { error.message ?: "Enter a valid server address." }
+
+    fun changeServer() {
+        if (signingIn) return
+        sessions.pending = null
+        app.serverConfig.clear()
+    }
+
+    fun beginLogin(): String? {
+        val origin = serverOrigin.value ?: return null
+        return try {
+            val pending = AppServer.beginLogin(origin)
+            sessions.pending = pending
+            AuthProtocol.loginUrl(pending)
+        } catch (error: Exception) { message(error.message ?: "Unable to start sign-in."); null }
+    }
 
     fun cancelLogin() { sessions.pending = null }
 
     fun callback(uri: String) {
         if (signingIn) return
-        val authorization = try { AppServer.acceptCallback(uri, sessions.pending) }
+        val authorization = try {
+            val origin = requireNotNull(serverOrigin.value) { "Configure the server before signing in." }
+            AppServer.acceptCallback(uri, sessions.pending, origin)
+        }
         catch (error: Exception) { message(error.message ?: "Invalid sign-in callback."); return }
         sessions.pending = null
         signingIn = true
