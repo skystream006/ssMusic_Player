@@ -126,7 +126,11 @@ fun SettingsScreen(model: MusicViewModel, download: (String, String) -> Unit) {
             Icon(Icons.AutoMirrored.Rounded.Logout, null); Spacer(Modifier.width(8.dp)); Text("Sign out")
         }
         if (model.busy) TextButton(onClick = model::cancelOperation) { Text("Cancel current transfer") }
-        Text("ssMusic Player 1.0.0", style = MaterialTheme.typography.labelSmall, modifier = Modifier.padding(bottom = 20.dp))
+        HorizontalDivider()
+        UpdateSettings()
+        HorizontalDivider()
+        DebugLogSettings()
+        Text("ssMusic Player ${BuildConfig.VERSION_NAME}", style = MaterialTheme.typography.labelSmall, modifier = Modifier.padding(bottom = 20.dp))
     }
     if (logout) ConfirmDialog("Sign out?", "Playback will stop and this device's server session will be revoked.", { logout = false }) { logout = false; model.logout() }
     if (schedule) BackupScheduleDialog(model) { schedule = false }

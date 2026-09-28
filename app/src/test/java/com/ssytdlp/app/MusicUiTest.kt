@@ -93,6 +93,18 @@ class MusicUiTest {
         savePreview("library-phone")
     }
 
+    @Test fun loginOffersUpdatesAndDiagnosticsWithoutSigningIn() {
+        var opened = false
+        compose.setContent {
+            MusicTheme {
+                LoginContent(AppServer.origin, false, false, onSignIn = {}, onCancel = {},
+                    onRegister = {}, onAppSettings = { opened = true })
+            }
+        }
+        compose.onNodeWithText("Updates and diagnostics").performScrollTo().performClick()
+        compose.runOnIdle { assertTrue(opened) }
+    }
+
     @Test
     @Config(qualifiers = "w800dp-h1100dp")
     fun libraryWaveLayoutRendersOnTablet() {

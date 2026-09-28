@@ -1,0 +1,72 @@
+name: Manual Android Release
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: manual-android-release
+  cancel-in-progress: false
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    env:
+      PASSKEY_RP_ID: ${{ vars.PASSKEY_RP_ID || 'buytdlp.duckdns.org' }}
+      PASSKEY_ORIGIN: ${{ vars.PASSKEY_ORIGIN }}
+      APK_SIGNING_STORE_FILE: ${{ github.workspace }}/distribution.jks
+      APK_SIGNING_STORE_PASSWORD: ${{ secrets.APK_SIGNING_STORE_PASSWORD }}
+      APK_SIGNING_KEY_ALIAS: ${{ secrets.APK_SIGNING_KEY_ALIAS }}
+      APK_SIGNING_KEY_PASSWORD: ${{ secrets.APK_SIGNING_KEY_PASSWORD }}
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          ref: main
+          fetch-depth: 0
+      - uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: '17'
+      - name: Restore distribution signing key
+        env:
+          KEYSTORE_BASE64: ${{ secrets.APK_SIGNING_KEYSTORE_BASE64 }}
+        run: |
+          test -n "$KEYSTORE_BASE64" && test -n "$APK_SIGNING_STORE_PASSWORD"
+          test -n "$APK_SIGNING_KEY_ALIAS" && test -n "$APK_SIGNING_KEY_PASSWORD"
+          umask 077
+          printf '%s' "$KEYSTORE_BASE64" | base64 --decode > "$APK_SIGNING_STORE_FILE"
+      - name: Test, lint, and build signed APK
+        run: sh ./gradlew :core:test :app:testDebugUnitTest :app:lintRelease :app:assembleRelease
+      - name: Name APK
+        id: apk
+        run: |
+          version=$(python3 -c 'import json; print(json.load(open("app/build/outputs/apk/release/output-metadata.json"))["elements"][0]["versionName"])')
+          name="ssMusic-Player-v${version}"
+          cp app/build/outputs/apk/release/app-release.apk "${name}.apk"
+          echo "version=${version}" >> "$GITHUB_OUTPUT"
+          echo "name=${name}" >> "$GITHUB_OUTPUT"
+      - uses: actions/upload-artifact@v6
+        with:
+          name: ${{ steps.apk.outputs.name }}
+          path: ${{ steps.apk.outputs.name }}.apk
+          if-no-files-found: error
+      - name: Publish latest GitHub release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          VERSION: ${{ steps.apk.outputs.version }}
+          APK_NAME: ${{ steps.apk.outputs.name }}
+        run: |
+          tag="v${VERSION}"
+          if gh release view "$tag" >/dev/null 2>&1; then
+            echo "Release already exists; leaving it unchanged."
+            exit 0
+          fi
+          gh release create "$tag" "${APK_NAME}.apk" \
+            --target "$(git rev-parse HEAD)" --title "ssMusic Player ${VERSION}" \
+            --generate-notes --latest
+      - name: Remove signing key
+        if: always()
+        run: rm -f "$APK_SIGNING_STORE_FILE"

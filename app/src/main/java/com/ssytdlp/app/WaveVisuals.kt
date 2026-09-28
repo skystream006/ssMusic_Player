@@ -106,7 +106,7 @@ fun LibraryHeading(title: String, count: Int, folder: Boolean, onBrowse: () -> U
 
 @Composable
 fun LoginContent(server: String, signingIn: Boolean, pending: Boolean, modifier: Modifier = Modifier,
-    onSignIn: () -> Unit, onCancel: () -> Unit, onRegister: () -> Unit) {
+    onSignIn: () -> Unit, onCancel: () -> Unit, onRegister: () -> Unit, onAppSettings: (() -> Unit)? = null) {
     BoxWithConstraints(modifier.fillMaxSize().background(MaterialTheme.colorScheme.background)) {
         val compactHeight = maxHeight < 500.dp
         val artworkHeight = if (compactHeight) 180.dp else 300.dp
@@ -140,6 +140,9 @@ fun LoginContent(server: String, signingIn: Boolean, pending: Boolean, modifier:
                 if (pending && !signingIn) TextButton(onClick = onCancel, modifier = Modifier.align(Alignment.CenterHorizontally)) { Text("Cancel sign-in") }
                 TextButton(onClick = onRegister, modifier = Modifier.align(Alignment.CenterHorizontally).padding(top = 8.dp),
                     enabled = server.isNotBlank() && !signingIn) { Text("Create an account", color = MaterialTheme.colorScheme.onSurfaceVariant) }
+                if (onAppSettings != null) TextButton(onClick = onAppSettings, modifier = Modifier.align(Alignment.CenterHorizontally)) {
+                    Text("Updates and diagnostics")
+                }
             }
         }
     }

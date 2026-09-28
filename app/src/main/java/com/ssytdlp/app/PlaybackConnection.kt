@@ -33,18 +33,26 @@ class PlaybackConnection(private val context: Context, private val api: ServerAp
     private val listener = object : Player.Listener {
         override fun onEvents(player: Player, events: Player.Events) { snapshot() }
         override fun onPlayerError(error: PlaybackException) {
+            DebugLog.event(DebugEvent.PLAYBACK_FAILURE, status = error.errorCode, error = error)
             mutableState.value = mutableState.value.copy(error = "Playback failed. Check your connection or sign in again, then retry.")
         }
     }
 
     fun connect() {
         if (future != null) return
-        val connection = MediaController.Builder(context, SessionToken(context, ComponentName(context, PlaybackService::class.java))).buildAsync()
+        DebugLog.event(DebugEvent.PLAYBACK_CONNECTING)
+        val connection = MediaController.Builder(context, SessionToken(context, ComponentName(context, PlaybackService::class.java)))
+            .setListener(object : MediaController.Listener {
+                override fun onDisconnected(controller: MediaController) {
+                    DebugLog.event(DebugEvent.PLAYBACK_DISCONNECTED)
+                }
+            }).buildAsync()
         future = connection
         connection.addListener({
             if (future !== connection) return@addListener
             try {
                 controller = connection.get()
+                DebugLog.event(DebugEvent.PLAYBACK_CONNECTED)
                 controller?.addListener(listener)
                 snapshot()
                 positionJob = scope.launch {
@@ -54,7 +62,8 @@ class PlaybackConnection(private val context: Context, private val api: ServerAp
                         delay(300)
                     }
                 }
-            } catch (_: Exception) {
+            } catch (error: Exception) {
+                DebugLog.event(DebugEvent.PLAYBACK_FAILURE, error = error)
                 future = null
                 mutableState.value = mutableState.value.copy(error = "Could not connect to the playback service. Try again.")
             }
@@ -88,6 +97,7 @@ class PlaybackConnection(private val context: Context, private val api: ServerAp
     fun select(index: Int) { controller?.let { it.seekToDefaultPosition(index); it.play() } }
     fun remove(index: Int) { controller?.removeMediaItem(index) }
     fun disconnect(stop: Boolean = false) {
+        DebugLog.event(DebugEvent.PLAYBACK_DISCONNECTED)
         positionJob?.cancel()
         controller?.let { if (stop) { it.stop(); it.clearMediaItems() }; it.removeListener(listener) }
         future?.let(MediaController::releaseFuture)
