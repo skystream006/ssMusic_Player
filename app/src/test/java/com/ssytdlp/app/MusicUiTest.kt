@@ -21,6 +21,7 @@ import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.semantics.SemanticsActions
 import androidx.compose.ui.test.*
 import androidx.compose.ui.test.junit4.createAndroidComposeRule
 import androidx.compose.ui.unit.dp
@@ -134,7 +135,9 @@ class MusicUiTest {
         var skips = 0
         var sought: Long? = null
         showSwipePlayer(previous = { skips++ }, next = { skips++ }, onSeek = { sought = it })
-        compose.onNodeWithContentDescription("Playback position").performTouchInput { swipeRight() }
+        compose.onNodeWithContentDescription("Playback position").performSemanticsAction(SemanticsActions.SetProgress) {
+            assertTrue(it(0.5f))
+        }
         compose.runOnIdle { assertNotNull(sought); assertEquals(0, skips) }
     }
 
