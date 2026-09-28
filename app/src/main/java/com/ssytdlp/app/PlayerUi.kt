@@ -9,6 +9,7 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.detectHorizontalDragGestures
+import androidx.compose.foundation.interaction.collectIsDraggedAsState
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.itemsIndexed
@@ -44,7 +45,6 @@ import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
-import androidx.compose.ui.unit.Velocity
 import androidx.compose.ui.viewinterop.AndroidView
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.media3.common.Player
@@ -53,6 +53,8 @@ import androidx.media3.session.MediaController
 import androidx.media3.ui.PlayerView
 import com.ssytdlp.app.core.*
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.withContext
 import kotlinx.serialization.json.decodeFromJsonElement
 
@@ -214,11 +216,14 @@ internal fun LyricsContent(lyrics: SongMetadata?, position: Long, trackKey: Stri
     key(trackKey, lyrics?.sylt, lyrics?.uslt) {
         if (lyrics?.sylt?.isNotEmpty() == true) {
             val active = lyrics.sylt.indexOfLast { it.time * 1000 <= position }
-            val currentActive by rememberUpdatedState(active)
             val listState = rememberLazyListState()
+            val dragging by listState.interactionSource.collectIsDraggedAsState()
             var following by remember { mutableStateOf(true) }
             var manualScroll by remember { mutableStateOf(false) }
             var tap by remember { mutableIntStateOf(0) }
+            var seekTarget by remember { mutableStateOf<Int?>(null) }
+            val target = seekTarget ?: active
+            val currentActive by rememberUpdatedState(target)
             val linePadding = with(LocalDensity.current) { 12.dp.toPx() }
             val scrollConnection = remember(listState, linePadding) {
                 object : NestedScrollConnection {
@@ -242,21 +247,34 @@ internal fun LyricsContent(lyrics: SongMetadata?, position: Long, trackKey: Stri
                         if (manualScroll && consumed.y != 0f && highlightedWasVisible && !highlightVisible()) following = false
                         return Offset.Zero
                     }
-
-                    override suspend fun onPostFling(consumed: Velocity, available: Velocity): Velocity {
-                        manualScroll = false
-                        return Velocity.Zero
+                }
+            }
+            LaunchedEffect(manualScroll, dragging) {
+                if (manualScroll) snapshotFlow { listState.isScrollInProgress || dragging }.collectLatest { busy ->
+                    if (!busy) {
+                        // A drag can hand off to a fling between idle notifications. Wheel input has no fling.
+                        withFrameNanos { }
+                        if (!listState.isScrollInProgress && !dragging) manualScroll = false
                     }
                 }
             }
-            LaunchedEffect(active, following, manualScroll, tap) {
-                if (following && !manualScroll && active >= 0) listState.animateScrollToItem(active)
+            LaunchedEffect(tap, active == seekTarget) {
+                if (seekTarget != null) {
+                    // Playback position is polled asynchronously; do not follow the old line after a tap.
+                    if (active != seekTarget) delay(1_500)
+                    seekTarget = null
+                }
+            }
+            LaunchedEffect(target, following, manualScroll, dragging, tap) {
+                if (following && !manualScroll && !dragging && target >= 0) listState.animateScrollToItem(target)
             }
             LazyColumn(modifier.fillMaxWidth().nestedScroll(scrollConnection), state = listState,
                 contentPadding = PaddingValues(horizontal = 28.dp, vertical = 24.dp)) {
                 itemsIndexed(lyrics.sylt) { index, line ->
                     Text(line.text, modifier = Modifier.fillMaxWidth().clickable {
                         onSeek((line.time * 1000).toLong())
+                        seekTarget = index.takeUnless { it == active }
+                        manualScroll = listState.isScrollInProgress || dragging
                         following = true
                         tap++
                     }.padding(vertical = 12.dp),

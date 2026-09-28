@@ -103,6 +103,69 @@ class LyricsUiTest {
         compose.onNodeWithText("Line 30").assertIsDisplayed()
     }
 
+    @Test fun tappedLineStaysVisibleUntilDelayedPlaybackPositionArrives() {
+        showLyrics(seekImmediately = false)
+        scrollAway()
+        compose.runOnIdle { position.longValue = 300_000 }
+        compose.onNodeWithTag("lyrics").performScrollToIndex(12)
+        compose.mainClock.autoAdvance = false
+        compose.onNodeWithText("Line 12").performClick()
+        compose.mainClock.advanceTimeBy(600)
+        compose.onNodeWithText("Line 12").assertIsDisplayed()
+        compose.onNodeWithText("Line 30").assertIsNotDisplayed()
+        compose.runOnIdle {
+            assertEquals(listOf(120_000L), seeks)
+            assertEquals(300_000L, position.longValue)
+            position.longValue = 120_000
+        }
+        compose.mainClock.advanceTimeBy(600)
+        compose.onNodeWithText("Line 12").assertIsDisplayed()
+        compose.runOnIdle { position.longValue = 350_000 }
+        compose.mainClock.advanceTimeBy(1_000)
+        compose.onNodeWithText("Line 35").assertIsDisplayed()
+    }
+
+    @Test fun failedSeekDoesNotLeaveFollowingPinnedToTheTappedLine() {
+        showLyrics(seekImmediately = false)
+        scrollAway()
+        compose.onNodeWithTag("lyrics").performScrollToIndex(12)
+        compose.mainClock.autoAdvance = false
+        compose.onNodeWithText("Line 12").performClick()
+        compose.mainClock.advanceTimeBy(600)
+        compose.onNodeWithText("Line 12").assertIsDisplayed()
+        compose.mainClock.advanceTimeBy(2_000)
+        compose.onNodeWithText("Line 0").assertIsDisplayed()
+    }
+
+    @Test fun smallMouseWheelScrollRetainsFollowingWithoutAFling() {
+        position.longValue = 100_000
+        showLyrics()
+        compose.onNodeWithTag("lyrics").performMouseInput {
+            moveTo(center)
+            scroll(0.25f)
+        }
+        compose.onNodeWithText("Line 10").assertIsDisplayed()
+        compose.runOnIdle { position.longValue = 300_000 }
+        compose.onNodeWithText("Line 30").assertIsDisplayed()
+    }
+
+    @Test fun tappingAfterMouseWheelScrollRestoresFollowing() {
+        position.longValue = 100_000
+        showLyrics()
+        compose.onNodeWithTag("lyrics").performMouseInput {
+            moveTo(center)
+            scroll(8f)
+        }
+        compose.onNodeWithText("Line 10").assertIsNotDisplayed()
+        compose.runOnIdle { position.longValue = 300_000 }
+        compose.onNodeWithText("Line 30").assertIsNotDisplayed()
+        compose.onNodeWithTag("lyrics").performScrollToIndex(12)
+        compose.onNodeWithText("Line 12").performClick()
+        compose.onNodeWithText("Line 12").assertIsDisplayed()
+        compose.runOnIdle { position.longValue = 350_000 }
+        compose.onNodeWithText("Line 35").assertIsDisplayed()
+    }
+
     @Test fun smallManualScrollKeepingTheHighlightVisibleRetainsFollowing() {
         position.longValue = 100_000
         showLyrics()
@@ -182,12 +245,12 @@ class LyricsUiTest {
         compose.onNodeWithTag("lyrics").performTouchInput { swipeUp(durationMillis = 1_000) }
     }
 
-    private fun showLyrics() {
+    private fun showLyrics(seekImmediately: Boolean = true) {
         compose.setContent {
             MusicTheme {
                 LyricsContent(metadata.value, position.longValue, trackKey.value, {
                     seeks += it
-                    position.longValue = it
+                    if (seekImmediately) position.longValue = it
                 }, Modifier.size(320.dp, 240.dp).testTag("lyrics"), error.value, video.value)
             }
         }
