@@ -4,6 +4,7 @@ package com.ssytdlp.app
 
 import android.content.Intent
 import android.net.Uri
+import androidx.activity.compose.BackHandler
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.browser.customtabs.CustomTabsIntent
@@ -114,8 +115,16 @@ fun MusicApp(model: MusicViewModel, requestNotifications: () -> Unit) {
     val account by model.sessions.account.collectAsStateWithLifecycle()
     val playback by model.playback.state.collectAsStateWithLifecycle()
     val snackbar = remember { SnackbarHostState() }
-    var playerOpen by rememberSaveable { mutableStateOf(false) }
     var screen by rememberSaveable { mutableIntStateOf(0) }
+    var settingsReturnScreen by rememberSaveable { mutableIntStateOf(0) }
+    val back: () -> Unit = {
+        screen = when (screen) {
+            3 -> 2
+            2 -> settingsReturnScreen
+            else -> 0
+        }
+    }
+    BackHandler(enabled = account != null && screen != 0, onBack = back)
     var downloadPath by rememberSaveable { mutableStateOf<String?>(null) }
     val saveFile = rememberLauncherForActivityResult(ActivityResultContracts.CreateDocument("application/octet-stream")) { uri ->
         if (uri != null) downloadPath?.let { model.saveDownload(it, uri) }
@@ -131,10 +140,14 @@ fun MusicApp(model: MusicViewModel, requestNotifications: () -> Unit) {
         SystemBarAppearance()
         Box(Modifier.fillMaxSize()) {
             Scaffold(containerColor = MaterialTheme.colorScheme.background, snackbarHost = { SnackbarHost(snackbar) }, topBar = {
-                if (account != null) MusicTopBar(account!!.user.name, !model.busy, model::refresh)
+                if (account != null) MusicTopBar(account!!.user.name, !model.busy, model::refresh,
+                    onSettings = {
+                        if (screen < 2) settingsReturnScreen = screen
+                        screen = 2
+                    }, onBack = if (screen != 0) back else null)
             }, bottomBar = {
                 if (account != null) Column {
-                    if (playback.track != null) PlayerDock(playback, model, { playerOpen = true }, requestNotifications)
+                    if (playback.track != null && screen != 1) PlayerDock(playback, model, { screen = 1 }, requestNotifications)
                     MusicNavigation(screen) { screen = it }
                 }
             }) { padding ->
@@ -145,16 +158,16 @@ fun MusicApp(model: MusicViewModel, requestNotifications: () -> Unit) {
                         if (model.busy) LinearProgressIndicator(Modifier.fillMaxWidth())
                         when (screen) {
                             0 -> LibraryScreen(model, playback, requestNotifications, download)
-                            1 -> JobsScreen(model, requestNotifications, download)
-                            else -> SettingsScreen(model, download)
+                            1 -> NowPlayingScreen(model, playback)
+                            2 -> SettingsScreen(model, download, onJobs = { screen = 3 })
+                            3 -> JobsScreen(model, requestNotifications, download)
                         }
                     }
                 }
             }
-            PlaybackEdgeLighting(account != null && playback.playing && !playerOpen, Modifier.matchParentSize(),
+            PlaybackEdgeLighting(account != null && playback.playing, Modifier.matchParentSize(),
                 enabled = model.edgeLightingEnabled, style = model.edgeLightingStyle)
         }
-        if (account != null && playerOpen) PlayerSheet(model, playback, { playerOpen = false })
     }
 }
 
