@@ -197,17 +197,21 @@ class NowPlayingScreenTest {
             listOf(100f, -100f).forEach { distance ->
                 compose.onNodeWithTag("page").performTouchInput {
                     down(original.center)
-                    moveBy(Offset(distance, 0f), delayMillis = 300)
+                    moveBy(Offset(distance * 0.2f, 0f), delayMillis = 16)
+                    moveBy(Offset(distance * 0.8f, 0f), delayMillis = 16)
                 }
                 compose.mainClock.advanceTimeBy(64)
+                compose.waitForIdle()
                 val moved = artwork.fetchSemanticsNode().boundsInRoot.left - original.left
                 assertTrue(moved * distance > 0f)
                 assertTrue(kotlin.math.abs(moved) > 50f)
                 assertEquals(title, compose.onNodeWithText("Blue hour").fetchSemanticsNode().boundsInRoot)
                 compose.onNodeWithTag("page").performTouchInput { if (distance > 0f) up() else cancel() }
                 compose.mainClock.advanceTimeBy(32)
+                compose.waitForIdle()
                 assertTrue(kotlin.math.abs(artwork.fetchSemanticsNode().boundsInRoot.left - original.left) > 1f)
                 compose.mainClock.advanceTimeBy(2_000)
+                compose.waitForIdle()
                 assertEquals(original.left, artwork.fetchSemanticsNode().boundsInRoot.left, 1f)
             }
         } finally {
