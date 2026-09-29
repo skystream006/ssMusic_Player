@@ -23,18 +23,26 @@ jobs:
           distribution: temurin
           java-version: '17'
       - name: Check release signing configuration
+        id: signing
         env:
           KEYSTORE_BASE64: ${{ secrets.APK_SIGNING_KEYSTORE_BASE64 }}
           STORE_PASSWORD: ${{ secrets.APK_SIGNING_STORE_PASSWORD }}
           KEY_ALIAS: ${{ secrets.APK_SIGNING_KEY_ALIAS }}
           KEY_PASSWORD: ${{ secrets.APK_SIGNING_KEY_PASSWORD }}
         run: |
-          if [ -z "$KEYSTORE_BASE64" ] || [ -z "$STORE_PASSWORD" ] \
-            || [ -z "$KEY_ALIAS" ] || [ -z "$KEY_PASSWORD" ]; then
-            echo "::error::Configure all four APK_SIGNING_* secrets documented in README.md. Releases require a permanent signing key so Android can install updates without removing the app."
+          if [ -z "$KEYSTORE_BASE64" ] && [ -z "$STORE_PASSWORD" ] \
+            && [ -z "$KEY_ALIAS" ] && [ -z "$KEY_PASSWORD" ]; then
+            echo "enabled=false" >> "$GITHUB_OUTPUT"
+            echo "::notice::No APK_SIGNING_* secrets configured; building with the checked-in debug key (app/debug.keystore), same as CI artifacts."
+          elif [ -n "$KEYSTORE_BASE64" ] && [ -n "$STORE_PASSWORD" ] \
+            && [ -n "$KEY_ALIAS" ] && [ -n "$KEY_PASSWORD" ]; then
+            echo "enabled=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "::error::Configure all four APK_SIGNING_* secrets documented in README.md, or remove them all to release with the checked-in debug key."
             exit 1
           fi
       - name: Restore distribution signing key
+        if: steps.signing.outputs.enabled == 'true'
         env:
           KEYSTORE_BASE64: ${{ secrets.APK_SIGNING_KEYSTORE_BASE64 }}
           APK_SIGNING_STORE_FILE: ${{ runner.temp }}/distribution.jks
@@ -51,11 +59,15 @@ jobs:
           fi
       - name: Test, lint, and build release APK
         env:
-          APK_SIGNING_STORE_FILE: ${{ runner.temp }}/distribution.jks
+          SIGNING_ENABLED: ${{ steps.signing.outputs.enabled }}
           APK_SIGNING_STORE_PASSWORD: ${{ secrets.APK_SIGNING_STORE_PASSWORD }}
           APK_SIGNING_KEY_ALIAS: ${{ secrets.APK_SIGNING_KEY_ALIAS }}
           APK_SIGNING_KEY_PASSWORD: ${{ secrets.APK_SIGNING_KEY_PASSWORD }}
-        run: sh ./gradlew :core:test :app:testDebugUnitTest :app:lintRelease :app:assembleRelease
+        run: |
+          if [ "$SIGNING_ENABLED" = "true" ]; then
+            export APK_SIGNING_STORE_FILE="${RUNNER_TEMP}/distribution.jks"
+          fi
+          sh ./gradlew :core:test :app:testDebugUnitTest :app:lintRelease :app:assembleRelease
       - name: Verify and name installable APK
         id: apk
         run: |

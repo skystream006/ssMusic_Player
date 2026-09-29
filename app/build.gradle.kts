@@ -29,6 +29,15 @@ android {
     }
 
     signingConfigs {
+        // Checked-in debug key: every build (local, CI, and manual release) that does not
+        // supply a distribution key uses this identical key, so all such builds share one
+        // signing certificate and can update one another. See app/debug.keystore.
+        getByName("debug") {
+            storeFile = file("debug.keystore")
+            storePassword = "android"
+            keyAlias = "androiddebugkey"
+            keyPassword = "android"
+        }
         if (signingStore != null) create("distribution") {
             storeFile = file(signingStore)
             storePassword = providers.environmentVariable("APK_SIGNING_STORE_PASSWORD").get()
@@ -37,10 +46,12 @@ android {
         }
     }
     buildTypes {
-        if (signingStore != null) {
-            getByName("debug").signingConfig = signingConfigs.getByName("distribution")
-            getByName("release").signingConfig = signingConfigs.getByName("distribution")
-        }
+        // Release uses the optional permanent distribution key when configured, otherwise
+        // it falls back to the same checked-in debug key used everywhere else so a release
+        // is always installable and updatable without requiring any signing secrets.
+        getByName("release").signingConfig =
+            if (signingStore != null) signingConfigs.getByName("distribution")
+            else signingConfigs.getByName("debug")
     }
 
     buildFeatures { compose = true; buildConfig = true }
