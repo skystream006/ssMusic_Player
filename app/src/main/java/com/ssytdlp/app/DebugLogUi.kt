@@ -2,7 +2,6 @@ package com.ssytdlp.app
 
 import android.content.Intent
 import androidx.compose.foundation.layout.Arrangement
-import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ExperimentalLayoutApi
 import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.Row
@@ -64,9 +63,9 @@ fun DebugLogSettings() {
         }
     }
 
-    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+    CollapsibleSettingsSection("Debug logging", defaultExpanded = enabled) {
         Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-            Text("Debug logging", Modifier.weight(1f), style = MaterialTheme.typography.titleMedium)
+            Text("Enable debug logging", Modifier.weight(1f), style = MaterialTheme.typography.titleMedium)
             Switch(enabled, onCheckedChange = { value ->
                 if (value) choosingMode = true else {
                     busy = true

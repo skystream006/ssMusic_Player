@@ -57,6 +57,16 @@ class EdgeLightingTest {
 
     @After fun enableAnimations() = setDurationScale(1f)
 
+    @Test fun circulationTakesTwelveSecondsAndOscillationFollowsSound() {
+        assertEquals(12f, EDGE_CIRCULATION_SECONDS, 0f)
+        assertEquals(0f, edgeOscillation(0.25f, 0.1f, 0f), 0f)
+        val crest = 1f / 48f
+        assertEquals(1f, edgeOscillation(crest, 0f, 1f), 0.0001f)
+        assertEquals(0.25f, edgeOscillation(crest, 0f, 0.25f), 0.0001f)
+        assertEquals(-1f, edgeOscillation(crest + 1f / 24f, 0f, 1f), 0.0001f)
+        assertEquals(edgeOscillation(crest, 0f, 1f), edgeOscillation(crest, 1f, 1f), 0.0001f)
+    }
+
     // With a paused clock, writes must be applied explicitly so the recomposer sees them.
     private fun update(block: () -> Unit) = compose.runOnIdle { block(); Snapshot.sendApplyNotifications() }
 
@@ -65,6 +75,31 @@ class EdgeLightingTest {
         val view = compose.activity.findViewById<ViewGroup>(android.R.id.content).getChildAt(0)
         Bitmap.createBitmap(view.width, view.height, Bitmap.Config.ARGB_8888)
             .also { view.draw(Canvas(it)) }.asImageBitmap().toPixelMap()
+    }
+
+    @Test fun disablingLightingRemovesOverlayDuringPlaybackAndCanBeReenabled() {
+        enableAnimations()
+        var enabled by mutableStateOf(true)
+        var levelReads = 0
+        compose.mainClock.autoAdvance = false
+        compose.setContent {
+            MaterialTheme {
+                EdgeLighting(true, { levelReads++; 0.5f },
+                    Modifier.fillMaxSize().testTag("edges"), enabled = enabled)
+            }
+        }
+        compose.mainClock.advanceTimeBy(100)
+        compose.onNodeWithTag("edges").assertIsDisplayed()
+        compose.runOnIdle { assertTrue(levelReads > 0) }
+        update { enabled = false }
+        compose.mainClock.advanceTimeByFrame()
+        compose.onNodeWithTag("edges").assertDoesNotExist()
+        val reads = compose.runOnIdle { levelReads }
+        compose.mainClock.advanceTimeBy(500)
+        compose.runOnIdle { assertEquals(reads, levelReads) }
+        update { enabled = true }
+        compose.mainClock.advanceTimeByFrame()
+        compose.onNodeWithTag("edges").assertIsDisplayed()
     }
 
     @Test fun onlyPlayingShowsLightingAndOverlayDoesNotBlockControls() {

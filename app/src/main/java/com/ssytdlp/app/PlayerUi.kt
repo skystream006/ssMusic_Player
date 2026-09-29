@@ -125,7 +125,7 @@ fun PlayerSheet(model: MusicViewModel, state: PlaybackState, dismiss: () -> Unit
                 PlayerTransport(state, model.playback::seek, model.playback::previous, model.playback::toggle,
                     model.playback::next, model.playback::shuffle, model.playback::repeat)
             }
-            PlaybackEdgeLighting(state.playing, Modifier.matchParentSize())
+            PlaybackEdgeLighting(state.playing, Modifier.matchParentSize(), enabled = model.edgeLightingEnabled)
         }
     }
 }

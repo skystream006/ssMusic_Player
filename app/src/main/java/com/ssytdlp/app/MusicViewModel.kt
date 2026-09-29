@@ -38,6 +38,8 @@ class MusicViewModel(application: Application) : AndroidViewModel(application) {
         private set
     var waveAppearance by mutableStateOf(application.getSharedPreferences("settings", 0).getBoolean("wave_appearance", true))
         private set
+    var edgeLightingEnabled by mutableStateOf(application.getSharedPreferences("settings", 0).getBoolean("edge_lighting", true))
+        private set
     var metadata by mutableStateOf<SongMetadata?>(null)
         private set
     var metadataError by mutableStateOf<String?>(null)
@@ -280,6 +282,11 @@ class MusicViewModel(application: Application) : AndroidViewModel(application) {
     fun chooseWaveAppearance(enabled: Boolean) {
         waveAppearance = enabled
         getApplication<Application>().getSharedPreferences("settings", 0).edit().putBoolean("wave_appearance", enabled).apply()
+    }
+
+    fun chooseEdgeLighting(enabled: Boolean) {
+        edgeLightingEnabled = enabled
+        getApplication<Application>().getSharedPreferences("settings", 0).edit().putBoolean("edge_lighting", enabled).apply()
     }
 
     fun startBackup(format: String, destination: String) = launchAction {

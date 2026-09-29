@@ -4,6 +4,7 @@ package com.ssytdlp.app
 
 import android.content.Intent
 import android.net.Uri
+import android.os.PowerManager
 import android.provider.Settings
 import androidx.browser.customtabs.CustomTabsIntent
 import androidx.compose.foundation.background
@@ -26,8 +27,12 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.selected
 import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.semantics.stateDescription
 import androidx.compose.ui.unit.dp
+import androidx.core.app.NotificationManagerCompat
 import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.LifecycleEventObserver
 import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.repeatOnLifecycle
@@ -51,6 +56,8 @@ fun SettingsScreen(model: MusicViewModel, download: (String, String) -> Unit) {
     }
     Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(horizontal = 20.dp, vertical = 12.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
         Text("Settings", style = MaterialTheme.typography.titleLarge)
+        UpdateSettings()
+        HorizontalDivider()
         Text(account.user.name, style = MaterialTheme.typography.titleMedium)
         Text(account.origin, style = MaterialTheme.typography.bodyMedium)
         Text("Session expires ${account.session.expiresAt.substringBefore('T')}", style = MaterialTheme.typography.bodySmall)
@@ -78,6 +85,7 @@ fun SettingsScreen(model: MusicViewModel, download: (String, String) -> Unit) {
                 { model.setTheme(mode = if (it) "dark" else "light") }, enabled = !model.busy)
         }
         }
+        EdgeLightingSetting(model.edgeLightingEnabled, model::chooseEdgeLighting)
         HorizontalDivider()
         Text("Library backup", style = MaterialTheme.typography.titleMedium)
         SingleChoiceSegmentedButtonRow(Modifier.fillMaxWidth()) {
@@ -106,13 +114,7 @@ fun SettingsScreen(model: MusicViewModel, download: (String, String) -> Unit) {
         }
         backup?.get("nextRunAt")?.jsonPrimitive?.contentOrNull?.let { Text("Next backup: $it", style = MaterialTheme.typography.bodySmall) }
         HorizontalDivider()
-        Text("Device", style = MaterialTheme.typography.titleMedium)
-        ListItem(headlineContent = { Text("Notifications") }, leadingContent = { Icon(Icons.Rounded.Notifications, null) }, trailingContent = { Icon(Icons.AutoMirrored.Rounded.OpenInNew, null) },
-            modifier = Modifier.clickable {
-                runCatching { context.startActivity(Intent(Settings.ACTION_APP_NOTIFICATION_SETTINGS).putExtra(Settings.EXTRA_APP_PACKAGE, context.packageName)) }
-            })
-        ListItem(headlineContent = { Text("Battery and background activity") }, leadingContent = { Icon(Icons.Rounded.BatteryChargingFull, null) }, trailingContent = { Icon(Icons.AutoMirrored.Rounded.OpenInNew, null) },
-            modifier = Modifier.clickable { runCatching { context.startActivity(Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS, Uri.parse("package:${context.packageName}"))) } })
+        DeviceSettings()
         HorizontalDivider()
         Text("Server", style = MaterialTheme.typography.titleMedium)
         val media = model.health?.get("media") as? JsonObject
@@ -127,13 +129,69 @@ fun SettingsScreen(model: MusicViewModel, download: (String, String) -> Unit) {
         }
         if (model.busy) TextButton(onClick = model::cancelOperation) { Text("Cancel current transfer") }
         HorizontalDivider()
-        UpdateSettings()
-        HorizontalDivider()
         DebugLogSettings()
         Text("ssMusic Player ${BuildConfig.VERSION_NAME}", style = MaterialTheme.typography.labelSmall, modifier = Modifier.padding(bottom = 20.dp))
     }
     if (logout) ConfirmDialog("Sign out?", "Playback will stop and this device's server session will be revoked.", { logout = false }) { logout = false; model.logout() }
     if (schedule) BackupScheduleDialog(model) { schedule = false }
+}
+
+@Composable
+internal fun EdgeLightingSetting(enabled: Boolean, onEnabledChange: (Boolean) -> Unit) {
+    Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+        Text("Edge lighting", Modifier.weight(1f))
+        Switch(enabled, onEnabledChange,
+            modifier = Modifier.semantics { contentDescription = "Edge lighting" })
+    }
+}
+
+@Composable
+internal fun CollapsibleSettingsSection(
+    title: String,
+    defaultExpanded: Boolean,
+    content: @Composable ColumnScope.() -> Unit
+) {
+    var manualExpansion by rememberSaveable { mutableStateOf<Boolean?>(null) }
+    val expanded = manualExpansion ?: defaultExpanded
+    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+        Row(
+            Modifier.fillMaxWidth().heightIn(min = 48.dp)
+                .semantics { stateDescription = if (expanded) "Expanded" else "Collapsed" }
+                .clickable(role = Role.Button, onClickLabel = if (expanded) "Collapse $title" else "Expand $title") {
+                    manualExpansion = !expanded
+                },
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Text(title, Modifier.weight(1f), style = MaterialTheme.typography.titleMedium)
+            Icon(if (expanded) Icons.Rounded.ExpandLess else Icons.Rounded.ExpandMore, null)
+        }
+        if (expanded) content()
+    }
+}
+
+@Composable
+internal fun DeviceSettings() {
+    val context = LocalContext.current
+    val lifecycle = LocalLifecycleOwner.current.lifecycle
+    fun deviceReady(): Boolean =
+        NotificationManagerCompat.from(context).areNotificationsEnabled() &&
+            context.getSystemService(PowerManager::class.java)?.isIgnoringBatteryOptimizations(context.packageName) == true
+    var ready by remember(context) { mutableStateOf(deviceReady()) }
+    DisposableEffect(lifecycle, context) {
+        val observer = LifecycleEventObserver { _, event ->
+            if (event == Lifecycle.Event.ON_RESUME) ready = deviceReady()
+        }
+        lifecycle.addObserver(observer)
+        onDispose { lifecycle.removeObserver(observer) }
+    }
+    CollapsibleSettingsSection("Device", defaultExpanded = !ready) {
+        ListItem(headlineContent = { Text("Notifications") }, leadingContent = { Icon(Icons.Rounded.Notifications, null) }, trailingContent = { Icon(Icons.AutoMirrored.Rounded.OpenInNew, null) },
+            modifier = Modifier.clickable {
+                runCatching { context.startActivity(Intent(Settings.ACTION_APP_NOTIFICATION_SETTINGS).putExtra(Settings.EXTRA_APP_PACKAGE, context.packageName)) }
+            })
+        ListItem(headlineContent = { Text("Battery and background activity") }, leadingContent = { Icon(Icons.Rounded.BatteryChargingFull, null) }, trailingContent = { Icon(Icons.AutoMirrored.Rounded.OpenInNew, null) },
+            modifier = Modifier.clickable { runCatching { context.startActivity(Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS, Uri.parse("package:${context.packageName}"))) } })
+    }
 }
 
 @Composable
