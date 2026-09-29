@@ -35,8 +35,8 @@ object DebugLog {
         if (store != null) return
         val logger = DebugLogStore(context.applicationContext)
         store = logger
-        mutableEnabled.value = logger.enabled
         mutableMode.value = logger.mode
+        mutableEnabled.value = logger.enabled
         Thread.getDefaultUncaughtExceptionHandler()?.let { previous ->
             Thread.setDefaultUncaughtExceptionHandler(logger.crashHandler(previous))
         }
@@ -46,8 +46,9 @@ object DebugLog {
     fun setEnabled(enabled: Boolean, mode: DebugLogMode = mutableMode.value): Boolean {
         val logger = store ?: return false
         val saved = logger.setEnabled(enabled, mode)
-        mutableEnabled.value = logger.enabled
+        // Publish mode before enabled so observers never see enabled flip on with a stale mode.
         mutableMode.value = logger.mode
+        mutableEnabled.value = logger.enabled
         return saved
     }
 
