@@ -46,6 +46,7 @@ fun SettingsScreen(model: MusicViewModel, download: (String, String) -> Unit, on
     val lifecycle = LocalLifecycleOwner.current.lifecycle
     val currentAccount by model.sessions.account.collectAsStateWithLifecycle()
     val account = currentAccount ?: return
+    val showJobsAndBackup = account.user.role != "Shared"
     var logout by remember { mutableStateOf(false) }
     var schedule by remember { mutableStateOf(false) }
     var backupFormat by rememberSaveable { mutableStateOf("android") }
@@ -88,37 +89,39 @@ fun SettingsScreen(model: MusicViewModel, download: (String, String) -> Unit, on
         }
         EdgeLightingSetting(model.edgeLightingEnabled, model.edgeLightingStyle,
             model::chooseEdgeLightingStyle, model::chooseEdgeLighting)
-        HorizontalDivider()
-        JobsSetting(onJobs)
-        HorizontalDivider()
-        CollapsibleSettingsSection("Library backup", defaultExpanded = false) {
-            SingleChoiceSegmentedButtonRow(Modifier.fillMaxWidth()) {
-                listOf("Android", "iTunes").forEachIndexed { index, label -> SegmentedButton(selected = backupFormat == if (index == 0) "android" else "itunes",
-                    onClick = { backupFormat = if (index == 0) "android" else "itunes" }, shape = SegmentedButtonDefaults.itemShape(index, 2)) { Text(label) } }
-            }
-            if (backupFormat == "itunes") OutlinedTextField(destination, { destination = it }, label = { Text("iTunes extraction folder") }, modifier = Modifier.fillMaxWidth())
-            val backup = model.backup
-            val running = backup?.get("running")?.jsonPrimitive?.booleanOrNull == true
-            if (running) {
-                LinearProgressIndicator(Modifier.fillMaxWidth())
-                val progress = backup?.get("progress") as? JsonObject
-                Text("${progress?.get("stage")?.jsonPrimitive?.content ?: "Preparing"}: ${progress?.get("processedSongs")?.jsonPrimitive?.content ?: "0"} / ${progress?.get("totalSongs")?.jsonPrimitive?.content ?: "?"}")
-            }
-            val latest = backup?.get("latest") as? JsonObject
-            if (latest != null) Text("Latest: ${latest["createdAt"]?.jsonPrimitive?.content?.substringBefore('T')}  /  ${latest["songCount"]?.jsonPrimitive?.content} songs")
-            (backup?.get("error") as? JsonPrimitive)?.contentOrNull?.let { Text(it, color = MaterialTheme.colorScheme.error) }
-            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                FilledTonalButton(onClick = { model.startBackup(backupFormat, destination) }, enabled = !model.busy && !running && (backupFormat == "android" || destination.isNotBlank())) {
-                    Icon(Icons.Rounded.Backup, null); Spacer(Modifier.width(8.dp)); Text("Back up")
+        if (showJobsAndBackup) {
+            HorizontalDivider()
+            JobsSetting(onJobs)
+            HorizontalDivider()
+            CollapsibleSettingsSection("Library backup", defaultExpanded = false) {
+                SingleChoiceSegmentedButtonRow(Modifier.fillMaxWidth()) {
+                    listOf("Android", "iTunes").forEachIndexed { index, label -> SegmentedButton(selected = backupFormat == if (index == 0) "android" else "itunes",
+                        onClick = { backupFormat = if (index == 0) "android" else "itunes" }, shape = SegmentedButtonDefaults.itemShape(index, 2)) { Text(label) } }
                 }
-                ToolButton(Icons.Rounded.Download, "Save latest backup", enabled = latest != null && !model.busy) {
-                    download("/api/library/export?source=latest", "ssMusic-${latest?.get("format")?.jsonPrimitive?.content ?: "android"}.zip")
+                if (backupFormat == "itunes") OutlinedTextField(destination, { destination = it }, label = { Text("iTunes extraction folder") }, modifier = Modifier.fillMaxWidth())
+                val backup = model.backup
+                val running = backup?.get("running")?.jsonPrimitive?.booleanOrNull == true
+                if (running) {
+                    LinearProgressIndicator(Modifier.fillMaxWidth())
+                    val progress = backup?.get("progress") as? JsonObject
+                    Text("${progress?.get("stage")?.jsonPrimitive?.content ?: "Preparing"}: ${progress?.get("processedSongs")?.jsonPrimitive?.content ?: "0"} / ${progress?.get("totalSongs")?.jsonPrimitive?.content ?: "?"}")
                 }
-                ToolButton(Icons.Rounded.Schedule, "Backup schedule", enabled = !model.busy) { schedule = true }
+                val latest = backup?.get("latest") as? JsonObject
+                if (latest != null) Text("Latest: ${latest["createdAt"]?.jsonPrimitive?.content?.substringBefore('T')}  /  ${latest["songCount"]?.jsonPrimitive?.content} songs")
+                (backup?.get("error") as? JsonPrimitive)?.contentOrNull?.let { Text(it, color = MaterialTheme.colorScheme.error) }
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    FilledTonalButton(onClick = { model.startBackup(backupFormat, destination) }, enabled = !model.busy && !running && (backupFormat == "android" || destination.isNotBlank())) {
+                        Icon(Icons.Rounded.Backup, null); Spacer(Modifier.width(8.dp)); Text("Back up")
+                    }
+                    ToolButton(Icons.Rounded.Download, "Save latest backup", enabled = latest != null && !model.busy) {
+                        download("/api/library/export?source=latest", "ssMusic-${latest?.get("format")?.jsonPrimitive?.content ?: "android"}.zip")
+                    }
+                    ToolButton(Icons.Rounded.Schedule, "Backup schedule", enabled = !model.busy) { schedule = true }
+                }
+                backup?.get("nextRunAt")?.jsonPrimitive?.contentOrNull?.let { Text("Next backup: $it", style = MaterialTheme.typography.bodySmall) }
             }
-            backup?.get("nextRunAt")?.jsonPrimitive?.contentOrNull?.let { Text("Next backup: $it", style = MaterialTheme.typography.bodySmall) }
+            HorizontalDivider()
         }
-        HorizontalDivider()
         DeviceSettings()
         HorizontalDivider()
         CollapsibleSettingsSection("Server", defaultExpanded = false) {

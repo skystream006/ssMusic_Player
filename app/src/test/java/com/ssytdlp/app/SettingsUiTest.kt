@@ -203,6 +203,22 @@ class SettingsUiTest {
         }
     }
 
+    @Test
+    fun sharedRoleHidesJobsAndLibraryBackupSettings() {
+        withSettingsModel(role = "Shared") { model ->
+            compose.runOnUiThread { owner.lifecycle.currentState = Lifecycle.State.CREATED }
+            setPermissions(notifications = true, unrestrictedBattery = true)
+            compose.setContent {
+                CompositionLocalProvider(LocalLifecycleOwner provides owner) {
+                    MusicTheme { SettingsScreen(model, { _, _ -> }) {} }
+                }
+            }
+            compose.onNodeWithText("Jobs").assertDoesNotExist()
+            compose.onNodeWithText("Library backup").assertDoesNotExist()
+            compose.onNodeWithText("Device").assertIsDisplayed()
+        }
+    }
+
     @Test fun edgeLightingPreferenceDefaultsOffAndPersistsAcrossViewModels() {
         val context = ApplicationProvider.getApplicationContext<Application>()
         val preferences = context.getSharedPreferences("settings", Context.MODE_PRIVATE)
@@ -347,7 +363,7 @@ class SettingsUiTest {
             .setIgnoringBatteryOptimizations(compose.activity.packageName, unrestrictedBattery)
     }
 
-    private fun withSettingsModel(test: (MusicViewModel) -> Unit) {
+    private fun withSettingsModel(role: String = "user", test: (MusicViewModel) -> Unit) {
         val context = ApplicationProvider.getApplicationContext<Application>()
         val provider = object : Provider("SettingsLayoutTestKeyStore", 1.0, "Empty test session keystore") {}
         provider.put("KeyStore.AndroidKeyStore", Security.getProvider("SUN").getService("KeyStore", "JKS").className)
@@ -363,7 +379,7 @@ class SettingsUiTest {
                 models.put("settings", model)
                 model.viewModelScope.cancel()
                 ReflectionHelpers.getField<MutableStateFlow<Account?>>(model.sessions, "mutableAccount").value =
-                    Account("https://music.example.com", User(name = "Preview"), Session("test-session", "2099-01-01T00:00:00Z"))
+                    Account("https://music.example.com", User(name = "Preview", role = role), Session("test-session", "2099-01-01T00:00:00Z"))
             }
             test(model)
         } finally {
