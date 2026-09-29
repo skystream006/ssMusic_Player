@@ -41,11 +41,10 @@ Install it through Android Studio or, with a connected test device:
 adb install -r app/build/outputs/apk/debug/app-debug.apk
 ```
 
-The debug build is signed with the local Android debug key. For distribution,
-use Android Studio's **Generate Signed Bundle / APK** and your own signing key;
-no release signing secrets are stored in this project. `applicationId` is
-`com.ssytdlp.app`. Changing it also requires updating the server's fixed app
-callback contract.
+The debug build is signed with the repository's checked-in debug key
+(`app/debug.keystore`), so every debug build — local, PR/CI, or otherwise —
+shares the same signing certificate. `applicationId` is `com.ssytdlp.app`.
+Changing it also requires updating the server's fixed app callback contract.
 
 ### APK updates
 
@@ -64,10 +63,9 @@ again rather than trusting an unfinished download.
 
 For the first installation, download `ssMusic-Player-v<version>.apk` from this
 repository's **Releases** and open it on the phone. Extract Actions artifact ZIPs
-before opening an APK. Old `-unsigned.apk` artifacts cannot be installed.
-On Samsung devices, device policy or Auto Blocker may prevent sideloading even
-when the APK is valid; follow the phone's installation message and your device
-administrator's policy.
+before opening an APK. On Samsung devices, device policy or Auto Blocker may
+prevent sideloading even when the APK is valid; follow the phone's installation
+message and your device administrator's policy.
 
 ### Publishing update-compatible releases
 
@@ -77,7 +75,14 @@ release. The in-app updater reads this repository's latest release, not Actions
 artifacts. Re-running a published version leaves its release unchanged; publish
 a newer commit for a new update.
 
-Configure these repository Actions secrets before running the release workflow:
+Like ssMusic, this project bundles a debug signing key
+(`app/debug.keystore`, checked into the repository) that the release workflow
+uses by default. Because the same key signs debug CI builds, manual releases,
+and local `assembleDebug`/`assembleRelease` builds, any of those APKs can
+update any other with no signing secrets to configure.
+
+For a stronger production key instead of the bundled debug key, configure these
+optional repository Actions secrets before running the release workflow:
 
 | Secret | Value |
 | --- | --- |
@@ -86,19 +91,20 @@ Configure these repository Actions secrets before running the release workflow:
 | `APK_SIGNING_KEY_ALIAS` | Signing key alias |
 | `APK_SIGNING_KEY_PASSWORD` | Signing key password |
 
-Use the key that signed your existing distributed APK, and keep a secure backup.
-Never commit a keystore or passwords. Missing/incomplete signing configuration
-now fails the release workflow instead of producing an uninstallable unsigned
-artifact. The workflow verifies the APK signature before uploading or publishing.
-Local release builds use the same configuration through `APK_SIGNING_STORE_FILE`
-and the three password/alias environment variables above.
+Configure all four together, or leave all four unset to use the bundled debug
+key; a partial set fails the workflow. Use the key that signed your existing
+distributed APK, and keep a secure backup. Never commit a distribution
+keystore or its passwords. The workflow verifies the APK signature before
+uploading or publishing. Local release builds use the same configuration
+through `APK_SIGNING_STORE_FILE` and the three password/alias environment
+variables above; unset `APK_SIGNING_STORE_FILE` to build with the bundled
+debug key instead.
 
-Unlike ssMusic's repository-bundled debug key, this project keeps distribution
-keys in secrets. Ordinary **Android APK** CI artifacts use temporary debug keys
-and are for testing, not a stable update channel. They may not update one another
-or an official release. If an update reports a signature mismatch, obtain an APK
-signed with the original key; do not uninstall to bypass it, as that removes local
-app data. Increasing the version alone cannot fix a signing-key mismatch.
+Switching between the bundled debug key and a distribution key changes the
+app's signing certificate. If an update reports a signature mismatch, obtain an
+APK signed with the same key as the currently installed app; do not uninstall
+to bypass it, as that removes local app data. Increasing the version alone
+cannot fix a signing-key mismatch.
 
 ## Connect and Sign In
 
