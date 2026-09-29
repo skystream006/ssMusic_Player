@@ -47,6 +47,59 @@ no release signing secrets are stored in this project. `applicationId` is
 `com.ssytdlp.app`. Changing it also requires updating the server's fixed app
 callback contract.
 
+### APK updates
+
+Like ssMusic, the player checks GitHub's latest release at startup and notifies
+you when a newer version is available. Open **Updates and diagnostics** on the
+server-setup or sign-in screen, or **Settings > App updates** after sign-in.
+Select **Check for updates**, then **Download and install** and confirm the
+download. No server connection or sign-in is required for updates.
+
+The download shows progress and can be cancelled. The app checks the package,
+version and signing certificate before handing the APK to Android. If prompted,
+allow **Install unknown apps** for ssMusic Player, then return to the app to
+confirm installation. Android still asks for final approval; a compatible update
+preserves local settings and sign-in. If the process is killed, check and download
+again rather than trusting an unfinished download.
+
+For the first installation, download `ssMusic-Player-v<version>.apk` from this
+repository's **Releases** and open it on the phone. Extract Actions artifact ZIPs
+before opening an APK. Old `-unsigned.apk` artifacts cannot be installed.
+On Samsung devices, device policy or Auto Blocker may prevent sideloading even
+when the APK is valid; follow the phone's installation message and your device
+administrator's policy.
+
+### Publishing update-compatible releases
+
+Run **Actions > Manual Android Release > Run workflow** to build latest `main`,
+verify the signed APK, and publish one universal APK as the latest `v1.0.N`
+release. The in-app updater reads this repository's latest release, not Actions
+artifacts. Re-running a published version leaves its release unchanged; publish
+a newer commit for a new update.
+
+Configure these repository Actions secrets before running the release workflow:
+
+| Secret | Value |
+| --- | --- |
+| `APK_SIGNING_KEYSTORE_BASE64` | Base64-encoded keystore containing the permanent app signing key |
+| `APK_SIGNING_STORE_PASSWORD` | Keystore password |
+| `APK_SIGNING_KEY_ALIAS` | Signing key alias |
+| `APK_SIGNING_KEY_PASSWORD` | Signing key password |
+
+Use the key that signed your existing distributed APK, and keep a secure backup.
+Never commit a keystore or passwords. Missing/incomplete signing configuration
+now fails the release workflow instead of producing an uninstallable unsigned
+artifact. The workflow verifies the APK signature before uploading or publishing.
+Local release builds use the same configuration through `APK_SIGNING_STORE_FILE`
+and the three password/alias environment variables above.
+
+Unlike ssMusic's repository-bundled debug key, this project keeps distribution
+keys in secrets. Ordinary **Android APK** CI artifacts use temporary debug keys
+and are for testing, not a stable update channel. They may not update one another
+or an official release. If an update reports a signature mismatch, obtain an APK
+signed with the original key; do not uninstall to bypass it, as that removes local
+app data. Increasing the version alone cannot fix a signing-key mismatch.
+
 ## Connect and Sign In
 
 1. Start the existing ssYTDLP server. Its API and `/app-login` must be available

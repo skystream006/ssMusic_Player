@@ -152,7 +152,7 @@ fun LoginContent(server: String, signingIn: Boolean, pending: Boolean, modifier:
 
 @Composable
 fun ServerSetupContent(value: String, error: String?, busy: Boolean, modifier: Modifier = Modifier,
-    onValueChange: (String) -> Unit, onContinue: () -> Unit) {
+    onValueChange: (String) -> Unit, onContinue: () -> Unit, onAppSettings: () -> Unit = {}) {
     BoxWithConstraints(modifier.fillMaxSize().background(MaterialTheme.colorScheme.background)) {
         val compactHeight = maxHeight < 500.dp
         val artworkHeight = if (compactHeight) 180.dp else 300.dp
@@ -176,6 +176,7 @@ fun ServerSetupContent(value: String, error: String?, busy: Boolean, modifier: M
                 Spacer(Modifier.height(20.dp))
                 Button(onClick = onContinue, modifier = Modifier.fillMaxWidth().heightIn(min = 56.dp),
                     shape = RoundedCornerShape(8.dp), enabled = value.isNotBlank() && !busy) { Text("Continue") }
+                TextButton(onClick = onAppSettings, modifier = Modifier.fillMaxWidth()) { Text("Updates and diagnostics") }
             }
         }
     }
