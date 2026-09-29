@@ -206,11 +206,13 @@ class EdgeLightingTest {
 
     @Test fun borderFollowsThemeChangesWithoutCoveringTheCenter() {
         var accent by mutableStateOf(Color.Red)
+        var style by mutableStateOf(EdgeLightingStyle.OSCILLATION)
         compose.mainClock.autoAdvance = false
         compose.setContent {
             MaterialTheme(colorScheme = darkColorScheme(primary = accent)) {
                 Box(Modifier.fillMaxSize().background(Color.Black)) {
-                    EdgeLighting(true, { 0f }, Modifier.matchParentSize(), enabled = true)
+                    EdgeLighting(true, { 0f }, Modifier.matchParentSize(), enabled = true, style = style,
+                        audioWaveform = { error("Reduced motion must not read waveform") })
                 }
             }
         }
@@ -228,9 +230,13 @@ class EdgeLightingTest {
             assertTrue(litPixels > 0)
             assertEquals(Color.Black, pixels[pixels.width / 2, pixels.height / 2])
         }
-        assertTint(red = true)
-        update { accent = Color.Blue }
-        compose.mainClock.advanceTimeByFrame()
-        assertTint(red = false)
+        EdgeLightingStyle.entries.forEach { option ->
+            update { style = option; accent = Color.Red }
+            compose.mainClock.advanceTimeBy(100)
+            assertTint(red = true)
+            update { accent = Color.Blue }
+            compose.mainClock.advanceTimeByFrame()
+            assertTint(red = false)
+        }
     }
 }

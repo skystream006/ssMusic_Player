@@ -20,6 +20,7 @@ import androidx.compose.ui.geometry.RoundRect
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.PathMeasure
+import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
@@ -137,9 +138,7 @@ internal fun EdgeLighting(
             val gradient = if (style == EdgeLightingStyle.CIRCULATING) Brush.sweepGradient(List(65) { index ->
                 val strength = (0.5f + 0.5f * cos(4f * PI.toFloat() * (index / 64f - animation.progress)))
                 primary.copy(alpha = 0.12f + strength * strength * (0.65f + animation.level * 0.2f))
-            }) else Brush.linearGradient(listOf(
-                primary.copy(alpha = 0.65f + animation.level * 0.2f),
-                primary.copy(alpha = 0.65f + animation.level * 0.2f)))
+            }) else SolidColor(primary.copy(alpha = 0.65f + animation.level * 0.2f))
             drawPath(line, gradient, alpha = 0.04f, style = Stroke(14.dp.toPx()))
             drawPath(line, gradient, alpha = 0.08f, style = Stroke(9.dp.toPx()))
             drawPath(line, gradient, alpha = 0.16f, style = Stroke(5.dp.toPx()))

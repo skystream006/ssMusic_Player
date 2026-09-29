@@ -147,25 +147,25 @@ internal fun EdgeLightingSetting(
     onEnabledChange: (Boolean) -> Unit
 ) {
     Column {
-    Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-        Text("Edge lighting", Modifier.weight(1f))
-        Switch(enabled, onEnabledChange,
-            modifier = Modifier.semantics { contentDescription = "Edge lighting" })
-    }
-    if (enabled) {
-        Column(Modifier.selectableGroup()) {
-            EdgeLightingStyle.entries.forEach { option ->
-                Row(Modifier.fillMaxWidth().heightIn(min = 48.dp)
-                    .selectable(selected = style == option, role = Role.RadioButton,
-                        onClick = { onStyleChange(option) }).padding(horizontal = 12.dp),
-                    verticalAlignment = Alignment.CenterVertically) {
-                    RadioButton(selected = style == option, onClick = null)
-                    Spacer(Modifier.width(12.dp))
-                    Text(option.label)
+        Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+            Text("Edge lighting", Modifier.weight(1f))
+            Switch(enabled, onEnabledChange,
+                modifier = Modifier.semantics { contentDescription = "Edge lighting" })
+        }
+        if (enabled) {
+            Column(Modifier.selectableGroup()) {
+                EdgeLightingStyle.entries.forEach { option ->
+                    Row(Modifier.fillMaxWidth().heightIn(min = 48.dp)
+                        .selectable(selected = style == option, role = Role.RadioButton,
+                            onClick = { onStyleChange(option) }).padding(horizontal = 12.dp),
+                        verticalAlignment = Alignment.CenterVertically) {
+                        RadioButton(selected = style == option, onClick = null)
+                        Spacer(Modifier.width(12.dp))
+                        Text(option.label)
+                    }
                 }
             }
         }
-    }
     }
 }
 
