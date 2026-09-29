@@ -75,6 +75,13 @@ release. The in-app updater reads this repository's latest release, not Actions
 artifacts. Re-running a published version leaves its release unchanged; publish
 a newer commit for a new update.
 
+After a PR merges into `main`, **PR Release Reminder** posts a comment linking
+to **Manual Android Release**. Follow the link and select **Run workflow** on
+`main` when ready; the reminder does not start a release. Releases build the
+latest `main`, which may include merges made after the reminder. Closed,
+unmerged PRs receive no reminder, and re-running the reminder workflow does
+not post a duplicate comment.
+
 Like ssMusic, this project bundles a debug signing key
 (`app/debug.keystore`, checked into the repository) that the release workflow
 uses by default. Because the same key signs debug CI builds, manual releases,
