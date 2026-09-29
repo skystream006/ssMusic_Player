@@ -62,6 +62,7 @@ import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.withContext
 import kotlinx.serialization.json.decodeFromJsonElement
 import kotlin.math.roundToInt
+import java.util.Locale
 
 @Composable
 fun PlayerDock(state: PlaybackState, model: MusicViewModel, expand: () -> Unit, requestNotifications: () -> Unit) {
@@ -308,21 +309,39 @@ internal fun LyricsContent(lyrics: SongMetadata?, position: Long, trackKey: Stri
             LazyColumn(modifier.fillMaxWidth().nestedScroll(scrollConnection), state = listState,
                 contentPadding = PaddingValues(horizontal = 28.dp, vertical = 24.dp)) {
                 itemsIndexed(lyrics.sylt) { index, line ->
-                    Text(line.text, modifier = Modifier.fillMaxWidth().clickable {
-                        onSeek((line.time * 1000).toLong())
-                        seekTarget = index.takeUnless { it == active }
-                        manualScroll = listState.isScrollInProgress || dragging
-                        following = true
-                        tap++
-                    }.padding(vertical = 12.dp),
-                        style = if (index == active) MaterialTheme.typography.titleLarge else MaterialTheme.typography.titleMedium,
-                        color = if (index == active) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant)
+                    Row(modifier = Modifier.fillMaxWidth().padding(vertical = 12.dp),
+                        verticalAlignment = Alignment.CenterVertically) {
+                        Text(formatLyricTimestamp(line.time), style = MaterialTheme.typography.labelMedium,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.width(48.dp))
+                        Spacer(Modifier.width(12.dp))
+                        Text(line.text, modifier = Modifier.weight(1f).clickable {
+                            onSeek((line.time * 1000).toLong())
+                            seekTarget = index.takeUnless { it == active }
+                            manualScroll = listState.isScrollInProgress || dragging
+                            following = true
+                            tap++
+                        },
+                            style = if (index == active) MaterialTheme.typography.titleLarge else MaterialTheme.typography.titleMedium,
+                            color = if (index == active) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant)
+                    }
                 }
             }
         } else Column(modifier.fillMaxWidth().verticalScroll(rememberScrollState()).padding(28.dp)) {
             Text(lyrics?.uslt?.ifBlank { null } ?: error ?: if (lyrics == null && !isVideo) "Loading lyrics..." else "No lyrics available",
                 style = MaterialTheme.typography.bodyLarge)
         }
+    }
+}
+
+internal fun formatLyricTimestamp(time: Double): String {
+    val totalSeconds = time.toLong().coerceAtLeast(0)
+    val seconds = totalSeconds % 60
+    val minutes = totalSeconds / 60
+    return if (minutes < 60) {
+        String.format(Locale.ROOT, "%d:%02d", minutes, seconds)
+    } else {
+        val hours = minutes / 60
+        String.format(Locale.ROOT, "%d:%02d:%02d", hours, minutes % 60, seconds)
     }
 }
 

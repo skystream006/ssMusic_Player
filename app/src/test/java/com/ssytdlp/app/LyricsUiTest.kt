@@ -40,6 +40,12 @@ class LyricsUiTest {
     private val preferUslt = mutableStateOf(false)
     private val seeks = mutableListOf<Long>()
 
+    @Test fun synchronizedLyricsShowTheirTimestamps() {
+        showLyrics()
+        compose.onNodeWithText("0:00").assertIsDisplayed()
+        compose.onNodeWithText("3:20").assertIsDisplayed()
+    }
+
     @Test fun unsynchronizedLyricsAreUsedOnlyWhenSynchronizedLyricsAreAbsent() {
         showLyrics()
         compose.onNodeWithText("Line 0").assertIsDisplayed()
