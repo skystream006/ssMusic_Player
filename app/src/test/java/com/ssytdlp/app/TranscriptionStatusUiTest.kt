@@ -40,19 +40,18 @@ class TranscriptionStatusUiTest {
         checkSubtitleAndDetails(lyricsIncluded = true, label = "Lyrics Included")
     }
 
-    @Test fun untranscribedSongAlwaysShowsStatusAndDetails() {
+    @Test fun songWithoutTranscriptionInformationHidesStatus() {
         compose.setContent {
             MusicTheme { TrackRow(Track(name = "song.mp3"), onClick = {}) }
         }
         compose.onNodeWithText("AI Transcribed").assertDoesNotExist()
         compose.onNodeWithText("Lyrics Included").assertDoesNotExist()
         compose.onNodeWithText("song").assertIsDisplayed()
-        compose.onNodeWithText("Not transcribed").assertIsDisplayed().performClick()
-        compose.onNode(isDialog()).assertIsDisplayed()
-        compose.onNodeWithText("No transcription information is available for this song.").assertIsDisplayed()
+        compose.onNodeWithText("Not transcribed").assertDoesNotExist()
+        compose.onNodeWithContentDescription("Not transcribed", substring = true).assertDoesNotExist()
     }
 
-    @Test fun libraryShowsEveryStatusIncludingMissingAndUnknownRecords() {
+    @Test fun libraryShowsKnownStatusesAndOmitsMissingRecords() {
         val record = mutableStateOf<Transcription?>(null)
         val track = Track(jobId = "source", name = "song.mp3")
         compose.setContent {
@@ -65,6 +64,8 @@ class TranscriptionStatusUiTest {
                 ) { _, _ -> }
             }
         }
+        compose.onNodeWithText("Not transcribed").assertDoesNotExist()
+        compose.onNodeWithContentDescription("Not transcribed", substring = true).assertDoesNotExist()
         statuses.forEach { (transcription, label) ->
             compose.runOnIdle { record.value = transcription }
             compose.onNodeWithText(label).assertIsDisplayed()
@@ -104,6 +105,7 @@ class TranscriptionStatusUiTest {
                 }
             }
         }
+        compose.onNodeWithContentDescription("Not transcribed", substring = true).assertDoesNotExist()
         statuses.forEach { (transcription, label) ->
             compose.runOnIdle { record.value = transcription }
             compose.onNodeWithText(label).assertDoesNotExist()
@@ -150,7 +152,6 @@ class TranscriptionStatusUiTest {
     }
 
     private val statuses = listOf(
-        null to "Not transcribed",
         Transcription(status = "sent") to "Transcription request sent",
         Transcription(status = "transcribed") to "AI Transcribed",
         Transcription(status = "transcribed", lyricsIncluded = true) to "Lyrics Included",

@@ -12,7 +12,6 @@ import androidx.compose.material.icons.rounded.HelpOutline
 import androidx.compose.material.icons.rounded.Refresh
 import androidx.compose.material.icons.rounded.Schedule
 import androidx.compose.material.icons.rounded.Subtitles
-import androidx.compose.material.icons.rounded.SubtitlesOff
 import androidx.compose.material3.*
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
@@ -33,13 +32,13 @@ import java.time.ZoneId
 import java.time.format.DateTimeFormatter
 import java.time.format.FormatStyle
 
-internal val Transcription?.label: String
-    get() = when (this?.status) {
+internal val Transcription.label: String
+    get() = when (status) {
         "sent" -> "Transcription request sent"
-        "transcribed" -> if (this?.lyricsIncluded == true) "Lyrics Included" else "AI Transcribed"
+        "transcribed" -> if (lyricsIncluded) "Lyrics Included" else "AI Transcribed"
         "failed" -> "Transcription failed"
         "interrupted" -> "Interrupted"
-        else -> if (this == null) "Not transcribed" else "Transcription status unknown"
+        else -> "Transcription status unknown"
     }
 
 internal fun Transcription.tooltip(formatDate: (String?) -> String = ::transcriptionDate): String = buildList {
@@ -77,10 +76,11 @@ private fun transcriptionDate(value: String?): String {
 
 @Composable
 internal fun TranscriptionStatus(transcription: Transcription?) {
+    if (transcription == null) return
     val label = transcription.label
-    val details = transcription?.tooltip() ?: "No transcription information is available for this song."
+    val details = transcription.tooltip()
     var showDetails by remember(transcription) { mutableStateOf(false) }
-    val color = when (transcription?.status) {
+    val color = when (transcription.status) {
         "failed", "interrupted" -> MaterialTheme.colorScheme.error
         "sent", "transcribed" -> MaterialTheme.colorScheme.primary
         else -> MaterialTheme.colorScheme.onSurfaceVariant
@@ -96,12 +96,12 @@ internal fun TranscriptionStatus(transcription: Transcription?) {
             .semantics { contentDescription = "$label\n$details" }
             .padding(vertical = 4.dp), verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.spacedBy(4.dp)) {
-            Icon(when (transcription?.status) {
+            Icon(when (transcription.status) {
                 "sent" -> Icons.Rounded.Refresh
                 "failed" -> Icons.Rounded.ErrorOutline
                 "interrupted" -> Icons.Rounded.Schedule
                 "transcribed" -> if (transcription.lyricsIncluded) Icons.Rounded.Subtitles else Icons.Rounded.Check
-                else -> if (transcription == null) Icons.Rounded.SubtitlesOff else Icons.Rounded.HelpOutline
+                else -> Icons.Rounded.HelpOutline
             }, null, Modifier.size(24.dp), tint = color)
             if (showLabel) Text(label, style = style, color = color, maxLines = 1)
         }
