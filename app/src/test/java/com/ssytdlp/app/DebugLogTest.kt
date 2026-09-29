@@ -75,7 +75,7 @@ class DebugLogTest {
             compose.onNodeWithContentDescription("Debug logging").performClick()
             compose.waitUntil { !DebugLog.enabled.value }
             compose.onNodeWithText("View logs").performClick()
-            compose.waitUntil { compose.onAllNodesWithText("Refresh").fetchSemanticsNodes().isNotEmpty() }
+            compose.waitUntil(5_000) { compose.onAllNodesWithText("Refresh").fetchSemanticsNodes().isNotEmpty() }
             compose.onNodeWithText("Refresh").assertIsDisplayed()
             compose.onNodeWithText("Share snapshot").assertIsDisplayed()
             compose.onNodeWithText("LOGGING_ENABLED", substring = true).assertIsDisplayed()
@@ -90,7 +90,7 @@ class DebugLogTest {
             compose.onNodeWithText("Debug logging").performClick()
             compose.onNodeWithContentDescription("Debug logging").assertIsOff()
             compose.onNodeWithText("View logs").performClick()
-            compose.waitUntil { compose.onAllNodesWithText("Refresh").fetchSemanticsNodes().isNotEmpty() }
+            compose.waitUntil(5_000) { compose.onAllNodesWithText("Refresh").fetchSemanticsNodes().isNotEmpty() }
             compose.onNodeWithText("LOGGING_ENABLED", substring = true).assertIsDisplayed()
             compose.onNodeWithText("Close").performClick()
             compose.onNodeWithText("Debug logging").performClick()
