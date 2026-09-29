@@ -45,7 +45,7 @@ class TranscriptionStatusUiTest {
         compose.runOnIdle { assertEquals(0, plays) }
     }
 
-    @Test fun tapShowsPersistentDetailsAndCloseButtonDismissesWithoutPlayback() {
+    @Test @GraphicsMode(GraphicsMode.Mode.LEGACY) fun tapShowsPersistentDetailsAndCloseButtonDismissesWithoutPlayback() {
         showTrack()
         openDetails()
         compose.mainClock.advanceTimeBy(600)
@@ -61,7 +61,7 @@ class TranscriptionStatusUiTest {
         compose.runOnIdle { assertEquals(0, plays) }
     }
 
-    @Test fun tappingOutsideDismissesDetailsWithoutPlayingTheTrack() {
+    @Test @GraphicsMode(GraphicsMode.Mode.LEGACY) fun tappingOutsideDismissesDetailsWithoutPlayingTheTrack() {
         showTrack()
         openDetails()
         compose.mainClock.advanceTimeBy(600)
