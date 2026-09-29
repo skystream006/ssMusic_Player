@@ -210,7 +210,7 @@ fun LibraryScreen(model: MusicViewModel, playback: PlaybackState, requestNotific
     val lifecycle = LocalLifecycleOwner.current.lifecycle
     LaunchedEffect(lifecycle) {
         lifecycle.repeatOnLifecycle(Lifecycle.State.STARTED) {
-            while (true) { model.pollLibrary(); delay(10_000) }
+            while (true) { model.pollTranscriptions(); delay(10_000) }
         }
     }
     LibraryContent(model.library, playback, onBrowse = { browser = true }, onPlay = { index ->

@@ -73,4 +73,24 @@ class TranscriptionStatusTest {
         assertEquals(pending, submitting.transcription(track))
         assertEquals(complete, submitting.copy(pendingTranscriptions = emptyMap()).transcription(track))
     }
+
+    @Test fun pollingOnlyUpdatesTranscriptionsAndPreservesTheDisplayedLibraryVersionAndSelection() {
+        val track = Track(jobId = "source", name = "song.mp3")
+        val state = LibraryState(
+            library = Library(version = 4, jobs = listOf(Job(id = "source", playlistTitle = "Original"))),
+            tracks = TrackPage(files = listOf(track), version = 4),
+            selectedId = "playlist", search = "Song", page = 2
+        )
+        val record = Transcription(status = "transcribed")
+        val server = Library(version = 9, jobs = listOf(
+            Job(id = "source", playlistTitle = "Renamed", transcriptions = mapOf(track.name to record)),
+            Job(id = "new-job")
+        ))
+        val refreshed = state.withTranscriptions(server.jobs)
+        assertEquals(state.copy(library = state.library.copy(jobs = listOf(
+            state.library.jobs.single().copy(transcriptions = mapOf(track.name to record))
+        ))), refreshed)
+        assertEquals(record, refreshed.transcription(track))
+        assertNull(refreshed.withTranscriptions(emptyList()).transcription(track))
+    }
 }

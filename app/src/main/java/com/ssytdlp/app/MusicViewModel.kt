@@ -27,6 +27,13 @@ data class LibraryState(
 ) {
     fun transcription(track: Track): Transcription? = pendingTranscriptions[track.key]
         ?: library.jobs.find { it.id == track.jobId }?.transcriptions?.get(track.name)
+
+    fun withTranscriptions(jobs: List<Job>): LibraryState {
+        val latest = jobs.associateBy { it.id }
+        return copy(library = library.copy(jobs = library.jobs.map { job ->
+            job.copy(transcriptions = latest[job.id]?.transcriptions.orEmpty())
+        }))
+    }
 }
 
 class MusicViewModel(application: Application) : AndroidViewModel(application) {
@@ -199,7 +206,10 @@ class MusicViewModel(application: Application) : AndroidViewModel(application) {
     }
 
     suspend fun pollJobs() { runAction { jobs = ApiJson.decodeFromJsonElement(api.request("/api/jobs")) } }
-    suspend fun pollLibrary() { runAction { loadLibrary() } }
+    suspend fun pollTranscriptions() { runAction {
+        val result = ApiJson.decodeFromJsonElement<Library>(api.request("/api/library"))
+        library = library.withTranscriptions(result.jobs)
+    } }
     suspend fun pollSettings() { runAction { backup = api.request("/api/library/backup").jsonObject; health = api.request("/api/health").jsonObject } }
 
     fun createJob(url: String, video: Boolean, metadataOnly: Boolean) = launchAction {
@@ -286,7 +296,7 @@ class MusicViewModel(application: Application) : AndroidViewModel(application) {
             refreshTracks()
         } finally {
             library = library.copy(pendingTranscriptions = library.pendingTranscriptions - track.key)
-            if (sessions.account.value != null) pollLibrary()
+            if (sessions.account.value != null) pollTranscriptions()
         }
     }
 
