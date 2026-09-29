@@ -4,6 +4,9 @@ package com.ssytdlp.app
 
 import android.graphics.BitmapFactory
 import android.util.Base64
+import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.core.snap
+import androidx.compose.animation.core.spring
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
@@ -45,6 +48,7 @@ import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.viewinterop.AndroidView
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.media3.common.Player
@@ -57,6 +61,7 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.withContext
 import kotlinx.serialization.json.decodeFromJsonElement
+import kotlin.math.roundToInt
 
 @Composable
 fun PlayerDock(state: PlaybackState, model: MusicViewModel, expand: () -> Unit, requestNotifications: () -> Unit) {
@@ -91,9 +96,16 @@ fun MiniPlayer(state: PlaybackState, artwork: String?, expand: () -> Unit, toggl
 @Composable
 fun NowPlayingScreen(model: MusicViewModel, state: PlaybackState) {
     var tab by rememberSaveable { mutableIntStateOf(0) }
+    var preferUslt by rememberSaveable(state.track?.key) { mutableStateOf(false) }
+    var artworkDrag by remember(state.track?.key, tab) { mutableFloatStateOf(0f) }
+    val artworkOffset by key(state.track?.key, tab) {
+        animateFloatAsState(artworkDrag, animationSpec = if (artworkDrag == 0f) spring() else snap(),
+            label = "Artwork swipe")
+    }
     Column(Modifier.fillMaxSize().playerTrackSwipes(
-        enabled = state.track != null, nextEnabled = state.queue.size > 1,
-        previous = model.playback::previousTrack, next = model.playback::next
+        enabled = tab == 0 && state.track != null, nextEnabled = state.queue.size > 1,
+        previous = model.playback::previousTrack, next = model.playback::next,
+        trackKey = state.track?.key, onDragDistanceChanged = { artworkDrag = it }
     )) {
         Column(Modifier.fillMaxWidth().padding(horizontal = 20.dp, vertical = 12.dp)) {
             Text("NOW PLAYING", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.primary)
@@ -106,21 +118,28 @@ fun NowPlayingScreen(model: MusicViewModel, state: PlaybackState) {
                     textAlign = TextAlign.Center)
             }
         } else {
+            val hasSylt = model.metadata?.sylt?.isNotEmpty() == true
+            val hasUslt = !model.metadata?.uslt.isNullOrBlank()
+            val showUslt = hasUslt && (preferUslt || !hasSylt)
             val lyricsTabTitle = when {
-                model.metadata?.sylt?.isNotEmpty() == true -> "SYLT Lyrics"
-                !model.metadata?.uslt.isNullOrBlank() -> "USLT Lyrics"
+                showUslt -> "USLT Lyrics"
+                hasSylt -> "SYLT Lyrics"
                 else -> "Lyrics"
             }
             PrimaryTabRow(selectedTabIndex = tab, containerColor = Color.Transparent) {
                 listOf("Player", lyricsTabTitle, "Queue").forEachIndexed { index, title ->
-                    Tab(selected = tab == index, onClick = { tab = index }, text = { Text(title) })
+                    Tab(selected = tab == index, onClick = {
+                        if (index == 1 && tab == 1 && hasSylt && hasUslt) preferUslt = !preferUslt
+                        tab = index
+                    }, text = { Text(title) })
                 }
             }
             when (tab) {
-                0 -> PlayerArtwork(state, model.metadata, Modifier.weight(1f), model.playback.controller) {
+                0 -> PlayerArtwork(state, model.metadata, Modifier.weight(1f), model.playback.controller,
+                    artworkOffset = { artworkOffset }) {
                     model.playback.play(listOfNotNull(state.track?.noVocalsVersion))
                 }
-                1 -> Lyrics(model, state, Modifier.weight(1f))
+                1 -> Lyrics(model, state, Modifier.weight(1f), showUslt)
                 else -> LazyColumn(Modifier.weight(1f)) {
                     itemsIndexed(state.queue, key = { index, item -> "${item.key}:$index" }) { index, queued ->
                        TrackRow(queued, active = index == state.index, onClick = { model.playback.select(index) }) {
@@ -137,38 +156,47 @@ fun NowPlayingScreen(model: MusicViewModel, state: PlaybackState) {
 
 @Composable
 internal fun Modifier.playerTrackSwipes(enabled: Boolean, nextEnabled: Boolean,
-    previous: () -> Unit, next: () -> Unit): Modifier {
+    previous: () -> Unit, next: () -> Unit, trackKey: String? = null,
+    onDragDistanceChanged: (Float) -> Unit = {}): Modifier {
     val currentPrevious by rememberUpdatedState(previous)
     val currentNext by rememberUpdatedState(next)
+    val currentDragDistanceChanged by rememberUpdatedState(onDragDistanceChanged)
     val threshold = with(LocalDensity.current) { 64.dp.toPx() }
-    return if (!enabled) this else pointerInput(nextEnabled, threshold) {
+    return if (!enabled) this else pointerInput(nextEnabled, threshold, trackKey) {
         var distance = 0f
-        detectHorizontalDragGestures(
-            onDragStart = { distance = 0f },
-            onDragCancel = { distance = 0f },
-            onDragEnd = {
-                if (distance <= -threshold && nextEnabled) currentNext()
-                else if (distance >= threshold) currentPrevious()
-                distance = 0f
-            },
-            onHorizontalDrag = { change, amount ->
-                change.consume()
-                distance += amount
-            }
-        )
+        try {
+            detectHorizontalDragGestures(
+                onDragStart = { distance = 0f; currentDragDistanceChanged(0f) },
+                onDragCancel = { distance = 0f; currentDragDistanceChanged(0f) },
+                onDragEnd = {
+                    if (distance <= -threshold && nextEnabled) currentNext()
+                    else if (distance >= threshold) currentPrevious()
+                    distance = 0f
+                    currentDragDistanceChanged(0f)
+                },
+                onHorizontalDrag = { change, amount ->
+                    change.consume()
+                    distance += amount
+                    currentDragDistanceChanged(distance)
+                }
+            )
+        } finally {
+            currentDragDistanceChanged(0f)
+        }
     }
 }
 
 @androidx.annotation.OptIn(UnstableApi::class)
 @Composable
 fun PlayerArtwork(state: PlaybackState, metadata: SongMetadata?, modifier: Modifier = Modifier,
-    controller: MediaController? = null, onInstrumental: () -> Unit = {}) {
+    controller: MediaController? = null, artworkOffset: () -> Float = { 0f }, onInstrumental: () -> Unit = {}) {
     val track = state.track
     Column(modifier.fillMaxWidth().verticalScroll(rememberScrollState()).padding(horizontal = 28.dp, vertical = 24.dp),
         horizontalAlignment = Alignment.CenterHorizontally) {
         if (track?.mediaType == "video") AndroidView(factory = { context -> PlayerView(context).apply { useController = false; player = controller } },
             update = { it.player = controller }, onRelease = { it.player = null }, modifier = Modifier.fillMaxWidth().aspectRatio(16f / 9f))
-        else AlbumArtwork(metadata?.artwork, Modifier.widthIn(max = 320.dp).fillMaxWidth().aspectRatio(1f))
+        else AlbumArtwork(metadata?.artwork, Modifier.offset { IntOffset(artworkOffset().roundToInt(), 0) }
+            .widthIn(max = 320.dp).fillMaxWidth().aspectRatio(1f))
         Spacer(Modifier.height(28.dp))
         Text(metadata?.title?.ifBlank { null } ?: track?.displayTitle.orEmpty(), style = MaterialTheme.typography.headlineSmall,
             textAlign = TextAlign.Center, maxLines = 3, overflow = TextOverflow.Ellipsis)
@@ -213,16 +241,16 @@ fun PlayerTransport(state: PlaybackState, onSeek: (Long) -> Unit, previous: () -
 }
 
 @Composable
-fun Lyrics(model: MusicViewModel, state: PlaybackState, modifier: Modifier) {
+fun Lyrics(model: MusicViewModel, state: PlaybackState, modifier: Modifier, preferUslt: Boolean = false) {
     LyricsContent(model.metadata, state.position, state.track?.key, model.playback::seek, modifier,
-        model.metadataError, state.track?.mediaType == "video")
+        model.metadataError, state.track?.mediaType == "video", preferUslt)
 }
 
 @Composable
 internal fun LyricsContent(lyrics: SongMetadata?, position: Long, trackKey: String?, onSeek: (Long) -> Unit,
-    modifier: Modifier = Modifier, error: String? = null, isVideo: Boolean = false) {
-    key(trackKey, lyrics?.sylt, lyrics?.uslt) {
-        if (lyrics?.sylt?.isNotEmpty() == true) {
+    modifier: Modifier = Modifier, error: String? = null, isVideo: Boolean = false, preferUslt: Boolean = false) {
+    key(trackKey, lyrics?.sylt, lyrics?.uslt, preferUslt) {
+        if (lyrics?.sylt?.isNotEmpty() == true && !(preferUslt && !lyrics.uslt.isNullOrBlank())) {
             val active = lyrics.sylt.indexOfLast { it.time * 1000 <= position }
             val listState = rememberLazyListState()
             val dragging by listState.interactionSource.collectIsDraggedAsState()

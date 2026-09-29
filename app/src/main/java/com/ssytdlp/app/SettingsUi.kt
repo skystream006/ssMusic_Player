@@ -12,7 +12,6 @@ import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
-import androidx.compose.foundation.selection.selectable
 import androidx.compose.foundation.selection.selectableGroup
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.verticalScroll
@@ -60,8 +59,6 @@ fun SettingsScreen(model: MusicViewModel, download: (String, String) -> Unit, on
         Text("Settings", style = MaterialTheme.typography.titleLarge)
         UpdateSettings()
         HorizontalDivider()
-        JobsSetting(onJobs)
-        HorizontalDivider()
         Text(account.user.name, style = MaterialTheme.typography.titleMedium)
         Text(account.origin, style = MaterialTheme.typography.bodyMedium)
         Text("Session expires ${account.session.expiresAt.substringBefore('T')}", style = MaterialTheme.typography.bodySmall)
@@ -92,45 +89,49 @@ fun SettingsScreen(model: MusicViewModel, download: (String, String) -> Unit, on
         EdgeLightingSetting(model.edgeLightingEnabled, model.edgeLightingStyle,
             model::chooseEdgeLightingStyle, model::chooseEdgeLighting)
         HorizontalDivider()
-        Text("Library backup", style = MaterialTheme.typography.titleMedium)
-        SingleChoiceSegmentedButtonRow(Modifier.fillMaxWidth()) {
-            listOf("Android", "iTunes").forEachIndexed { index, label -> SegmentedButton(selected = backupFormat == if (index == 0) "android" else "itunes",
-                onClick = { backupFormat = if (index == 0) "android" else "itunes" }, shape = SegmentedButtonDefaults.itemShape(index, 2)) { Text(label) } }
-        }
-        if (backupFormat == "itunes") OutlinedTextField(destination, { destination = it }, label = { Text("iTunes extraction folder") }, modifier = Modifier.fillMaxWidth())
-        val backup = model.backup
-        val running = backup?.get("running")?.jsonPrimitive?.booleanOrNull == true
-        if (running) {
-            LinearProgressIndicator(Modifier.fillMaxWidth())
-            val progress = backup?.get("progress") as? JsonObject
-            Text("${progress?.get("stage")?.jsonPrimitive?.content ?: "Preparing"}: ${progress?.get("processedSongs")?.jsonPrimitive?.content ?: "0"} / ${progress?.get("totalSongs")?.jsonPrimitive?.content ?: "?"}")
-        }
-        val latest = backup?.get("latest") as? JsonObject
-        if (latest != null) Text("Latest: ${latest["createdAt"]?.jsonPrimitive?.content?.substringBefore('T')}  /  ${latest["songCount"]?.jsonPrimitive?.content} songs")
-        (backup?.get("error") as? JsonPrimitive)?.contentOrNull?.let { Text(it, color = MaterialTheme.colorScheme.error) }
-        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-            FilledTonalButton(onClick = { model.startBackup(backupFormat, destination) }, enabled = !model.busy && !running && (backupFormat == "android" || destination.isNotBlank())) {
-                Icon(Icons.Rounded.Backup, null); Spacer(Modifier.width(8.dp)); Text("Back up")
+        JobsSetting(onJobs)
+        HorizontalDivider()
+        CollapsibleSettingsSection("Library backup", defaultExpanded = false) {
+            SingleChoiceSegmentedButtonRow(Modifier.fillMaxWidth()) {
+                listOf("Android", "iTunes").forEachIndexed { index, label -> SegmentedButton(selected = backupFormat == if (index == 0) "android" else "itunes",
+                    onClick = { backupFormat = if (index == 0) "android" else "itunes" }, shape = SegmentedButtonDefaults.itemShape(index, 2)) { Text(label) } }
             }
-            ToolButton(Icons.Rounded.Download, "Save latest backup", enabled = latest != null && !model.busy) {
-                download("/api/library/export?source=latest", "ssMusic-${latest?.get("format")?.jsonPrimitive?.content ?: "android"}.zip")
+            if (backupFormat == "itunes") OutlinedTextField(destination, { destination = it }, label = { Text("iTunes extraction folder") }, modifier = Modifier.fillMaxWidth())
+            val backup = model.backup
+            val running = backup?.get("running")?.jsonPrimitive?.booleanOrNull == true
+            if (running) {
+                LinearProgressIndicator(Modifier.fillMaxWidth())
+                val progress = backup?.get("progress") as? JsonObject
+                Text("${progress?.get("stage")?.jsonPrimitive?.content ?: "Preparing"}: ${progress?.get("processedSongs")?.jsonPrimitive?.content ?: "0"} / ${progress?.get("totalSongs")?.jsonPrimitive?.content ?: "?"}")
             }
-            ToolButton(Icons.Rounded.Schedule, "Backup schedule", enabled = !model.busy) { schedule = true }
+            val latest = backup?.get("latest") as? JsonObject
+            if (latest != null) Text("Latest: ${latest["createdAt"]?.jsonPrimitive?.content?.substringBefore('T')}  /  ${latest["songCount"]?.jsonPrimitive?.content} songs")
+            (backup?.get("error") as? JsonPrimitive)?.contentOrNull?.let { Text(it, color = MaterialTheme.colorScheme.error) }
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                FilledTonalButton(onClick = { model.startBackup(backupFormat, destination) }, enabled = !model.busy && !running && (backupFormat == "android" || destination.isNotBlank())) {
+                    Icon(Icons.Rounded.Backup, null); Spacer(Modifier.width(8.dp)); Text("Back up")
+                }
+                ToolButton(Icons.Rounded.Download, "Save latest backup", enabled = latest != null && !model.busy) {
+                    download("/api/library/export?source=latest", "ssMusic-${latest?.get("format")?.jsonPrimitive?.content ?: "android"}.zip")
+                }
+                ToolButton(Icons.Rounded.Schedule, "Backup schedule", enabled = !model.busy) { schedule = true }
+            }
+            backup?.get("nextRunAt")?.jsonPrimitive?.contentOrNull?.let { Text("Next backup: $it", style = MaterialTheme.typography.bodySmall) }
         }
-        backup?.get("nextRunAt")?.jsonPrimitive?.contentOrNull?.let { Text("Next backup: $it", style = MaterialTheme.typography.bodySmall) }
         HorizontalDivider()
         DeviceSettings()
         HorizontalDivider()
-        Text("Server", style = MaterialTheme.typography.titleMedium)
-        val media = model.health?.get("media") as? JsonObject
-        Text("Media files: ${media?.get("totalFiles")?.jsonPrimitive?.content ?: "Unavailable"}")
-        ListItem(headlineContent = { Text(if (account.user.role == "admin") "Passkeys and administration" else "Passkeys and account") }, leadingContent = { Icon(Icons.Rounded.Key, null) },
-            trailingContent = { Icon(Icons.AutoMirrored.Rounded.OpenInNew, null) }, modifier = Modifier.clickable {
-                runCatching { CustomTabsIntent.Builder().build().launchUrl(context, Uri.parse("${account.origin}/settings")) }
-                    .onFailure { model.message("Unable to open the browser.") }
-            })
-        OutlinedButton(onClick = { logout = true }, enabled = !model.busy, modifier = Modifier.fillMaxWidth()) {
-            Icon(Icons.AutoMirrored.Rounded.Logout, null); Spacer(Modifier.width(8.dp)); Text("Sign out")
+        CollapsibleSettingsSection("Server", defaultExpanded = false) {
+            val media = model.health?.get("media") as? JsonObject
+            Text("Media files: ${media?.get("totalFiles")?.jsonPrimitive?.content ?: "Unavailable"}")
+            ListItem(headlineContent = { Text(if (account.user.role == "admin") "Passkeys and administration" else "Passkeys and account") }, leadingContent = { Icon(Icons.Rounded.Key, null) },
+                trailingContent = { Icon(Icons.AutoMirrored.Rounded.OpenInNew, null) }, modifier = Modifier.clickable {
+                    runCatching { CustomTabsIntent.Builder().build().launchUrl(context, Uri.parse("${account.origin}/settings")) }
+                        .onFailure { model.message("Unable to open the browser.") }
+                })
+            OutlinedButton(onClick = { logout = true }, enabled = !model.busy, modifier = Modifier.fillMaxWidth()) {
+                Icon(Icons.AutoMirrored.Rounded.Logout, null); Spacer(Modifier.width(8.dp)); Text("Sign out")
+            }
         }
         if (model.busy) TextButton(onClick = model::cancelOperation) { Text("Cancel current transfer") }
         HorizontalDivider()
@@ -164,16 +165,10 @@ internal fun EdgeLightingSetting(
                 modifier = Modifier.semantics { contentDescription = "Edge lighting" })
         }
         if (enabled) {
-            Column(Modifier.selectableGroup()) {
-                EdgeLightingStyle.entries.forEach { option ->
-                    Row(Modifier.fillMaxWidth().heightIn(min = 48.dp)
-                        .selectable(selected = style == option, role = Role.RadioButton,
-                            onClick = { onStyleChange(option) }).padding(horizontal = 12.dp),
-                        verticalAlignment = Alignment.CenterVertically) {
-                        RadioButton(selected = style == option, onClick = null)
-                        Spacer(Modifier.width(12.dp))
-                        Text(option.label)
-                    }
+            FlowRow(Modifier.fillMaxWidth().selectableGroup(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                EdgeLightingStyle.entries.sortedBy { it.label }.forEach { option ->
+                    FilterChip(selected = style == option, onClick = { onStyleChange(option) },
+                        label = { Text(option.label) })
                 }
             }
         }

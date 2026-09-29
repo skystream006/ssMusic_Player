@@ -5,6 +5,7 @@ import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
@@ -20,7 +21,9 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
@@ -75,13 +78,18 @@ fun UpdateSettings(model: AppUpdater = viewModel()) {
             Text("${state.downloaded / 1024} / ${state.total / 1024} KB",
                 style = MaterialTheme.typography.bodySmall)
         } else if (state.busy && !state.automaticCheck) LinearProgressIndicator(Modifier.fillMaxWidth())
-        OutlinedButton(onClick = { model.check() }, enabled = !state.busy && !state.installRequested) { Text("Check for updates") }
-        if (state.availableVersion != null) {
-            Button(onClick = { if (state.ready) model.requestInstall() else confirm = true }, enabled = !state.busy && !state.installRequested) {
-                Text(if (state.ready) "Install update" else "Download and install")
+        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp),
+            verticalAlignment = Alignment.CenterVertically) {
+            OutlinedButton(onClick = { model.check() }, enabled = !state.busy && !state.installRequested,
+                modifier = Modifier.weight(1f)) { Text("Check for updates", textAlign = TextAlign.Center) }
+            if (state.availableVersion != null) {
+                Button(onClick = { if (state.ready) model.requestInstall() else confirm = true }, enabled = !state.busy && !state.installRequested,
+                    modifier = Modifier.weight(1f)) {
+                    Text(if (state.ready) "Install update" else "Download and install", textAlign = TextAlign.Center)
+                }
             }
+            if (state.busy && !state.automaticCheck) TextButton(onClick = model::cancel) { Text("Cancel") }
         }
-        if (state.busy && !state.automaticCheck) TextButton(onClick = model::cancel) { Text("Cancel") }
     }
     if (confirm && state.availableVersion != null) {
         AlertDialog(onDismissRequest = { confirm = false },

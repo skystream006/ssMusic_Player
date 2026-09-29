@@ -53,7 +53,7 @@ data class Track(
 ) {
     val key: String get() = ApiJson.encodeToString(listOf(jobId, name))
     val displayTitle: String get() = title.ifBlank { name.substringAfterLast('/').substringBeforeLast('.') }
-    val displayArtist: String get() = artist.ifBlank { playlistTitle.ifBlank { "Unknown artist" } }
+    val displayArtist: String get() = artist.ifBlank { "Unknown artist" }
 }
 
 @Serializable
