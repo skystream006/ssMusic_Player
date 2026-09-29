@@ -1,6 +1,7 @@
 package com.ssytdlp.app
 
 import android.app.Application
+import android.view.MotionEvent
 import androidx.activity.ComponentActivity
 import androidx.compose.foundation.layout.width
 import androidx.compose.material.icons.Icons
@@ -24,6 +25,7 @@ import org.junit.runner.RunWith
 import org.robolectric.RobolectricTestRunner
 import org.robolectric.annotation.Config
 import org.robolectric.annotation.GraphicsMode
+import org.robolectric.shadows.ShadowDialog
 
 @RunWith(RobolectricTestRunner::class)
 @Config(sdk = [34], application = Application::class, qualifiers = "w360dp-h800dp")
@@ -35,24 +37,49 @@ class TranscriptionStatusUiTest {
     private var plays = 0
     private var menus = 0
 
-    @Test fun hoveringStatusShowsDetailsWithoutPlayingTheTrack() {
+    @Test fun hoveringStatusDoesNotShowDetailsOrPlayTheTrack() {
         showTrack()
         compose.onNodeWithText("Transcription request sent").performMouseInput { moveTo(center) }
+        compose.mainClock.advanceTimeBy(600)
+        compose.onNodeWithText("Requested: Unknown").assertDoesNotExist()
+        compose.runOnIdle { assertEquals(0, plays) }
+    }
+
+    @Test fun tapShowsPersistentDetailsAndCloseButtonDismissesWithoutPlayback() {
+        showTrack()
+        compose.onNodeWithText("Transcription request sent").performTouchInput { click() }
+        compose.mainClock.advanceTimeBy(600)
+        compose.onNodeWithText("Requested: Unknown").assertIsDisplayed()
+        compose.mainClock.advanceTimeBy(10_000)
+        compose.onNodeWithText("Requested: Unknown").assertIsDisplayed()
+        compose.onNodeWithContentDescription("Close transcription details").performClick()
+        compose.mainClock.advanceTimeBy(600)
+        compose.onNodeWithText("Requested: Unknown").assertDoesNotExist()
+        compose.onNodeWithText("Transcription request sent").performClick()
         compose.mainClock.advanceTimeBy(600)
         compose.onNodeWithText("Requested: Unknown").assertIsDisplayed()
         compose.runOnIdle { assertEquals(0, plays) }
     }
 
-    @Test fun longPressAndTapExposeDetailsWithoutTriggeringPlayback() {
+    @Test fun tappingOutsideDismissesDetailsWithoutPlayingTheTrack() {
         showTrack()
-        compose.onNodeWithText("Transcription request sent").performTouchInput { longClick() }
-        compose.mainClock.advanceTimeBy(600)
-        compose.onNodeWithText("Requested: Unknown").assertIsDisplayed()
-        compose.mainClock.advanceTimeBy(2_000)
         compose.onNodeWithText("Transcription request sent").performClick()
         compose.mainClock.advanceTimeBy(600)
         compose.onNodeWithText("Requested: Unknown").assertIsDisplayed()
-        compose.runOnIdle { assertEquals(0, plays) }
+        compose.runOnIdle {
+            val event = MotionEvent.obtain(0, 0, MotionEvent.ACTION_OUTSIDE, -1f, -1f, 0)
+            try {
+                ShadowDialog.getLatestDialog().dispatchTouchEvent(event)
+            } finally {
+                event.recycle()
+            }
+        }
+        compose.mainClock.advanceTimeBy(600)
+        compose.onNodeWithText("Requested: Unknown").assertDoesNotExist()
+        compose.runOnIdle {
+            assertEquals(0, plays)
+            assertEquals(0, menus)
+        }
     }
 
     @Test fun statusChangesPreserveNarrowScreenTrackAndMenuActions() {
