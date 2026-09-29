@@ -177,7 +177,7 @@ it does not prove an installed app's identity. Authorize only sign-ins you start
 | Jobs | Add audio/video YouTube jobs, metadata-only jobs, status polling, search, owner filter, rerun, rename, delete, contributors, add existing files to playlists, save ZIPs |
 | Import | Android document picker for media files or iTunes XML + ZIP; server-local XML + ZIP imports; server upload limits enforced while streaming |
 | Backup | Android/iTunes exports, progress, download latest ZIP, daily/weekly UTC schedules |
-| Settings | Blue Wave appearance, optional server-synced theme and light/dark mode, account expiry, server media count, notification/battery settings, browser account/admin access |
+| Settings | Updates at the top, Blue Wave appearance, edge-lighting toggle, optional server-synced theme and light/dark mode, account expiry, server media count, collapsible device/debugging sections, browser account/admin access |
 
 **Transcribe lyrics** opens the server-compatible **Transcribe Song** options:
 auto-detect or a supported language, Multilingual, a no-vocals karaoke version,
@@ -216,13 +216,19 @@ and Manrope body text. Real album covers remain unchanged. **Settings > Appearan
 can switch back to **Server theme** without overwriting the web client's preferences.
 The choice is stored on this device. Authentication still uses the primary server.
 
-While music is playing, two soft trails circulate around the app and expanded
-player edges in the current theme's accent color. Their glow and subtle visual
-vibration respond to decoded audio levels, without changing the sound, recording
-the microphone, or vibrating the phone. Lighting stops when paused, buffering, or
-in the background; disabling system animations leaves a stationary glow.
+While music is playing, a smooth two-highlight gradient circulates around the app
+and expanded player edges in the current theme's accent color, completing a lap
+every 12 seconds. Its glow and gentle line oscillation respond to decoded audio
+levels, without changing the sound, recording the microphone, or vibrating the
+phone. **Settings > Appearance > Edge lighting** enables or disables the effect
+for both views, and remembers the choice on this device. Lighting stops when
+paused, buffering, or in the background; disabling system animations leaves a stationary glow.
 Audio outputs that bypass PCM processing still show the circulating glow, without
 audio-reactive motion.
+
+Device settings start collapsed when notifications are allowed and battery use is
+unrestricted, and refresh when returning from Android settings. Debug logging
+starts collapsed unless enabled. Either section can be expanded manually.
 
 Artwork and fonts ship in the APK and work offline. Both fonts use the SIL Open Font
 License; their notices are bundled under `app/src/main/assets/font-licenses`.

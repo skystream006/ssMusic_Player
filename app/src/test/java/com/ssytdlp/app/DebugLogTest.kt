@@ -47,7 +47,6 @@ class DebugLogTest {
             DebugLog.initialize(ApplicationProvider.getApplicationContext())
             DebugLog.setEnabled(false)
             DebugLog.clear()
-            compose.setContent { MaterialTheme { DebugLogSettings() } }
         }
 
         @After fun teardown() {
@@ -56,6 +55,8 @@ class DebugLogTest {
         }
 
         @Test fun cancellingModeChoiceKeepsLoggingOff() {
+            showSettings()
+            compose.onNodeWithText("Debug logging").performClick()
             compose.onNodeWithContentDescription("Debug logging").performClick()
             compose.onNodeWithText("Choose debug logging mode").assertIsDisplayed()
             compose.onNodeWithText("Cancel").performClick()
@@ -65,6 +66,8 @@ class DebugLogTest {
         }
 
         @Test fun reactiveChoiceEnablesLoggingAndSavedLogsRemainViewableWhenDisabled() {
+            showSettings()
+            compose.onNodeWithText("Debug logging").performClick()
             compose.onNodeWithContentDescription("Debug logging").performClick()
             compose.onNodeWithText("Reactive").performClick()
             compose.waitUntil { DebugLog.enabled.value }
@@ -76,6 +79,39 @@ class DebugLogTest {
             compose.onNodeWithText("Refresh").assertIsDisplayed()
             compose.onNodeWithText("Share snapshot").assertIsDisplayed()
             compose.onNodeWithText("LOGGING_ENABLED", substring = true).assertIsDisplayed()
+        }
+
+        @Test fun disabledLoggingStartsCollapsedAndSavedLogsCanBeOpenedManually() {
+            DebugLog.setEnabled(true)
+            DebugLog.setEnabled(false)
+            showSettings()
+            compose.onNodeWithText("View logs").assertDoesNotExist()
+            compose.onNodeWithContentDescription("Debug logging").assertDoesNotExist()
+            compose.onNodeWithText("Debug logging").performClick()
+            compose.onNodeWithContentDescription("Debug logging").assertIsOff()
+            compose.onNodeWithText("View logs").performClick()
+            compose.waitUntil { compose.onAllNodesWithText("Refresh").fetchSemanticsNodes().isNotEmpty() }
+            compose.onNodeWithText("LOGGING_ENABLED", substring = true).assertIsDisplayed()
+            compose.onNodeWithText("Close").performClick()
+            compose.onNodeWithText("Debug logging").performClick()
+            compose.onNodeWithText("View logs").assertDoesNotExist()
+            assertFalse(DebugLog.enabled.value)
+        }
+
+        @Test fun enabledLoggingStartsExpandedAndCanBeManuallyCollapsed() {
+            DebugLog.setEnabled(true)
+            showSettings()
+            compose.onNodeWithContentDescription("Debug logging").assertIsOn()
+            compose.onNodeWithText("View logs").assertIsDisplayed()
+            compose.onNodeWithText("Debug logging").performClick()
+            compose.onNodeWithText("View logs").assertDoesNotExist()
+            assertTrue(DebugLog.enabled.value)
+            compose.onNodeWithText("Debug logging").performClick()
+            compose.onNodeWithContentDescription("Debug logging").assertIsOn()
+        }
+
+        private fun showSettings() {
+            compose.setContent { MaterialTheme { DebugLogSettings() } }
         }
     }
 
