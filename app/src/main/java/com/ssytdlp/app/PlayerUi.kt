@@ -106,8 +106,13 @@ fun NowPlayingScreen(model: MusicViewModel, state: PlaybackState) {
                     textAlign = TextAlign.Center)
             }
         } else {
+            val lyricsTabTitle = when {
+                model.metadata?.sylt?.isNotEmpty() == true -> "SYLT Lyrics"
+                !model.metadata?.uslt.isNullOrBlank() -> "USLT Lyrics"
+                else -> "Lyrics"
+            }
             PrimaryTabRow(selectedTabIndex = tab, containerColor = Color.Transparent) {
-                listOf("Player", "Lyrics", "Queue").forEachIndexed { index, title ->
+                listOf("Player", lyricsTabTitle, "Queue").forEachIndexed { index, title ->
                     Tab(selected = tab == index, onClick = { tab = index }, text = { Text(title) })
                 }
             }
