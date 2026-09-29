@@ -215,7 +215,7 @@ class SettingsUiTest {
             }
             compose.onNodeWithText("Jobs").assertDoesNotExist()
             compose.onNodeWithText("Library backup").assertDoesNotExist()
-            compose.onNodeWithText("Device").assertIsDisplayed()
+            compose.onNodeWithText("Device").performScrollTo().assertIsDisplayed()
         }
     }
 
