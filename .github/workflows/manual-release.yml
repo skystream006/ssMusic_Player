@@ -74,11 +74,12 @@ jobs:
           SIGNING_ENABLED: ${{ steps.signing.outputs.enabled }}
         run: |
           version=$(python3 -c 'import json; print(json.load(open("app/build/outputs/apk/release/output-metadata.json"))["elements"][0]["versionName"])')
+          apk=$(python3 -c 'import json; print(json.load(open("app/build/outputs/apk/release/output-metadata.json"))["elements"][0]["outputFile"])')
           name="ssMusic-Player-v${version}"
           if [ "$SIGNING_ENABLED" != "true" ]; then
             name="${name}-unsigned"
           fi
-          cp app/build/outputs/apk/release/app-release.apk "${name}.apk"
+          cp "app/build/outputs/apk/release/${apk}" "${name}.apk"
           echo "version=${version}" >> "$GITHUB_OUTPUT"
           echo "name=${name}" >> "$GITHUB_OUTPUT"
       - uses: actions/upload-artifact@v6
