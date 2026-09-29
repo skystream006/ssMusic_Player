@@ -17,6 +17,7 @@ import androidx.compose.ui.test.junit4.createAndroidComposeRule
 import androidx.lifecycle.ViewModelStore
 import androidx.test.core.app.ApplicationProvider
 import com.ssytdlp.app.core.Track
+import com.ssytdlp.app.core.TrackPage
 import com.ssytdlp.app.core.Job
 import com.ssytdlp.app.core.Library
 import com.ssytdlp.app.core.LyricLine
@@ -105,6 +106,25 @@ class NowPlayingScreenTest {
             library.value = library.value.copy(pendingTranscriptions = mapOf(track.key to Transcription(status = "sent")))
         }
         compose.onNodeWithContentDescription("Transcription request sent", substring = true).assertIsDisplayed()
+    }
+
+    @Test fun queueShowsRefreshedStatusInsteadOfItsOriginalTrackSnapshot() {
+        val track = Track(jobId = "source", name = "song.mp3", transcription = Transcription(status = "sent"))
+        val library = ReflectionHelpers.getField<MutableState<LibraryState>>(model, "library\$delegate")
+        compose.setContent { MusicTheme { NowPlayingScreen(model, PlaybackState(track = track, queue = listOf(track))) } }
+        compose.onNodeWithText("Queue").performClick()
+        compose.onNodeWithContentDescription("Transcription request sent", substring = true).assertIsDisplayed()
+        compose.runOnIdle {
+            library.value = library.value.withTrackPage(TrackPage(files = listOf(
+                track.copy(transcription = Transcription(status = "transcribed", lyricsIncluded = true)))))
+        }
+        compose.onNodeWithText("Lyrics Included").assertIsDisplayed()
+        compose.runOnIdle {
+            library.value = library.value.withTrackPage(TrackPage(files = listOf(Track("other", "another.mp3"))))
+                .withTranscriptions(Job(id = "source", transcriptions = mapOf(
+                    track.name to Transcription(status = "failed"))), listOf(track))
+        }
+        compose.onNodeWithText("Transcription failed").assertIsDisplayed()
     }
 
     @Test fun lyricsTabTracksDisplayedSourceWithoutChangingSelection() {

@@ -49,7 +49,7 @@ data class Track(
     val album: String = "", val rating: Int = 0, val playlistId: String? = null,
     val playlistTitle: String = "", val streamUrl: String? = null, val downloadUrl: String? = null,
     val isPlayable: Boolean = true, val mediaType: String = "audio", val sizeBytes: Long = 0,
-    val noVocalsVersion: Track? = null
+    val noVocalsVersion: Track? = null, val transcription: Transcription? = null
 ) {
     val key: String get() = ApiJson.encodeToString(listOf(jobId, name))
     val displayTitle: String get() = title.ifBlank { name.substringAfterLast('/').substringBeforeLast('.') }

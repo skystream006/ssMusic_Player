@@ -197,8 +197,9 @@ transcription, Lyrics included, failed, interrupted, not transcribed (no record)
 or unknown (an unrecognized server status). When the label cannot fit, a status
 icon remains visible. Tap the label or icon for request/finish times, saved language and options, and any error;
 tap X or outside the popup to close it. Supplied lyrics are never shown in the
-popup. Status refreshes every 10 seconds
-while the library is visible and after a transcription request.
+popup. Status is read from each server track and refreshes every 10 seconds
+while Library or Now Playing is visible, including queued songs from other pages,
+and after a transcription request.
 
 Library mutations use the server's compact, version-checked endpoints. Conflicts
 refresh the library and require retrying the intended action. Ownership and

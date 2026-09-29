@@ -35,6 +35,28 @@ class ModelsTest {
         assertEquals(9L, page.version)
     }
 
+    @Test fun `track pages decode inline transcription details from compact library responses`() {
+        val page = ApiJson.decodeFromString<TrackPage>("""{"files":[
+            {"jobId":"source","name":"folder/song.mp3","transcription":{
+                "status":"transcribed","requestedAt":"2026-09-28T12:00:00Z",
+                "completedAt":"2026-09-28T12:01:00Z","lyricsIncluded":true,
+                "options":{"language":"vi","Multilingual":false,"NoVocals":true,
+                    "VietLyricsFallback":true,"lyrics_mode":"align"}}},
+            {"jobId":"source","name":"failed.mp3","transcription":{"status":"failed","error":"Service unavailable"}},
+            {"jobId":"source","name":"missing.mp3"},
+            {"jobId":"source","name":"null.mp3","transcription":null}
+        ]}""")
+        val done = page.files.first().transcription!!
+        assertEquals("transcribed", done.status)
+        assertEquals("2026-09-28T12:00:00Z", done.requestedAt)
+        assertEquals("2026-09-28T12:01:00Z", done.completedAt)
+        assertTrue(done.lyricsIncluded)
+        assertEquals(SavedTranscriptionOptions("vi", false, true, true, "align"), done.options)
+        assertEquals("Service unavailable", page.files[1].transcription!!.error)
+        assertNull(page.files[2].transcription)
+        assertNull(page.files[3].transcription)
+    }
+
     @Test fun `library reads filename keyed transcription records and saved request options`() {
         val library = ApiJson.decodeFromString<Library>("""{"jobs":[{"id":"source","transcriptions":{
             "folder/song.mp3":{"status":"transcribed","requestedAt":"2026-09-28T12:00:00Z",
