@@ -109,7 +109,7 @@ class TranscriptionStatusUiTest {
         compose.setContent {
             MusicTheme {
                 CompositionLocalProvider(LocalDensity provides Density(LocalDensity.current.density, fontScale = 2f)) {
-                    Box(Modifier.width(120.dp)) {
+                    Box(Modifier.width(48.dp)) {
                         TranscriptionStatus(Transcription(status = "sent"))
                     }
                 }
