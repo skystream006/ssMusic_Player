@@ -113,12 +113,57 @@ class MusicUiTest {
         savePreview("library-phone")
     }
 
-    @Test fun navigationShowsJobsInsteadOfDownloads() {
+    @Test fun navigationShowsLibraryAndNowPlayingWithoutJobsOrSettings() {
         var selected = -1
         compose.setContent { MusicTheme { MusicNavigation(0) { selected = it } } }
         compose.onNodeWithText("Downloads").assertDoesNotExist()
-        compose.onNodeWithText("Jobs").assertIsDisplayed().performClick()
+        compose.onNodeWithText("Jobs").assertDoesNotExist()
+        compose.onNodeWithText("Settings").assertDoesNotExist()
+        compose.onNodeWithText("Library").assertIsSelected()
+        compose.onNodeWithText("Now Playing").assertIsDisplayed().performClick()
         compose.runOnIdle { assertEquals(1, selected) }
+        compose.onNodeWithText("Library").performClick()
+        compose.runOnIdle { assertEquals(0, selected) }
+    }
+
+    @Test fun nowPlayingNavigationCanBeSelected() {
+        compose.setContent { MusicTheme { MusicNavigation(1) {} } }
+        compose.onNodeWithText("Now Playing").assertIsSelected()
+        compose.onNodeWithText("Library").assertIsNotSelected()
+    }
+
+    @Test
+    @Config(qualifiers = "w320dp-h780dp")
+    fun settingsIsToTheRightOfRefreshAndWorksWhileRefreshIsDisabled() {
+        var settingsOpened = false
+        var refreshed = false
+        var backed = false
+        compose.setContent {
+            MusicTheme {
+                MusicTopBar("Alex", false, onRefresh = { refreshed = true },
+                    onSettings = { settingsOpened = true }, onBack = { backed = true })
+            }
+        }
+        val refresh = compose.onNodeWithContentDescription("Refresh").assertIsDisplayed().assertIsNotEnabled()
+        val settings = compose.onNodeWithContentDescription("Settings").assertIsDisplayed()
+        val refreshBounds = refresh.getUnclippedBoundsInRoot()
+        val settingsBounds = settings.getUnclippedBoundsInRoot()
+        assertTrue(settingsBounds.left >= refreshBounds.right)
+        assertTrue(settingsBounds.right <= 320.dp)
+        settings.performClick()
+        compose.onNodeWithContentDescription("Back").performClick()
+        compose.runOnIdle {
+            assertTrue(settingsOpened)
+            assertTrue(backed)
+            assertFalse(refreshed)
+        }
+    }
+
+    @Test fun settingsJobsEntryOpensJobs() {
+        var jobsOpened = false
+        compose.setContent { MusicTheme { JobsSetting { jobsOpened = true } } }
+        compose.onNodeWithText("Jobs").assertIsDisplayed().performClick()
+        compose.runOnIdle { assertTrue(jobsOpened) }
     }
 
     @Test fun nowPlayingSwipesSkipExactlyOneSongInEachDirection() {
@@ -306,7 +351,7 @@ class MusicUiTest {
         compose.setContent {
             CompositionLocalProvider(LocalDensity provides Density(LocalDensity.current.density, fontScale)) {
                 MusicTheme {
-                    Scaffold(containerColor = MaterialTheme.colorScheme.background, topBar = { MusicTopBar("Alex", true) {} }, bottomBar = {
+                    Scaffold(containerColor = MaterialTheme.colorScheme.background, topBar = { MusicTopBar("Alex", true, {}, {}) }, bottomBar = {
                         Column {
                             MiniPlayer(playback, null, {}, {}, {})
                             MusicNavigation(0) {}

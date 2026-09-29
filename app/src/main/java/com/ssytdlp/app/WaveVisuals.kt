@@ -13,6 +13,7 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.rounded.ArrowBack
 import androidx.compose.material.icons.rounded.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
@@ -54,8 +55,12 @@ fun WaveBackdrop(modifier: Modifier = Modifier, opacity: Float = 1f) {
 }
 
 @Composable
-fun MusicTopBar(userName: String, refreshEnabled: Boolean, onRefresh: () -> Unit) {
-    TopAppBar(colors = TopAppBarDefaults.topAppBarColors(containerColor = MaterialTheme.colorScheme.background), title = {
+fun MusicTopBar(userName: String, refreshEnabled: Boolean, onRefresh: () -> Unit,
+    onSettings: () -> Unit, onBack: (() -> Unit)? = null) {
+    TopAppBar(colors = TopAppBarDefaults.topAppBarColors(containerColor = MaterialTheme.colorScheme.background),
+        navigationIcon = {
+            if (onBack != null) ToolButton(Icons.AutoMirrored.Rounded.ArrowBack, "Back", onClick = onBack)
+        }, title = {
         Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
             Icon(Icons.Rounded.GraphicEq, null, Modifier.size(26.dp), tint = MaterialTheme.colorScheme.primary)
             Column {
@@ -64,14 +69,17 @@ fun MusicTopBar(userName: String, refreshEnabled: Boolean, onRefresh: () -> Unit
                     color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 1, overflow = TextOverflow.Ellipsis)
             }
         }
-    }, actions = { ToolButton(Icons.Rounded.Refresh, "Refresh", enabled = refreshEnabled, onClick = onRefresh) })
+    }, actions = {
+        ToolButton(Icons.Rounded.Refresh, "Refresh", enabled = refreshEnabled, onClick = onRefresh)
+        ToolButton(Icons.Rounded.Settings, "Settings", onClick = onSettings)
+    })
 }
 
 @Composable
 fun MusicNavigation(selected: Int, onSelect: (Int) -> Unit) {
     HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.6f))
     NavigationBar(containerColor = MaterialTheme.colorScheme.background, tonalElevation = 0.dp) {
-        listOf("Library" to Icons.Rounded.LibraryMusic, "Jobs" to Icons.Rounded.Download, "Settings" to Icons.Rounded.Settings)
+        listOf("Library" to Icons.Rounded.LibraryMusic, "Now Playing" to Icons.Rounded.GraphicEq)
             .forEachIndexed { index, (label, icon) ->
                 NavigationBarItem(selected = selected == index, onClick = { onSelect(index) }, icon = { Icon(icon, label, Modifier.size(22.dp)) },
                     label = { Text(label) }, colors = NavigationBarItemDefaults.colors(

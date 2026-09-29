@@ -42,7 +42,7 @@ import kotlinx.coroutines.delay
 import kotlinx.serialization.json.*
 
 @Composable
-fun SettingsScreen(model: MusicViewModel, download: (String, String) -> Unit) {
+fun SettingsScreen(model: MusicViewModel, download: (String, String) -> Unit, onJobs: () -> Unit) {
     val context = LocalContext.current
     val lifecycle = LocalLifecycleOwner.current.lifecycle
     val currentAccount by model.sessions.account.collectAsStateWithLifecycle()
@@ -59,6 +59,8 @@ fun SettingsScreen(model: MusicViewModel, download: (String, String) -> Unit) {
     Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(horizontal = 20.dp, vertical = 12.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
         Text("Settings", style = MaterialTheme.typography.titleLarge)
         UpdateSettings()
+        HorizontalDivider()
+        JobsSetting(onJobs)
         HorizontalDivider()
         Text(account.user.name, style = MaterialTheme.typography.titleMedium)
         Text(account.origin, style = MaterialTheme.typography.bodyMedium)
@@ -137,6 +139,15 @@ fun SettingsScreen(model: MusicViewModel, download: (String, String) -> Unit) {
     }
     if (logout) ConfirmDialog("Sign out?", "Playback will stop and this device's server session will be revoked.", { logout = false }) { logout = false; model.logout() }
     if (schedule) BackupScheduleDialog(model) { schedule = false }
+}
+
+@Composable
+internal fun JobsSetting(onJobs: () -> Unit) {
+    ListItem(headlineContent = { Text("Jobs") },
+        supportingContent = { Text("Add downloads and manage server jobs") },
+        leadingContent = { Icon(Icons.Rounded.Download, null) },
+        trailingContent = { Icon(Icons.AutoMirrored.Rounded.KeyboardArrowRight, null) },
+        modifier = Modifier.clickable(onClick = onJobs))
 }
 
 @Composable

@@ -207,7 +207,12 @@ deletes it for all users. Both require confirmation.
 
 Playback queues initially contain the displayed page; **Add to queue** can add
 tracks from other pages. Browsing another page or tab does not replace playback.
-In **Now Playing**, swipe left for the next song or right for the previous song.
+Use the bottom navigation to switch between **Library** and the dedicated
+**Now Playing** page; tapping the mini-player also opens **Now Playing**.
+Open **Settings** from the upper-right gear, to the right of **Refresh**, and
+select **Jobs** there to add downloads or manage server jobs.
+In **Now Playing**, the Player, Lyrics, and Queue tabs retain all playback controls.
+Swipe left for the next song or right for the previous song.
 The playback position slider still seeks within the current song.
 Organization remains shared with the web client; selecting **Server theme** also
 uses the web client's saved colors and light/dark preference. Advanced server
@@ -237,7 +242,7 @@ two-highlight gradient completing a lap every 12 seconds), and **Audio waveform*
 (a border shaped by decoded PCM audio samples). The switch and selected style
 are remembered on this device, including when lighting is turned off.
 
-While music is playing, the selected effect follows the app and expanded player
+While music is playing, the selected effect follows the app and Now Playing page
 edges in the current theme's accent color. It does not change the sound or record
 the microphone. Lighting stops when paused, buffering, or in the background;
 disabling system animations leaves a stationary glow. Audio outputs that bypass

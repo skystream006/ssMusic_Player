@@ -89,44 +89,43 @@ fun MiniPlayer(state: PlaybackState, artwork: String?, expand: () -> Unit, toggl
 
 @androidx.annotation.OptIn(UnstableApi::class)
 @Composable
-fun PlayerSheet(model: MusicViewModel, state: PlaybackState, dismiss: () -> Unit) {
+fun NowPlayingScreen(model: MusicViewModel, state: PlaybackState) {
     var tab by rememberSaveable { mutableIntStateOf(0) }
-    ModalBottomSheet(onDismissRequest = dismiss, sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true),
-        containerColor = MaterialTheme.colorScheme.background, tonalElevation = 0.dp) {
-        Box {
-            Column(Modifier.fillMaxHeight(0.94f).playerTrackSwipes(
-                enabled = state.track != null, nextEnabled = state.queue.size > 1,
-                previous = model.playback::previousTrack, next = model.playback::next
-            )) {
-                Row(Modifier.fillMaxWidth().padding(horizontal = 20.dp), verticalAlignment = Alignment.CenterVertically) {
-                    Column(Modifier.weight(1f)) {
-                        Text("NOW PLAYING", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.primary)
-                        Text(state.track?.playlistTitle?.ifBlank { null } ?: "Your queue", style = MaterialTheme.typography.titleLarge,
-                            maxLines = 1, overflow = TextOverflow.Ellipsis)
-                    }
-                    ToolButton(Icons.Rounded.Close, "Close player", onClick = dismiss)
-                }
-                PrimaryTabRow(selectedTabIndex = tab, containerColor = Color.Transparent) {
-                    listOf("Player", "Lyrics", "Queue").forEachIndexed { index, title -> Tab(selected = tab == index, onClick = { tab = index }, text = { Text(title) }) }
-                }
-                when (tab) {
-                    0 -> PlayerArtwork(state, model.metadata, Modifier.weight(1f), model.playback.controller) {
-                        model.playback.play(listOfNotNull(state.track?.noVocalsVersion))
-                    }
-                    1 -> Lyrics(model, state, Modifier.weight(1f))
-                    else -> LazyColumn(Modifier.weight(1f)) {
-                        itemsIndexed(state.queue, key = { index, item -> "${item.key}:$index" }) { index, queued ->
-                            TrackRow(queued, active = index == state.index, onClick = { model.playback.select(index) }) {
-                                ToolButton(Icons.Rounded.Close, "Remove from queue") { model.playback.remove(index) }
-                            }
-                        }
-                    }
-                }
-                PlayerTransport(state, model.playback::seek, model.playback::previous, model.playback::toggle,
-                    model.playback::next, model.playback::shuffle, model.playback::repeat)
+    Column(Modifier.fillMaxSize().playerTrackSwipes(
+        enabled = state.track != null, nextEnabled = state.queue.size > 1,
+        previous = model.playback::previousTrack, next = model.playback::next
+    )) {
+        Column(Modifier.fillMaxWidth().padding(horizontal = 20.dp, vertical = 12.dp)) {
+            Text("NOW PLAYING", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.primary)
+            Text(state.track?.playlistTitle?.ifBlank { null } ?: "Your queue", style = MaterialTheme.typography.titleLarge,
+                maxLines = 1, overflow = TextOverflow.Ellipsis)
+        }
+        if (state.track == null) {
+            Box(Modifier.weight(1f).fillMaxWidth(), contentAlignment = Alignment.Center) {
+                Text("Choose a song from Library to start playing.", Modifier.padding(24.dp),
+                    textAlign = TextAlign.Center)
             }
-            PlaybackEdgeLighting(state.playing, Modifier.matchParentSize(),
-                enabled = model.edgeLightingEnabled, style = model.edgeLightingStyle)
+        } else {
+            PrimaryTabRow(selectedTabIndex = tab, containerColor = Color.Transparent) {
+                listOf("Player", "Lyrics", "Queue").forEachIndexed { index, title ->
+                    Tab(selected = tab == index, onClick = { tab = index }, text = { Text(title) })
+                }
+            }
+            when (tab) {
+                0 -> PlayerArtwork(state, model.metadata, Modifier.weight(1f), model.playback.controller) {
+                    model.playback.play(listOfNotNull(state.track?.noVocalsVersion))
+                }
+                1 -> Lyrics(model, state, Modifier.weight(1f))
+                else -> LazyColumn(Modifier.weight(1f)) {
+                    itemsIndexed(state.queue, key = { index, item -> "${item.key}:$index" }) { index, queued ->
+                       TrackRow(queued, active = index == state.index, onClick = { model.playback.select(index) }) {
+                           ToolButton(Icons.Rounded.Close, "Remove from queue") { model.playback.remove(index) }
+                       }
+                    }
+                }
+            }
+            PlayerTransport(state, model.playback::seek, model.playback::previous, model.playback::toggle,
+                model.playback::next, model.playback::shuffle, model.playback::repeat)
         }
     }
 }
