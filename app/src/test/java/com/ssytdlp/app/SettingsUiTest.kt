@@ -149,7 +149,7 @@ class SettingsUiTest {
             val buttons = listOf(check, download, cancel).map { it.assertIsDisplayed().getUnclippedBoundsInRoot() }
             buttons.zipWithNext().forEach { (first, second) ->
                 assertTrue(first.right < second.left)
-                assertEquals(first.center.y.value, second.center.y.value, 1f)
+                assertEquals(((first.top + first.bottom) / 2).value, ((second.top + second.bottom) / 2).value, 1f)
             }
             buttons.forEach { assertTrue(it.left >= 0.dp && it.right <= 320.dp) }
             compose.runOnIdle { state.value = state.value.copy(busy = false, downloading = false) }
