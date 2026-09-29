@@ -20,6 +20,14 @@ class ModelsTest {
         assertEquals("[\"job-id\",\"[NoVocals]/A \\\"song\\\".mp3\"]", Track("job-id", "[NoVocals]/A \"song\".mp3").key)
     }
 
+    @Test fun `artist display never falls back to the playlist title`() {
+        val track = Track(name = "song.mp3", playlistTitle = "My playlist")
+        assertEquals("Unknown artist", track.displayArtist)
+        assertEquals("Unknown artist", track.copy(artist = " ").displayArtist)
+        assertEquals("Northbound", track.copy(artist = "Northbound").displayArtist)
+        assertEquals("My playlist", track.playlistTitle)
+    }
+
     @Test fun `models read nullable metadata and additional server properties`() {
         val page = ApiJson.decodeFromString<TrackPage>("""{"files":[{"name":"song.mp3","title":null,"playlistTitle":null,"streamUrl":"/api/test","extra":true}],"page":2,"totalPages":4,"version":9}""")
         assertEquals("song", page.files.single().displayTitle)

@@ -37,6 +37,7 @@ class LyricsUiTest {
     private val trackKey = mutableStateOf("first-track")
     private val error = mutableStateOf<String?>(null)
     private val video = mutableStateOf(false)
+    private val preferUslt = mutableStateOf(false)
     private val seeks = mutableListOf<Long>()
 
     @Test fun unsynchronizedLyricsAreUsedOnlyWhenSynchronizedLyricsAreAbsent() {
@@ -46,6 +47,27 @@ class LyricsUiTest {
         compose.runOnIdle { metadata.value = metadata.value!!.copy(sylt = emptyList()) }
         compose.onNodeWithText("Unsynchronized lyrics").assertIsDisplayed()
         compose.onNodeWithText("Line 0").assertDoesNotExist()
+    }
+
+    @Test fun plainLyricsCanBeSelectedWithoutSeekingAndSwitchBackToFollowing() {
+        showLyrics()
+        compose.runOnIdle { preferUslt.value = true }
+        compose.onNodeWithText("Unsynchronized lyrics").assertIsDisplayed().assertHasNoClickAction()
+        compose.onNodeWithText("Line 0").assertDoesNotExist()
+        compose.runOnIdle {
+            assertTrue(seeks.isEmpty())
+            position.longValue = 200_000
+            preferUslt.value = false
+        }
+        compose.onNodeWithText("Line 20").assertIsDisplayed().performClick()
+        compose.runOnIdle { assertEquals(listOf(200_000L), seeks) }
+    }
+
+    @Test fun missingPlainLyricsFallBackToSynchronizedLyricsEvenWhenPreferred() {
+        preferUslt.value = true
+        metadata.value = metadata.value!!.copy(uslt = " ")
+        showLyrics()
+        compose.onNodeWithText("Line 0").assertIsDisplayed()
     }
 
     @Test fun loadingErrorEmptyAndVideoFallbacksArePreserved() {
@@ -257,7 +279,7 @@ class LyricsUiTest {
                 LyricsContent(metadata.value, position.longValue, trackKey.value, {
                     seeks += it
                     if (seekImmediately) position.longValue = it
-                }, Modifier.size(320.dp, 240.dp).testTag("lyrics"), error.value, video.value)
+                }, Modifier.size(320.dp, 240.dp).testTag("lyrics"), error.value, video.value, preferUslt.value)
             }
         }
     }

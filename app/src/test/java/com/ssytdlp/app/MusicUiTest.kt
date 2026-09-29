@@ -166,6 +166,23 @@ class MusicUiTest {
         compose.runOnIdle { assertTrue(jobsOpened) }
     }
 
+    @Test fun songSubtitlesDoNotDisplayPlaylistTitlesWhenArtistIsMissing() {
+        val track = Track("preview", "song.mp3", title = "Blue hour", playlistTitle = "Night Sessions")
+        val playback = PlaybackState(track = track, queue = listOf(track))
+        compose.setContent {
+            MusicTheme {
+                Column {
+                    TrackRow(track, onClick = {})
+                    MiniPlayer(playback, null, {}, {}, {})
+                    PlayerArtwork(playback, null)
+                }
+            }
+        }
+        compose.onAllNodesWithText("Blue hour").assertCountEquals(3)
+        compose.onAllNodesWithText("Unknown artist").assertCountEquals(3)
+        compose.onNodeWithText("Night Sessions").assertDoesNotExist()
+    }
+
     @Test fun nowPlayingSwipesSkipExactlyOneSongInEachDirection() {
         var previous = 0
         var next = 0

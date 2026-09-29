@@ -212,7 +212,11 @@ Use the bottom navigation to switch between **Library** and the dedicated
 Open **Settings** from the upper-right gear, to the right of **Refresh**, and
 select **Jobs** there to add downloads or manage server jobs.
 In **Now Playing**, the Player, Lyrics, and Queue tabs retain all playback controls.
-Swipe left for the next song or right for the previous song.
+On **Player** only, swipe left for the next song or right for the previous song;
+the album artwork follows your finger and settles back when the gesture ends.
+Lyrics and Queue gestures never skip songs. When both lyric sources are available,
+tap the selected **Lyrics** tab again to alternate between **SYLT** (synchronized)
+and **USLT** (plain) lyrics. Each new song starts with SYLT when available.
 The playback position slider still seeks within the current song.
 Organization remains shared with the web client; selecting **Server theme** also
 uses the web client's saved colors and light/dark preference. Advanced server
@@ -236,10 +240,11 @@ can switch back to **Server theme** without overwriting the web client's prefere
 The choice is stored on this device. Authentication still uses the primary server.
 
 **Settings > Appearance > Edge lighting** is disabled by default. Enabling it
-expands four styles: **Oscillation** (audio-reactive ripples), **Vibration**
-(a rapidly pulsing border, not phone vibration), **Circulating** (a smooth
-two-highlight gradient completing a lap every 12 seconds), and **Audio waveform**
-(a border shaped by decoded PCM audio samples). The switch and selected style
+expands alphabetized, horizontal choices that wrap on smaller screens:
+**Audio waveform** (a border shaped by decoded PCM audio samples),
+**Circulating** (a smooth two-highlight gradient completing a lap every 12 seconds),
+**Oscillation** (audio-reactive ripples), and **Vibration** (a rapidly pulsing
+border, not phone vibration). The switch and selected style
 are remembered on this device, including when lighting is turned off.
 
 While music is playing, the selected effect follows the app and Now Playing page
@@ -247,6 +252,10 @@ edges in the current theme's accent color. It does not change the sound or recor
 the microphone. Lighting stops when paused, buffering, or in the background;
 disabling system animations leaves a stationary glow. Audio outputs that bypass
 PCM processing still show a glow, but only the Circulating style moves.
+
+In Settings, **Jobs** sits directly below **Appearance**. App update buttons are
+arranged side by side. **Library backup** and **Server** start collapsed and can
+be expanded by tapping their headings.
 
 Device settings start collapsed when notifications are allowed and battery use is
 unrestricted, and refresh when returning from Android settings. Debug logging
