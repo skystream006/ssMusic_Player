@@ -23,14 +23,14 @@ class LibraryStateTest {
 
     @Test fun `page refresh updates stale queued tracks without changing selection or pending status`() {
         val queued = track.copy(transcription = sent)
-        val initial = LibraryState(selectedId = "playlist", search = "song", page = 2,
+        val initial = LibraryState(library = Library(version = 7), selectedId = "playlist", search = "song", page = 2,
             pendingTranscriptions = mapOf(track.key to sent))
         val result = TrackPage(files = listOf(track.copy(transcription = done)), page = 2, version = 9)
         val refreshed = initial.withTrackPage(result)
         assertEquals("playlist", refreshed.selectedId)
         assertEquals("song", refreshed.search)
         assertEquals(2, refreshed.page)
-        assertEquals(9L, refreshed.library.version)
+        assertEquals(7L, refreshed.library.version)
         assertEquals(result, refreshed.tracks)
         assertEquals(sent, refreshed.transcription(queued))
         assertEquals(done, refreshed.copy(pendingTranscriptions = emptyMap()).transcription(queued))

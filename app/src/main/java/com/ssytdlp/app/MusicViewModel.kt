@@ -33,7 +33,7 @@ data class LibraryState(
         else track.transcription ?: library.jobs.find { it.id == track.jobId }?.transcriptions?.get(track.name)
 
     fun withTrackPage(result: TrackPage): LibraryState = copy(
-        tracks = result, page = result.page, library = library.copy(version = result.version),
+        tracks = result, page = result.page,
         transcriptions = transcriptions + result.files.associate { track ->
             track.key to (track.transcription ?: library.jobs.find { it.id == track.jobId }?.transcriptions?.get(track.name))
         })
@@ -215,28 +215,31 @@ class MusicViewModel(application: Application) : AndroidViewModel(application) {
     }
 
     suspend fun pollJobs() { runAction { jobs = ApiJson.decodeFromJsonElement(api.request("/api/jobs")) } }
-    suspend fun pollTranscriptions(extraTracks: List<Track> = emptyList()) = transcriptionPoll.withLock {
-        val account = sessions.account.value ?: return@withLock
-        val generation = transcriptionGeneration
-        val selection = library
-        val request = trackRequest
-        var refreshedKeys = emptySet<String>()
-        if (!selection.loading) runAction {
-            val result = api.trackPage(selection)
-            if (sessions.account.value == account && generation == transcriptionGeneration &&
-                trackRequest === request) {
-                library = library.withTrackPage(result)
-                refreshedKeys = result.files.map { it.key }.toSet()
+    suspend fun pollTranscriptions(extraTracks: List<Track> = emptyList()) {
+        val account = sessions.account.value ?: return
+        transcriptionPoll.withLock {
+            if (sessions.account.value != account) return@withLock
+            val generation = transcriptionGeneration
+            val selection = library
+            val request = trackRequest
+            var refreshedKeys = emptySet<String>()
+            if (!selection.loading) runAction {
+                val result = api.trackPage(selection)
+                if (sessions.account.value == account && generation == transcriptionGeneration &&
+                    trackRequest === request) {
+                    library = library.withTrackPage(result)
+                    refreshedKeys = result.files.map { it.key }.toSet()
+                }
             }
-        }
-        val queued = (playback.state.value.queue + extraTracks).distinctBy { it.key }
-            .filter { it.key !in refreshedKeys }
-        for ((jobId, tracks) in queued.groupBy { it.jobId }) {
-            if (sessions.account.value != account || generation != transcriptionGeneration) return@withLock
-            runAction {
-                val job = ApiJson.decodeFromJsonElement<Job>(api.request("/api/jobs/${encode(jobId)}"))
-                if (sessions.account.value == account && generation == transcriptionGeneration) {
-                    library = library.withTranscriptions(job, tracks)
+            val queued = (playback.state.value.queue + extraTracks).distinctBy { it.key }
+                .filter { it.key !in refreshedKeys }
+            for ((jobId, tracks) in queued.groupBy { it.jobId }) {
+                if (sessions.account.value != account || generation != transcriptionGeneration) return@withLock
+                runAction {
+                    val job = ApiJson.decodeFromJsonElement<Job>(api.request("/api/jobs/${encode(jobId)}"))
+                    if (sessions.account.value == account && generation == transcriptionGeneration) {
+                        library = library.withTranscriptions(job, tracks)
+                    }
                 }
             }
         }
@@ -318,6 +321,7 @@ class MusicViewModel(application: Application) : AndroidViewModel(application) {
 
     fun transcribe(track: Track, options: TranscriptionOptions) = launchAction {
         val body = options.toRequestBody()
+        val account = sessions.account.value
         transcriptionGeneration++
         val pending = Transcription(status = "sent", requestedAt = java.time.Instant.now().toString(),
             lyricsIncluded = options.addLyrics, options = ApiJson.decodeFromJsonElement<SavedTranscriptionOptions>(body))
@@ -331,10 +335,9 @@ class MusicViewModel(application: Application) : AndroidViewModel(application) {
             refreshTracks()
         } finally {
             transcriptionGeneration++
-            try {
-                if (sessions.account.value != null) pollTranscriptions(listOf(track))
-            } finally {
-                library = library.copy(pendingTranscriptions = library.pendingTranscriptions - track.key)
+            library = library.copy(pendingTranscriptions = library.pendingTranscriptions - track.key)
+            if (account != null && sessions.account.value == account) viewModelScope.launch {
+                if (sessions.account.value == account) pollTranscriptions(listOf(track))
             }
         }
     }

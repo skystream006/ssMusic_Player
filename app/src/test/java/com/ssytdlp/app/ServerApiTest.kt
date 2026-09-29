@@ -155,7 +155,7 @@ class ServerApiTest {
     }
 
     @Test fun `track status refresh reads inline records and preserves the selected page query`() = runBlocking {
-        var state = LibraryState(library = Library(jobs = listOf(Job(id = "source"))),
+        var state = LibraryState(library = Library(version = 7, jobs = listOf(Job(id = "source"))),
             selectedId = "folder/playlist", search = "a & b", page = 2)
         server.enqueue(MockResponse().setBody("""{"files":[{"jobId":"source","name":"song.mp3",
             "transcription":{"status":"sent"}}],"page":2,"version":9}"""))
@@ -172,5 +172,6 @@ class ServerApiTest {
                 server.takeRequest(2, TimeUnit.SECONDS)!!.path)
         }
         assertTrue(state.library.jobs.single().transcriptions.isEmpty())
+        assertEquals(7L, state.library.version)
     }
 }
