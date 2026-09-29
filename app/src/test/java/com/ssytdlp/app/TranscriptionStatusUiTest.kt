@@ -47,7 +47,7 @@ class TranscriptionStatusUiTest {
 
     @Test fun tapShowsPersistentDetailsAndCloseButtonDismissesWithoutPlayback() {
         showTrack()
-        compose.onNodeWithText("Transcription request sent").performTouchInput { click() }
+        openDetails()
         compose.mainClock.advanceTimeBy(600)
         compose.onNodeWithText("Requested: Unknown").assertIsDisplayed()
         compose.mainClock.advanceTimeBy(10_000)
@@ -55,7 +55,7 @@ class TranscriptionStatusUiTest {
         compose.onNodeWithContentDescription("Close transcription details").performClick()
         compose.mainClock.advanceTimeBy(600)
         compose.onNodeWithText("Requested: Unknown").assertDoesNotExist()
-        compose.onNodeWithText("Transcription request sent").performClick()
+        openDetails()
         compose.mainClock.advanceTimeBy(600)
         compose.onNodeWithText("Requested: Unknown").assertIsDisplayed()
         compose.runOnIdle { assertEquals(0, plays) }
@@ -63,7 +63,7 @@ class TranscriptionStatusUiTest {
 
     @Test fun tappingOutsideDismissesDetailsWithoutPlayingTheTrack() {
         showTrack()
-        compose.onNodeWithText("Transcription request sent").performClick()
+        openDetails()
         compose.mainClock.advanceTimeBy(600)
         compose.onNodeWithText("Requested: Unknown").assertIsDisplayed()
         compose.runOnIdle {
@@ -99,6 +99,13 @@ class TranscriptionStatusUiTest {
         compose.onNodeWithText("Transcription failed").assertDoesNotExist()
         update(null)
         compose.onNodeWithText("Song").assertIsDisplayed()
+    }
+
+    private fun openDetails() {
+        compose.onNodeWithContentDescription("Transcription request sent\nRequested: Unknown").performClick()
+        compose.waitUntil(5_000) {
+            compose.onAllNodesWithText("Requested: Unknown").fetchSemanticsNodes().isNotEmpty()
+        }
     }
 
     private fun showTrack() {
