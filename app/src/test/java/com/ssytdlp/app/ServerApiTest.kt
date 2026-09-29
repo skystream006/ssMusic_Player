@@ -48,6 +48,14 @@ class ServerApiTest {
 
     @After fun teardown() { server.shutdown() }
 
+    @Test fun `shared users do not log health or jobs statuses`() {
+        val shared = account!!.copy(user = account!!.user.copy(role = "Shared"))
+        assertFalse(shouldLogApiStatus(shared, "/api/health"))
+        assertFalse(shouldLogApiStatus(shared, "/api/jobs"))
+        assertTrue(shouldLogApiStatus(shared, "/api/library"))
+        assertTrue(shouldLogApiStatus(account, "/api/health"))
+    }
+
     @Test fun `app login targets the configured server hostname`() {
         val pending = AppServer.beginLogin(origin)
         val login = URI(AuthProtocol.loginUrl(pending))
