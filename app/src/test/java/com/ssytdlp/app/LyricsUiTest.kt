@@ -43,6 +43,7 @@ class LyricsUiTest {
     @Test fun synchronizedLyricsShowTheirTimestamps() {
         showLyrics()
         compose.onNodeWithText("00:00:00").assertIsDisplayed()
+        compose.onNodeWithTag("lyrics").performScrollToIndex(20)
         compose.onNodeWithText("00:03:20").assertIsDisplayed()
     }
 
