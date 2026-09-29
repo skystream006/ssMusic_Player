@@ -17,8 +17,11 @@ import androidx.compose.ui.test.junit4.createAndroidComposeRule
 import androidx.lifecycle.ViewModelStore
 import androidx.test.core.app.ApplicationProvider
 import com.ssytdlp.app.core.Track
+import com.ssytdlp.app.core.Job
+import com.ssytdlp.app.core.Library
 import com.ssytdlp.app.core.LyricLine
 import com.ssytdlp.app.core.SongMetadata
+import com.ssytdlp.app.core.Transcription
 import java.security.Provider
 import java.security.Security
 import org.junit.After
@@ -84,6 +87,24 @@ class NowPlayingScreenTest {
         restoration.emulateSavedInstanceStateRestore()
         compose.onNodeWithText("Queue").assertIsSelected()
         compose.onNodeWithText("Blue hour").assertIsDisplayed()
+    }
+
+    @Test fun queueShowsSavedAndPendingTranscriptionStatus() {
+        val track = Track(jobId = "source", name = "song.mp3")
+        val library = ReflectionHelpers.getField<MutableState<LibraryState>>(model, "library\$delegate")
+        compose.runOnIdle {
+            library.value = LibraryState(library = Library(jobs = listOf(Job(id = "source",
+                transcriptions = mapOf(track.name to Transcription(status = "transcribed", lyricsIncluded = true))))))
+        }
+        compose.setContent { MusicTheme { NowPlayingScreen(model, PlaybackState(track = track, queue = listOf(track))) } }
+        compose.onNodeWithText("Queue").performClick()
+        compose.onNodeWithText("Lyrics Included").assertIsDisplayed().performClick()
+        compose.onNode(isDialog()).assertIsDisplayed()
+        compose.onNodeWithContentDescription("Close transcription details").performClick()
+        compose.runOnIdle {
+            library.value = library.value.copy(pendingTranscriptions = mapOf(track.key to Transcription(status = "sent")))
+        }
+        compose.onNodeWithContentDescription("Transcription request sent", substring = true).assertIsDisplayed()
     }
 
     @Test fun lyricsTabTracksDisplayedSourceWithoutChangingSelection() {

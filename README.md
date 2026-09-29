@@ -192,9 +192,10 @@ Viet Lyrics Fallback (locks the language to Vietnamese), and optional supplied
 lyrics in Prompt, Align, or Correct mode. All toggles start off; supplied lyrics
 must be nonblank and at most 100,000 characters.
 
-Library tracks show the server's transcription status: request sent, AI
-transcription, Lyrics included, failed, or interrupted. Tap
-the status for request/finish times, saved language and options, and any error;
+Library and queue tracks always show transcription status: request sent, AI
+transcription, Lyrics included, failed, interrupted, not transcribed (no record),
+or unknown (an unrecognized server status). When the label cannot fit, a status
+icon remains visible. Tap the label or icon for request/finish times, saved language and options, and any error;
 tap X or outside the popup to close it. Supplied lyrics are never shown in the
 popup. Status refreshes every 10 seconds
 while the library is visible and after a transcription request.

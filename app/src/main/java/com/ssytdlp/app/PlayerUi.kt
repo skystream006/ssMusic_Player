@@ -142,7 +142,8 @@ fun NowPlayingScreen(model: MusicViewModel, state: PlaybackState) {
                 1 -> Lyrics(model, state, Modifier.weight(1f), showUslt)
                 else -> LazyColumn(Modifier.weight(1f)) {
                     itemsIndexed(state.queue, key = { index, item -> "${item.key}:$index" }) { index, queued ->
-                       TrackRow(queued, active = index == state.index, onClick = { model.playback.select(index) }) {
+                       TrackRow(queued, active = index == state.index, transcription = model.library.transcription(queued),
+                           onClick = { model.playback.select(index) }) {
                            ToolButton(Icons.Rounded.Close, "Remove from queue") { model.playback.remove(index) }
                        }
                     }
