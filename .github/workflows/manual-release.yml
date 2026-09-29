@@ -23,62 +23,51 @@ jobs:
           distribution: temurin
           java-version: '17'
       - name: Check release signing configuration
-        id: signing
         env:
           KEYSTORE_BASE64: ${{ secrets.APK_SIGNING_KEYSTORE_BASE64 }}
           STORE_PASSWORD: ${{ secrets.APK_SIGNING_STORE_PASSWORD }}
           KEY_ALIAS: ${{ secrets.APK_SIGNING_KEY_ALIAS }}
           KEY_PASSWORD: ${{ secrets.APK_SIGNING_KEY_PASSWORD }}
         run: |
-          if [ -z "$KEYSTORE_BASE64" ] && [ -z "$STORE_PASSWORD" ] \
-            && [ -z "$KEY_ALIAS" ] && [ -z "$KEY_PASSWORD" ]; then
-            echo "enabled=false" >> "$GITHUB_OUTPUT"
-            echo "::warning::Signing secrets are not configured; building an unsigned APK artifact without publishing a GitHub release."
-          elif [ -n "$KEYSTORE_BASE64" ] && [ -n "$STORE_PASSWORD" ] \
-            && [ -n "$KEY_ALIAS" ] && [ -n "$KEY_PASSWORD" ]; then
-            echo "enabled=true" >> "$GITHUB_OUTPUT"
-          else
-            echo "::error::Configure all four APK signing secrets, or remove them all to build an unsigned artifact."
+          if [ -z "$KEYSTORE_BASE64" ] || [ -z "$STORE_PASSWORD" ] \
+            || [ -z "$KEY_ALIAS" ] || [ -z "$KEY_PASSWORD" ]; then
+            echo "::error::Configure all four APK_SIGNING_* secrets documented in README.md. Releases require a permanent signing key so Android can install updates without removing the app."
             exit 1
           fi
       - name: Restore distribution signing key
-        if: steps.signing.outputs.enabled == 'true'
         env:
           KEYSTORE_BASE64: ${{ secrets.APK_SIGNING_KEYSTORE_BASE64 }}
-          APK_SIGNING_STORE_FILE: ${{ github.workspace }}/distribution.jks
+          APK_SIGNING_STORE_FILE: ${{ runner.temp }}/distribution.jks
           APK_SIGNING_STORE_PASSWORD: ${{ secrets.APK_SIGNING_STORE_PASSWORD }}
           APK_SIGNING_KEY_ALIAS: ${{ secrets.APK_SIGNING_KEY_ALIAS }}
         run: |
           umask 077
           printf '%s' "$KEYSTORE_BASE64" | base64 --decode > "$APK_SIGNING_STORE_FILE"
           if ! keytool -list -keystore "$APK_SIGNING_STORE_FILE" \
-            -storepass "$APK_SIGNING_STORE_PASSWORD" \
+            -storepass:env APK_SIGNING_STORE_PASSWORD \
             -alias "$APK_SIGNING_KEY_ALIAS" >/dev/null; then
             echo "::error::The release keystore is invalid, or its store password/key alias does not match the configured signing secrets."
             exit 1
           fi
       - name: Test, lint, and build release APK
         env:
-          SIGNING_ENABLED: ${{ steps.signing.outputs.enabled }}
+          APK_SIGNING_STORE_FILE: ${{ runner.temp }}/distribution.jks
           APK_SIGNING_STORE_PASSWORD: ${{ secrets.APK_SIGNING_STORE_PASSWORD }}
           APK_SIGNING_KEY_ALIAS: ${{ secrets.APK_SIGNING_KEY_ALIAS }}
           APK_SIGNING_KEY_PASSWORD: ${{ secrets.APK_SIGNING_KEY_PASSWORD }}
-        run: |
-          if [ "$SIGNING_ENABLED" = "true" ]; then
-            export APK_SIGNING_STORE_FILE="${GITHUB_WORKSPACE}/distribution.jks"
-          fi
-          sh ./gradlew :core:test :app:testDebugUnitTest :app:lintRelease :app:assembleRelease
-      - name: Name APK
+        run: sh ./gradlew :core:test :app:testDebugUnitTest :app:lintRelease :app:assembleRelease
+      - name: Verify and name installable APK
         id: apk
-        env:
-          SIGNING_ENABLED: ${{ steps.signing.outputs.enabled }}
         run: |
           version=$(python3 -c 'import json; print(json.load(open("app/build/outputs/apk/release/output-metadata.json"))["elements"][0]["versionName"])')
           apk=$(python3 -c 'import json; print(json.load(open("app/build/outputs/apk/release/output-metadata.json"))["elements"][0]["outputFile"])')
-          name="ssMusic-Player-v${version}"
-          if [ "$SIGNING_ENABLED" != "true" ]; then
-            name="${name}-unsigned"
+          apksigner=$(find "${ANDROID_HOME}/build-tools" -type f -name apksigner | sort -V | tail -n 1)
+          if [ -z "$apksigner" ]; then
+            echo "::error::Android SDK apksigner is required to verify the release."
+            exit 1
           fi
+          "$apksigner" verify --verbose --print-certs "app/build/outputs/apk/release/${apk}"
+          name="ssMusic-Player-v${version}"
           cp "app/build/outputs/apk/release/${apk}" "${name}.apk"
           echo "version=${version}" >> "$GITHUB_OUTPUT"
           echo "name=${name}" >> "$GITHUB_OUTPUT"
@@ -88,7 +77,6 @@ jobs:
           path: ${{ steps.apk.outputs.name }}.apk
           if-no-files-found: error
       - name: Publish latest GitHub release
-        if: steps.signing.outputs.enabled == 'true'
         env:
           GH_TOKEN: ${{ github.token }}
           GH_REPO: ${{ github.repository }}
@@ -104,7 +92,7 @@ jobs:
             --target "$(git rev-parse HEAD)" --title "ssMusic Player ${VERSION}" \
             --generate-notes --latest
       - name: Remove signing key
-        if: always() && steps.signing.outputs.enabled == 'true'
+        if: always()
         env:
-          APK_SIGNING_STORE_FILE: ${{ github.workspace }}/distribution.jks
+          APK_SIGNING_STORE_FILE: ${{ runner.temp }}/distribution.jks
         run: rm -f "$APK_SIGNING_STORE_FILE"

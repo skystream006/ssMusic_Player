@@ -157,8 +157,10 @@ fun MusicApp(model: MusicViewModel, requestNotifications: () -> Unit) {
 fun ServerSetupScreen(model: MusicViewModel, modifier: Modifier = Modifier) {
     var value by rememberSaveable { mutableStateOf("") }
     var error by remember { mutableStateOf<String?>(null) }
+    var appSettings by rememberSaveable { mutableStateOf(false) }
     ServerSetupContent(value, error, false, modifier, onValueChange = { value = it; error = null },
-        onContinue = { error = model.setServerOrigin(value) })
+        onContinue = { error = model.setServerOrigin(value) }, onAppSettings = { appSettings = true })
+    if (appSettings) AppSettingsSheet { appSettings = false }
 }
 
 @Composable
@@ -180,7 +182,12 @@ fun LoginScreen(model: MusicViewModel, modifier: Modifier = Modifier) {
                 CustomTabsIntent.Builder().build().launchUrl(context, Uri.parse(origin))
             } catch (error: Exception) { model.message(error.message ?: "Unable to open registration.") }
         }, onAppSettings = { appSettings = true }, onChangeServer = { model.changeServer() })
-    if (appSettings) ModalBottomSheet(onDismissRequest = { appSettings = false },
+    if (appSettings) AppSettingsSheet { appSettings = false }
+}
+
+@Composable
+private fun AppSettingsSheet(onDismiss: () -> Unit) {
+    ModalBottomSheet(onDismissRequest = onDismiss,
         sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)) {
         Column(Modifier.fillMaxWidth().verticalScroll(rememberScrollState()).padding(20.dp),
             verticalArrangement = Arrangement.spacedBy(12.dp)) {

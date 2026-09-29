@@ -88,6 +88,23 @@ class MusicUiTest {
         compose.runOnIdle { assertTrue(signIn) }
     }
 
+    @Test fun updatesAreAccessibleBeforeEnteringAServer() {
+        var settingsOpened = false
+        var continued = false
+        compose.setContent {
+            MusicTheme {
+                ServerSetupContent("", null, false, onValueChange = {},
+                    onContinue = { continued = true }, onAppSettings = { settingsOpened = true })
+            }
+        }
+        compose.onNodeWithText("Continue").assertIsNotEnabled()
+        compose.onNodeWithText("Updates and diagnostics").performScrollTo().assertIsDisplayed().performClick()
+        compose.runOnIdle {
+            assertTrue(settingsOpened)
+            assertFalse(continued)
+        }
+    }
+
     @Test fun libraryWaveLayoutRendersOnPhone() {
         showLibraryPreview()
         compose.onNodeWithText("All Music").assertIsDisplayed()
