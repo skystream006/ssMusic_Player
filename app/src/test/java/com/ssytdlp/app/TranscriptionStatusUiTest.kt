@@ -37,7 +37,7 @@ class TranscriptionStatusUiTest {
 
     @Test fun hoveringStatusShowsDetailsWithoutPlayingTheTrack() {
         showTrack()
-        compose.onNodeWithText("Transcription request sent").performMouseInput { enter() }
+        compose.onNodeWithText("Transcription request sent").performMouseInput { moveTo(center) }
         compose.mainClock.advanceTimeBy(600)
         compose.onNodeWithText("Requested: Unknown").assertIsDisplayed()
         compose.runOnIdle { assertEquals(0, plays) }
