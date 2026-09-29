@@ -117,6 +117,12 @@ fun MusicApp(model: MusicViewModel, requestNotifications: () -> Unit) {
     val snackbar = remember { SnackbarHostState() }
     var screen by rememberSaveable { mutableIntStateOf(0) }
     var settingsReturnScreen by rememberSaveable { mutableIntStateOf(0) }
+    val lifecycle = LocalLifecycleOwner.current.lifecycle
+    LaunchedEffect(lifecycle, account, screen) {
+        if (account != null && screen in 0..1) lifecycle.repeatOnLifecycle(Lifecycle.State.STARTED) {
+            while (true) { model.pollTranscriptions(); delay(10_000) }
+        }
+    }
     val back: () -> Unit = {
         screen = when (screen) {
             3 -> 2
@@ -220,12 +226,6 @@ private fun AppSettingsSheet(onDismiss: () -> Unit) {
 @Composable
 fun LibraryScreen(model: MusicViewModel, playback: PlaybackState, requestNotifications: () -> Unit, download: (String, String) -> Unit) {
     var browser by rememberSaveable { mutableStateOf(false) }
-    val lifecycle = LocalLifecycleOwner.current.lifecycle
-    LaunchedEffect(lifecycle) {
-        lifecycle.repeatOnLifecycle(Lifecycle.State.STARTED) {
-            while (true) { model.pollTranscriptions(); delay(10_000) }
-        }
-    }
     LibraryContent(model.library, playback, onBrowse = { browser = true }, onPlay = { index ->
         requestNotifications()
         model.playback.play(model.library.tracks.files, index)

@@ -2,6 +2,8 @@ package com.ssytdlp.app
 
 import com.ssytdlp.app.core.Account
 import com.ssytdlp.app.core.AuthProtocol
+import com.ssytdlp.app.core.Job
+import com.ssytdlp.app.core.Library
 import com.ssytdlp.app.core.Session
 import com.ssytdlp.app.core.User
 import java.io.ByteArrayOutputStream
@@ -150,5 +152,25 @@ class ServerApiTest {
         assertEquals(409, failure.status)
         assertEquals(JsonPrimitive("CONFLICT"), failure.payload?.get("code"))
         assertNotNull(account)
+    }
+
+    @Test fun `track status refresh reads inline records and preserves the selected page query`() = runBlocking {
+        var state = LibraryState(library = Library(jobs = listOf(Job(id = "source"))),
+            selectedId = "folder/playlist", search = "a & b", page = 2)
+        server.enqueue(MockResponse().setBody("""{"files":[{"jobId":"source","name":"song.mp3",
+            "transcription":{"status":"sent"}}],"page":2,"version":9}"""))
+        state = state.withTrackPage(api.trackPage(state))
+        val queued = state.tracks.files.single()
+        assertEquals("sent", state.transcription(queued)?.status)
+        server.enqueue(MockResponse().setBody("""{"files":[{"jobId":"source","name":"song.mp3",
+            "transcription":{"status":"transcribed","lyricsIncluded":true}}],"page":2,"version":9}"""))
+        state = state.withTrackPage(api.trackPage(state))
+        assertEquals("transcribed", state.transcription(queued)?.status)
+        assertEquals(true, state.transcription(queued)?.lyricsIncluded)
+        repeat(2) {
+            assertEquals("/api/library/tracks?page=2&pageSize=50&search=a%20%26%20b&entryId=folder%2Fplaylist",
+                server.takeRequest(2, TimeUnit.SECONDS)!!.path)
+        }
+        assertTrue(state.library.jobs.single().transcriptions.isEmpty())
     }
 }

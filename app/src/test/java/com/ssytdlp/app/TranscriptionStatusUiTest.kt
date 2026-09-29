@@ -71,6 +71,25 @@ class TranscriptionStatusUiTest {
         }
     }
 
+    @Test fun libraryShowsRefreshedInlineStatusesWithEmptyJobSummaries() {
+        val track = Track(jobId = "source", name = "song.mp3")
+        val state = mutableStateOf(LibraryState(library = Library(jobs = listOf(Job(id = "source"))),
+            tracks = TrackPage(files = listOf(track), total = 1)))
+        compose.setContent {
+            MusicTheme {
+                LibraryContent(state.value, PlaybackState(connected = true),
+                    onBrowse = {}, onPlay = {}, onSearch = {}, onPage = {}) { _, _ -> }
+            }
+        }
+        statuses.forEach { (transcription, label) ->
+            compose.runOnIdle {
+                state.value = state.value.withTrackPage(
+                    TrackPage(files = listOf(track.copy(transcription = transcription)), total = 1))
+            }
+            compose.onNodeWithText(label).assertIsDisplayed()
+        }
+    }
+
     @Test fun narrowRowsKeepClickableStatusIconsWithoutPlayingSongOrOpeningMenu() {
         val record = mutableStateOf<Transcription?>(null)
         var playCount = 0

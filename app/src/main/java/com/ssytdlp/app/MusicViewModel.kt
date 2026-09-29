@@ -17,23 +17,30 @@ import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.flow.distinctUntilChangedBy
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 import kotlinx.serialization.json.*
 
 data class LibraryState(
     val library: Library = Library(), val tracks: TrackPage = TrackPage(),
     val selectedId: String? = null, val search: String = "", val page: Int = 1,
     val loading: Boolean = false,
-    val pendingTranscriptions: Map<String, Transcription> = emptyMap()
+    val pendingTranscriptions: Map<String, Transcription> = emptyMap(),
+    val transcriptions: Map<String, Transcription?> = emptyMap()
 ) {
     fun transcription(track: Track): Transcription? = pendingTranscriptions[track.key]
-        ?: library.jobs.find { it.id == track.jobId }?.transcriptions?.get(track.name)
+        ?: if (transcriptions.containsKey(track.key)) transcriptions[track.key]
+        else track.transcription ?: library.jobs.find { it.id == track.jobId }?.transcriptions?.get(track.name)
 
-    fun withTranscriptions(jobs: List<Job>): LibraryState {
-        val latest = jobs.associateBy { it.id }
-        return copy(library = library.copy(jobs = library.jobs.map { job ->
-            job.copy(transcriptions = latest[job.id]?.transcriptions.orEmpty())
-        }))
-    }
+    fun withTrackPage(result: TrackPage): LibraryState = copy(
+        tracks = result, page = result.page, library = library.copy(version = result.version),
+        transcriptions = transcriptions + result.files.associate { track ->
+            track.key to (track.transcription ?: library.jobs.find { it.id == track.jobId }?.transcriptions?.get(track.name))
+        })
+
+    fun withTranscriptions(job: Job, tracks: List<Track>): LibraryState = copy(
+        transcriptions = transcriptions + tracks.filter { it.jobId == job.id }
+            .associate { it.key to job.transcriptions[it.name] })
 }
 
 class MusicViewModel(application: Application) : AndroidViewModel(application) {
@@ -71,6 +78,8 @@ class MusicViewModel(application: Application) : AndroidViewModel(application) {
     val serverOrigin = app.serverConfig.origin
     private var trackRequest: CoroutineJob? = null
     private var operation: CoroutineJob? = null
+    private val transcriptionPoll = Mutex()
+    private var transcriptionGeneration = 0L
 
     init {
         viewModelScope.launch {
@@ -191,11 +200,8 @@ class MusicViewModel(application: Application) : AndroidViewModel(application) {
             library = library.copy(loading = true)
             try {
                 if (debounce) delay(300)
-                val selection = library
-                val query = listOfNotNull("page=${selection.page}", "pageSize=50", "search=${encode(selection.search)}",
-                    selection.selectedId?.let { "entryId=${encode(it)}" }).joinToString("&")
-                val result = ApiJson.decodeFromJsonElement<TrackPage>(api.request("/api/library/tracks?$query"))
-                library = library.copy(tracks = result, page = result.page, library = library.library.copy(version = result.version))
+                val result = api.trackPage(library)
+                library = library.withTrackPage(result)
             } catch (error: Exception) {
                 if (error is CancellationException) throw error
                 message(error.message ?: "Unable to load music.")
@@ -209,10 +215,32 @@ class MusicViewModel(application: Application) : AndroidViewModel(application) {
     }
 
     suspend fun pollJobs() { runAction { jobs = ApiJson.decodeFromJsonElement(api.request("/api/jobs")) } }
-    suspend fun pollTranscriptions() { runAction {
-        val result = ApiJson.decodeFromJsonElement<Library>(api.request("/api/library"))
-        library = library.withTranscriptions(result.jobs)
-    } }
+    suspend fun pollTranscriptions(extraTracks: List<Track> = emptyList()) = transcriptionPoll.withLock {
+        val account = sessions.account.value ?: return@withLock
+        val generation = transcriptionGeneration
+        val selection = library
+        val request = trackRequest
+        var refreshedKeys = emptySet<String>()
+        if (!selection.loading) runAction {
+            val result = api.trackPage(selection)
+            if (sessions.account.value == account && generation == transcriptionGeneration &&
+                trackRequest === request) {
+                library = library.withTrackPage(result)
+                refreshedKeys = result.files.map { it.key }.toSet()
+            }
+        }
+        val queued = (playback.state.value.queue + extraTracks).distinctBy { it.key }
+            .filter { it.key !in refreshedKeys }
+        for ((jobId, tracks) in queued.groupBy { it.jobId }) {
+            if (sessions.account.value != account || generation != transcriptionGeneration) return@withLock
+            runAction {
+                val job = ApiJson.decodeFromJsonElement<Job>(api.request("/api/jobs/${encode(jobId)}"))
+                if (sessions.account.value == account && generation == transcriptionGeneration) {
+                    library = library.withTranscriptions(job, tracks)
+                }
+            }
+        }
+    }
     suspend fun pollSettings() { runAction { backup = api.request("/api/library/backup").jsonObject; health = api.request("/api/health").jsonObject } }
 
     fun createJob(url: String, video: Boolean, metadataOnly: Boolean) = launchAction {
@@ -290,16 +318,24 @@ class MusicViewModel(application: Application) : AndroidViewModel(application) {
 
     fun transcribe(track: Track, options: TranscriptionOptions) = launchAction {
         val body = options.toRequestBody()
+        transcriptionGeneration++
         val pending = Transcription(status = "sent", requestedAt = java.time.Instant.now().toString(),
             lyricsIncluded = options.addLyrics, options = ApiJson.decodeFromJsonElement<SavedTranscriptionOptions>(body))
         library = library.copy(pendingTranscriptions = library.pendingTranscriptions + (track.key to pending))
         try {
-            api.request("/api/jobs/${encode(track.jobId)}/files/${encode(track.name)}/transcribe", "POST", body)
+            val job = ApiJson.decodeFromJsonElement<Job>(
+                api.request("/api/jobs/${encode(track.jobId)}/files/${encode(track.name)}/transcribe", "POST", body))
+            transcriptionGeneration++
+            library = library.withTranscriptions(job, listOf(track))
             message("Transcription complete.")
             refreshTracks()
         } finally {
-            library = library.copy(pendingTranscriptions = library.pendingTranscriptions - track.key)
-            if (sessions.account.value != null) pollTranscriptions()
+            transcriptionGeneration++
+            try {
+                if (sessions.account.value != null) pollTranscriptions(listOf(track))
+            } finally {
+                library = library.copy(pendingTranscriptions = library.pendingTranscriptions - track.key)
+            }
         }
     }
 
@@ -395,6 +431,12 @@ class MusicViewModel(application: Application) : AndroidViewModel(application) {
     }
 
     override fun onCleared() { playback.disconnect(); super.onCleared() }
+}
+
+internal suspend fun ServerApi.trackPage(selection: LibraryState): TrackPage {
+    val query = listOfNotNull("page=${selection.page}", "pageSize=50", "search=${encode(selection.search)}",
+        selection.selectedId?.let { "entryId=${encode(it)}" }).joinToString("&")
+    return ApiJson.decodeFromJsonElement(request("/api/library/tracks?$query"))
 }
 
 fun encode(value: String): String = URLEncoder.encode(value, "UTF-8").replace("+", "%20")
