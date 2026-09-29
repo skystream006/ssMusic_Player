@@ -108,6 +108,20 @@ class NowPlayingScreenTest {
         compose.onNodeWithContentDescription("Transcription request sent", substring = true).assertIsDisplayed()
     }
 
+    @Test fun playerTabShowsTranscriptionStatusButHidesNotTranscribed() {
+        val track = Track(jobId = "source", name = "song.mp3", artist = "Northbound")
+        val library = ReflectionHelpers.getField<MutableState<LibraryState>>(model, "library\$delegate")
+        compose.setContent { MusicTheme { NowPlayingScreen(model, PlaybackState(track = track)) } }
+        compose.onNodeWithText("Northbound").assertIsDisplayed()
+        compose.onNodeWithText("Not transcribed").assertDoesNotExist()
+
+        compose.runOnIdle {
+            library.value = LibraryState(library = Library(jobs = listOf(Job(id = "source",
+                transcriptions = mapOf(track.name to Transcription(status = "transcribed", lyricsIncluded = true))))))
+        }
+        compose.onNodeWithText("Lyrics Included").assertIsDisplayed()
+    }
+
     @Test fun queueShowsRefreshedStatusInsteadOfItsOriginalTrackSnapshot() {
         val track = Track(jobId = "source", name = "song.mp3", transcription = Transcription(status = "sent"))
         val library = ReflectionHelpers.getField<MutableState<LibraryState>>(model, "library\$delegate")
