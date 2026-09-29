@@ -200,6 +200,7 @@ class NowPlayingScreenTest {
                     moveBy(Offset(distance * 0.2f, 0f), delayMillis = 16)
                     moveBy(Offset(distance * 0.8f, 0f), delayMillis = 16)
                 }
+                compose.runOnIdle { Snapshot.sendApplyNotifications() }
                 compose.mainClock.advanceTimeBy(64)
                 compose.waitForIdle()
                 val moved = artwork.fetchSemanticsNode().boundsInRoot.left - original.left
