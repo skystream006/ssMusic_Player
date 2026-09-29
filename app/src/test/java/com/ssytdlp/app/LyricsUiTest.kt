@@ -42,8 +42,8 @@ class LyricsUiTest {
 
     @Test fun synchronizedLyricsShowTheirTimestamps() {
         showLyrics()
-        compose.onNodeWithText("0:00").assertIsDisplayed()
-        compose.onNodeWithText("3:20").assertIsDisplayed()
+        compose.onNodeWithText("00:00:00").assertIsDisplayed()
+        compose.onNodeWithText("00:03:20").assertIsDisplayed()
     }
 
     @Test fun unsynchronizedLyricsAreUsedOnlyWhenSynchronizedLyricsAreAbsent() {

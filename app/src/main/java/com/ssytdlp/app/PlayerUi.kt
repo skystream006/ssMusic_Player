@@ -336,13 +336,9 @@ internal fun LyricsContent(lyrics: SongMetadata?, position: Long, trackKey: Stri
 internal fun formatLyricTimestamp(time: Double): String {
     val totalSeconds = time.toLong().coerceAtLeast(0)
     val seconds = totalSeconds % 60
-    val minutes = totalSeconds / 60
-    return if (minutes < 60) {
-        String.format(Locale.ROOT, "%d:%02d", minutes, seconds)
-    } else {
-        val hours = minutes / 60
-        String.format(Locale.ROOT, "%d:%02d:%02d", hours, minutes % 60, seconds)
-    }
+    val totalMinutes = totalSeconds / 60
+    return String.format(Locale.ROOT, "%02d:%02d:%02d",
+        totalMinutes / 60, totalMinutes % 60, seconds)
 }
 
 @Composable
