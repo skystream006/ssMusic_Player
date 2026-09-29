@@ -6,20 +6,33 @@ import android.content.Context
 import android.os.PowerManager
 import android.provider.Settings
 import androidx.activity.ComponentActivity
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.width
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.semantics.SemanticsProperties
 import androidx.compose.ui.test.*
 import androidx.compose.ui.test.junit4.StateRestorationTester
 import androidx.compose.ui.test.junit4.createAndroidComposeRule
+import androidx.compose.ui.unit.Density
+import androidx.compose.ui.unit.dp
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleOwner
 import androidx.lifecycle.LifecycleRegistry
 import androidx.lifecycle.ViewModelStore
 import androidx.lifecycle.compose.LocalLifecycleOwner
+import androidx.lifecycle.viewModelScope
 import androidx.test.core.app.ApplicationProvider
+import com.ssytdlp.app.core.Account
+import com.ssytdlp.app.core.Session
+import com.ssytdlp.app.core.User
 import java.security.Provider
 import java.security.Security
+import kotlinx.coroutines.cancel
+import kotlinx.coroutines.flow.MutableStateFlow
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
@@ -81,6 +94,113 @@ class SettingsUiTest {
         EdgeLightingStyle.entries.forEach { compose.onNodeWithText(it.label).assertDoesNotExist() }
         compose.onNodeWithContentDescription("Edge lighting").performClick()
         compose.onNodeWithText("Audio waveform").assertIsSelected()
+    }
+
+    @Test
+    @Config(qualifiers = "w800dp-h1100dp")
+    fun edgeLightingChoicesAreHorizontalAndAlphabetized() {
+        compose.setContent { MaterialTheme { EdgeLightingSetting(true) {} } }
+        val choices = listOf("Audio waveform", "Circulating", "Oscillation", "Vibration").map {
+            compose.onNodeWithText(it).assertIsDisplayed().getUnclippedBoundsInRoot()
+        }
+        choices.zipWithNext().forEach { (first, second) ->
+            assertEquals(first.top, second.top)
+            assertTrue(first.right < second.left)
+        }
+    }
+
+    @Test
+    @Config(qualifiers = "w320dp-h780dp")
+    fun edgeLightingChoicesWrapAndRemainSelectableWithLargeText() {
+        val style = mutableStateOf(EdgeLightingStyle.OSCILLATION)
+        compose.setContent {
+            CompositionLocalProvider(LocalDensity provides Density(LocalDensity.current.density, 1.5f)) {
+                MaterialTheme { EdgeLightingSetting(true, style.value, { style.value = it }) {} }
+            }
+        }
+        listOf("Audio waveform", "Circulating", "Oscillation", "Vibration").forEach {
+            val option = compose.onNodeWithText(it).assertIsDisplayed()
+            val bounds = option.getUnclippedBoundsInRoot()
+            assertTrue(bounds.left >= 0.dp && bounds.right <= 320.dp)
+            option.performClick().assertIsSelected()
+        }
+    }
+
+    @Test
+    @Config(qualifiers = "w320dp-h780dp")
+    fun updateButtonsStayHorizontalWithLargeTextAndDownloadInProgress() {
+        val models = ViewModelStore()
+        lateinit var updater: AppUpdater
+        compose.runOnUiThread {
+            updater = AppUpdater(ApplicationProvider.getApplicationContext())
+            models.put("updates", updater)
+        }
+        val state = ReflectionHelpers.getField<MutableStateFlow<UpdateState>>(updater, "mutableState")
+        state.value = UpdateState(availableVersion = "1.0.999", busy = true, downloading = true, total = 1024)
+        try {
+            compose.setContent {
+                CompositionLocalProvider(LocalDensity provides Density(LocalDensity.current.density, 1.5f)) {
+                    MaterialTheme { Box(Modifier.width(320.dp)) { UpdateSettings(updater) } }
+                }
+            }
+            val check = compose.onNodeWithText("Check for updates").assertIsNotEnabled()
+            val download = compose.onNodeWithText("Download and install").assertIsNotEnabled()
+            val cancel = compose.onNodeWithText("Cancel").assertIsEnabled()
+            val buttons = listOf(check, download, cancel).map { it.assertIsDisplayed().getUnclippedBoundsInRoot() }
+            buttons.zipWithNext().forEach { (first, second) ->
+                assertTrue(first.right < second.left)
+                assertEquals(first.center.y.value, second.center.y.value, 1f)
+            }
+            buttons.forEach { assertTrue(it.left >= 0.dp && it.right <= 320.dp) }
+            compose.runOnIdle { state.value = state.value.copy(busy = false, downloading = false) }
+            cancel.assertDoesNotExist()
+            check.assertIsEnabled()
+            download.assertIsEnabled().performClick()
+            compose.onNodeWithText("Download and install 1.0.999?").assertIsDisplayed()
+            compose.onNodeWithText("Cancel").performClick()
+        } finally {
+            compose.runOnUiThread { models.clear() }
+        }
+    }
+
+    @Test
+    @Config(qualifiers = "w800dp-h1600dp")
+    fun settingsPlaceJobsAfterAppearanceAndCollapseBackupAndServerByDefault() {
+        withSettingsModel { model ->
+            compose.runOnUiThread { owner.lifecycle.currentState = Lifecycle.State.CREATED }
+            setPermissions(notifications = true, unrestrictedBattery = true)
+            var jobsOpened = false
+            val restoration = StateRestorationTester(compose)
+            restoration.setContent {
+                CompositionLocalProvider(LocalLifecycleOwner provides owner) {
+                    MusicTheme { SettingsScreen(model, { _, _ -> }) { jobsOpened = true } }
+                }
+            }
+            val collapsed = SemanticsMatcher.expectValue(SemanticsProperties.StateDescription, "Collapsed")
+            compose.onNodeWithText("Library backup").assert(collapsed)
+            compose.onNodeWithText("Server").assert(collapsed)
+            compose.onNodeWithText("Back up").assertDoesNotExist()
+            compose.onNodeWithText("Sign out").assertDoesNotExist()
+            val appearance = compose.onNodeWithText("Appearance").getUnclippedBoundsInRoot()
+            val edge = compose.onNodeWithContentDescription("Edge lighting").getUnclippedBoundsInRoot()
+            val jobs = compose.onNodeWithText("Jobs").getUnclippedBoundsInRoot()
+            val backup = compose.onNodeWithText("Library backup").getUnclippedBoundsInRoot()
+            assertTrue(appearance.bottom < edge.top && edge.bottom < jobs.top && jobs.bottom < backup.top)
+            compose.onNodeWithText("Jobs").performClick()
+            compose.runOnIdle { assertTrue(jobsOpened) }
+            compose.onNodeWithText("Library backup").performClick()
+            compose.onNodeWithText("Back up").assertIsDisplayed()
+            compose.onNodeWithText("iTunes").performClick().assertIsSelected()
+            compose.onNodeWithText("Library backup").performClick()
+            compose.onNodeWithText("Back up").assertDoesNotExist()
+            compose.onNodeWithText("Library backup").performClick()
+            compose.onNodeWithText("iTunes").assertIsSelected()
+            compose.onNodeWithText("Server").performScrollTo().performClick()
+            compose.onNodeWithText("Sign out").performScrollTo().assertIsDisplayed()
+            restoration.emulateSavedInstanceStateRestore()
+            compose.onNodeWithText("iTunes").performScrollTo().assertIsSelected()
+            compose.onNodeWithText("Sign out").performScrollTo().assertIsDisplayed()
+        }
     }
 
     @Test fun edgeLightingPreferenceDefaultsOffAndPersistsAcrossViewModels() {
@@ -225,6 +345,31 @@ class SettingsUiTest {
             .setNotificationsEnabled(notifications)
         shadowOf(compose.activity.getSystemService(PowerManager::class.java))
             .setIgnoringBatteryOptimizations(compose.activity.packageName, unrestrictedBattery)
+    }
+
+    private fun withSettingsModel(test: (MusicViewModel) -> Unit) {
+        val context = ApplicationProvider.getApplicationContext<Application>()
+        val provider = object : Provider("SettingsLayoutTestKeyStore", 1.0, "Empty test session keystore") {}
+        provider.put("KeyStore.AndroidKeyStore", Security.getProvider("SUN").getService("KeyStore", "JKS").className)
+        Security.addProvider(provider)
+        val models = ViewModelStore()
+        try {
+            val application = MusicApplication()
+            ReflectionHelpers.callInstanceMethod<Unit>(application, "attach", ClassParameter.from(Context::class.java, context))
+            application.onCreate()
+            lateinit var model: MusicViewModel
+            compose.runOnUiThread {
+                model = MusicViewModel(application)
+                models.put("settings", model)
+                model.viewModelScope.cancel()
+                ReflectionHelpers.getField<MutableStateFlow<Account?>>(model.sessions, "mutableAccount").value =
+                    Account("https://music.example.com", User(name = "Preview"), Session("test-session", "2099-01-01T00:00:00Z"))
+            }
+            test(model)
+        } finally {
+            compose.runOnUiThread { models.clear() }
+            Security.removeProvider(provider.name)
+        }
     }
 
     private fun resume() {

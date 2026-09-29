@@ -3,7 +3,14 @@ package com.ssytdlp.app
 import android.app.Application
 import android.content.Context
 import androidx.activity.ComponentActivity
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.runtime.MutableState
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.snapshots.Snapshot
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.test.*
 import androidx.compose.ui.test.junit4.StateRestorationTester
 import androidx.compose.ui.test.junit4.createAndroidComposeRule
@@ -15,6 +22,8 @@ import com.ssytdlp.app.core.SongMetadata
 import java.security.Provider
 import java.security.Security
 import org.junit.After
+import org.junit.Assert.assertEquals
+import org.junit.Assert.assertTrue
 import org.junit.Before
 import org.junit.Rule
 import org.junit.Test
@@ -96,10 +105,147 @@ class NowPlayingScreenTest {
         compose.onNodeWithText("USLT Lyrics").assertIsSelected()
         compose.onNodeWithText("Plain lyrics").assertIsDisplayed()
         compose.onNodeWithText("SYLT Lyrics").assertDoesNotExist()
+        compose.onNodeWithText("USLT Lyrics").performClick().assertIsSelected()
+        compose.onNodeWithText("Plain lyrics").assertIsDisplayed()
 
         compose.runOnIdle { metadata.value = SongMetadata(uslt = " ") }
         compose.onNodeWithText("Lyrics").assertIsSelected()
         compose.onNodeWithText("No lyrics available").assertIsDisplayed()
         compose.onNodeWithText("USLT Lyrics").assertDoesNotExist()
+    }
+
+    @Test fun reselectingLyricsTogglesSourcesAndResetsForANewTrack() {
+        val track = Track(jobId = "preview", name = "song.mp3")
+        val state = mutableStateOf(PlaybackState(track = track))
+        val metadata = ReflectionHelpers.getField<MutableState<SongMetadata?>>(model, "metadata\$delegate")
+        compose.runOnIdle {
+            metadata.value = SongMetadata(sylt = listOf(LyricLine(0.0, "Synchronized line")), uslt = "Plain lyrics")
+        }
+        val restoration = StateRestorationTester(compose)
+        restoration.setContent { MusicTheme { NowPlayingScreen(model, state.value) } }
+        compose.onNodeWithText("SYLT Lyrics").performClick().assertIsSelected()
+        compose.onNodeWithText("Synchronized line").assertIsDisplayed()
+        compose.onNodeWithText("SYLT Lyrics").performClick()
+        compose.onNodeWithText("USLT Lyrics").assertIsSelected()
+        compose.onNodeWithText("Plain lyrics").assertIsDisplayed()
+        compose.onNodeWithText("Synchronized line").assertDoesNotExist()
+        compose.onNodeWithText("USLT Lyrics").performClick()
+        compose.onNodeWithText("SYLT Lyrics").assertIsSelected()
+        compose.onNodeWithText("Synchronized line").assertIsDisplayed()
+        compose.onNodeWithText("SYLT Lyrics").performClick()
+        restoration.emulateSavedInstanceStateRestore()
+        compose.onNodeWithText("USLT Lyrics").assertIsSelected()
+        compose.onNodeWithText("Plain lyrics").assertIsDisplayed()
+        compose.onNodeWithText("Player").performClick()
+        compose.onNodeWithText("USLT Lyrics").performClick()
+        compose.onNodeWithText("Plain lyrics").assertIsDisplayed()
+        compose.runOnIdle { state.value = state.value.copy(track = track.copy(name = "another.mp3")) }
+        compose.onNodeWithText("SYLT Lyrics").assertIsSelected()
+        compose.onNodeWithText("Synchronized line").assertIsDisplayed()
+        compose.runOnIdle { metadata.value = metadata.value!!.copy(uslt = " ") }
+        compose.onNodeWithText("SYLT Lyrics").performClick().assertIsSelected()
+        compose.onNodeWithText("Synchronized line").assertIsDisplayed()
+    }
+
+    @Test fun onlyPlayerTabConsumesHorizontalTrackSwipes() {
+        val track = Track(jobId = "preview", name = "song.mp3", title = "Blue hour")
+        val metadata = ReflectionHelpers.getField<MutableState<SongMetadata?>>(model, "metadata\$delegate")
+        compose.runOnIdle { metadata.value = SongMetadata(sylt = listOf(LyricLine(0.0, "Synchronized line"))) }
+        var unhandledSwipes = 0
+        compose.setContent {
+            MusicTheme {
+                Box(Modifier.fillMaxSize().testTag("page").playerTrackSwipes(true, true,
+                    previous = { unhandledSwipes++ }, next = { unhandledSwipes++ })) {
+                    NowPlayingScreen(model, PlaybackState(track = track, queue = listOf(track)))
+                }
+            }
+        }
+        fun swipeBothWaysAt(node: SemanticsNodeInteraction) {
+            val y = node.fetchSemanticsNode().boundsInRoot.center.y
+            compose.onNodeWithTag("page").performTouchInput {
+                swipe(Offset(width * 0.9f, y), Offset(width * 0.1f, y))
+                swipe(Offset(width * 0.1f, y), Offset(width * 0.9f, y))
+            }
+        }
+        swipeBothWaysAt(compose.onNodeWithContentDescription("Album artwork unavailable"))
+        compose.runOnIdle { assertEquals(0, unhandledSwipes) }
+        compose.onNodeWithText("SYLT Lyrics").performClick()
+        swipeBothWaysAt(compose.onNodeWithText("Synchronized line"))
+        compose.runOnIdle { assertEquals(2, unhandledSwipes) }
+        compose.onNodeWithText("Queue").performClick()
+        swipeBothWaysAt(compose.onNodeWithText("Blue hour"))
+        compose.runOnIdle { assertEquals(4, unhandledSwipes) }
+        compose.onNodeWithText("Player").performClick()
+        swipeBothWaysAt(compose.onNodeWithContentDescription("Album artwork unavailable"))
+        compose.runOnIdle { assertEquals(4, unhandledSwipes) }
+    }
+
+    @Test fun artworkFollowsTheDragAndSpringsBackAfterReleaseOrCancellation() {
+        val track = Track(jobId = "preview", name = "song.mp3", title = "Blue hour")
+        compose.setContent {
+            MusicTheme {
+                Box(Modifier.fillMaxSize().testTag("page")) {
+                    NowPlayingScreen(model, PlaybackState(track = track, queue = listOf(track)))
+                }
+            }
+        }
+        val artwork = compose.onNodeWithContentDescription("Album artwork unavailable")
+        val original = artwork.fetchSemanticsNode().boundsInRoot
+        val title = compose.onNodeWithText("Blue hour").fetchSemanticsNode().boundsInRoot
+        compose.mainClock.autoAdvance = false
+        listOf(100f, -100f).forEach { distance ->
+            compose.onNodeWithTag("page").performTouchInput {
+                down(original.center)
+                moveBy(Offset(distance, 0f), delayMillis = 300)
+            }
+            compose.mainClock.advanceTimeBy(64)
+            val moved = artwork.fetchSemanticsNode().boundsInRoot.left - original.left
+            assertTrue(moved * distance > 0f)
+            assertTrue(kotlin.math.abs(moved) > 50f)
+            assertEquals(title, compose.onNodeWithText("Blue hour").fetchSemanticsNode().boundsInRoot)
+            compose.onNodeWithTag("page").performTouchInput { if (distance > 0f) up() else cancel() }
+            compose.mainClock.advanceTimeBy(32)
+            assertTrue(kotlin.math.abs(artwork.fetchSemanticsNode().boundsInRoot.left - original.left) > 1f)
+            compose.mainClock.advanceTimeBy(2_000)
+            assertEquals(original.left, artwork.fetchSemanticsNode().boundsInRoot.left, 1f)
+        }
+        compose.mainClock.autoAdvance = true
+    }
+
+    @Test fun changingTracksOrTabsDuringADragDoesNotLeaveArtworkDisplaced() {
+        val track = Track(jobId = "preview", name = "song.mp3")
+        val state = mutableStateOf(PlaybackState(track = track))
+        compose.setContent {
+            MusicTheme {
+                Box(Modifier.fillMaxSize().testTag("page")) { NowPlayingScreen(model, state.value) }
+            }
+        }
+        val artwork = compose.onNodeWithContentDescription("Album artwork unavailable")
+        val original = artwork.fetchSemanticsNode().boundsInRoot
+        compose.mainClock.autoAdvance = false
+        compose.onNodeWithTag("page").performTouchInput {
+            down(original.center)
+            moveBy(Offset(100f, 0f), delayMillis = 300)
+        }
+        compose.mainClock.advanceTimeBy(64)
+        compose.runOnIdle {
+            state.value = state.value.copy(track = track.copy(name = "another.mp3"))
+            Snapshot.sendApplyNotifications()
+        }
+        compose.mainClock.advanceTimeBy(64)
+        assertEquals(original.left, artwork.fetchSemanticsNode().boundsInRoot.left, 1f)
+        compose.onNodeWithTag("page").performTouchInput { cancel() }
+        compose.onNodeWithTag("page").performTouchInput {
+            down(original.center)
+            moveBy(Offset(-100f, 0f), delayMillis = 300)
+        }
+        compose.mainClock.advanceTimeBy(64)
+        compose.onNodeWithText("Queue").performClick()
+        compose.mainClock.advanceTimeBy(64)
+        compose.onNodeWithTag("page").performTouchInput { cancel() }
+        compose.onNodeWithText("Player").performClick()
+        compose.mainClock.advanceTimeBy(64)
+        assertEquals(original.left, artwork.fetchSemanticsNode().boundsInRoot.left, 1f)
+        compose.mainClock.autoAdvance = true
     }
 }

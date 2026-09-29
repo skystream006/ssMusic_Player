@@ -195,7 +195,7 @@ fun PlayerArtwork(state: PlaybackState, metadata: SongMetadata?, modifier: Modif
         horizontalAlignment = Alignment.CenterHorizontally) {
         if (track?.mediaType == "video") AndroidView(factory = { context -> PlayerView(context).apply { useController = false; player = controller } },
             update = { it.player = controller }, onRelease = { it.player = null }, modifier = Modifier.fillMaxWidth().aspectRatio(16f / 9f))
-        else AlbumArtwork(metadata?.artwork, Modifier.offset { IntOffset(artworkOffset().roundToInt(), 0) }
+        else AlbumArtwork(metadata?.artwork, Modifier.absoluteOffset { IntOffset(artworkOffset().roundToInt(), 0) }
             .widthIn(max = 320.dp).fillMaxWidth().aspectRatio(1f))
         Spacer(Modifier.height(28.dp))
         Text(metadata?.title?.ifBlank { null } ?: track?.displayTitle.orEmpty(), style = MaterialTheme.typography.headlineSmall,
