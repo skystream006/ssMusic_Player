@@ -137,7 +137,7 @@ fun NowPlayingScreen(model: MusicViewModel, state: PlaybackState) {
             }
             when (tab) {
                 0 -> PlayerArtwork(state, model.metadata, Modifier.weight(1f), model.playback.controller,
-                    artworkOffset = { artworkOffset }) {
+                    artworkOffset = { artworkOffset }, transcription = model.library.transcription(state.track)) {
                     model.playback.play(listOfNotNull(state.track?.noVocalsVersion))
                 }
                 1 -> Lyrics(model, state, Modifier.weight(1f), showUslt)
@@ -191,7 +191,8 @@ internal fun Modifier.playerTrackSwipes(enabled: Boolean, nextEnabled: Boolean,
 @androidx.annotation.OptIn(UnstableApi::class)
 @Composable
 fun PlayerArtwork(state: PlaybackState, metadata: SongMetadata?, modifier: Modifier = Modifier,
-    controller: MediaController? = null, artworkOffset: () -> Float = { 0f }, onInstrumental: () -> Unit = {}) {
+    controller: MediaController? = null, artworkOffset: () -> Float = { 0f },
+    transcription: Transcription? = null, onInstrumental: () -> Unit = {}) {
     val track = state.track
     Column(modifier.fillMaxWidth().verticalScroll(rememberScrollState()).padding(horizontal = 28.dp, vertical = 24.dp),
         horizontalAlignment = Alignment.CenterHorizontally) {
@@ -204,6 +205,7 @@ fun PlayerArtwork(state: PlaybackState, metadata: SongMetadata?, modifier: Modif
             textAlign = TextAlign.Center, maxLines = 3, overflow = TextOverflow.Ellipsis)
         Text(metadata?.artist?.ifBlank { null } ?: track?.displayArtist.orEmpty(), style = MaterialTheme.typography.bodyMedium,
             color = MaterialTheme.colorScheme.onSurfaceVariant, textAlign = TextAlign.Center, modifier = Modifier.padding(top = 8.dp))
+        if (transcription.label != "Not transcribed") TranscriptionStatus(transcription)
         if (!metadata?.album.isNullOrBlank()) Text(metadata?.album.orEmpty(), style = MaterialTheme.typography.labelSmall,
             color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.padding(top = 6.dp))
         if (state.buffering) CircularProgressIndicator(Modifier.padding(12.dp).size(22.dp), strokeWidth = 2.dp)
