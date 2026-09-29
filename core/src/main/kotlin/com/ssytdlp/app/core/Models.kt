@@ -1,6 +1,7 @@
 package com.ssytdlp.app.core
 
 import kotlinx.serialization.Serializable
+import kotlinx.serialization.SerialName
 import kotlinx.serialization.encodeToString
 import kotlinx.serialization.json.Json
 import java.net.URI
@@ -76,12 +77,29 @@ data class Job(
     val id: String, val playlistTitle: String = "", val status: String = "", val source: String = "",
     val url: String = "", val error: String? = null, val files: List<String> = emptyList(),
     val initiatedBy: User? = null, val contributors: List<User> = emptyList(), val updatedAt: String = "",
-    val isPlaylist: Boolean = true
+    val isPlaylist: Boolean = true,
+    val transcriptions: Map<String, Transcription> = emptyMap()
 ) {
     val active: Boolean get() = status == "queued" || status == "running"
     fun canModify(user: User) = user.role == "admin" || isMember(user)
     fun isMember(user: User) = initiatedBy?.id == user.id || contributors.any { it.id == user.id }
 }
+
+@Serializable
+data class Transcription(
+    val status: String = "", val requestedAt: String? = null, val completedAt: String? = null,
+    val lyricsIncluded: Boolean = false, val options: SavedTranscriptionOptions? = null,
+    val error: String? = null
+)
+
+@Serializable
+data class SavedTranscriptionOptions(
+    val language: String = "",
+    @SerialName("Multilingual") val multilingual: Boolean? = null,
+    @SerialName("NoVocals") val noVocals: Boolean? = null,
+    @SerialName("VietLyricsFallback") val vietLyricsFallback: Boolean? = null,
+    @SerialName("lyrics_mode") val lyricsMode: String? = null
+)
 
 @Serializable
 data class Preferences(val theme: String = "light", val mode: String? = null)

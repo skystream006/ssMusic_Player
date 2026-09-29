@@ -39,7 +39,11 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import androidx.lifecycle.compose.LocalLifecycleOwner
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.repeatOnLifecycle
 import com.ssytdlp.app.core.*
+import kotlinx.coroutines.delay
 
 val LocalWaveAppearance = staticCompositionLocalOf { true }
 
@@ -203,6 +207,12 @@ private fun AppSettingsSheet(onDismiss: () -> Unit) {
 @Composable
 fun LibraryScreen(model: MusicViewModel, playback: PlaybackState, requestNotifications: () -> Unit, download: (String, String) -> Unit) {
     var browser by rememberSaveable { mutableStateOf(false) }
+    val lifecycle = LocalLifecycleOwner.current.lifecycle
+    LaunchedEffect(lifecycle) {
+        lifecycle.repeatOnLifecycle(Lifecycle.State.STARTED) {
+            while (true) { model.pollTranscriptions(); delay(10_000) }
+        }
+    }
     LibraryContent(model.library, playback, onBrowse = { browser = true }, onPlay = { index ->
         requestNotifications()
         model.playback.play(model.library.tracks.files, index)
@@ -237,7 +247,8 @@ fun LibraryContent(state: LibraryState, playback: PlaybackState, onBrowse: () ->
                 EmptyState(Icons.Rounded.LibraryMusic, if (state.search.isNotBlank()) "No matching music" else "Your library is empty")
             }
             itemsIndexed(state.tracks.files, key = { _, track -> track.key }) { index, track ->
-                TrackRow(track, active = playback.track?.key == track.key, enabled = playback.connected && !state.loading, onClick = {
+                TrackRow(track, active = playback.track?.key == track.key, enabled = playback.connected && !state.loading,
+                    transcription = state.transcription(track), onClick = {
                     onPlay(index)
                 }) {
                     trackActions(track, index)
@@ -309,7 +320,8 @@ fun EntryMenu(model: MusicViewModel, entry: LibraryEntry) {
 }
 
 @Composable
-fun TrackRow(track: Track, active: Boolean = false, enabled: Boolean = true, onClick: () -> Unit, trailing: @Composable () -> Unit = {}) {
+fun TrackRow(track: Track, active: Boolean = false, enabled: Boolean = true, transcription: Transcription? = null,
+    onClick: () -> Unit, trailing: @Composable () -> Unit = {}) {
     Row(Modifier.fillMaxWidth().background(if (active) MaterialTheme.colorScheme.primary.copy(alpha = 0.08f) else Color.Transparent)
         .clickable(enabled = enabled, onClick = onClick).heightIn(min = 78.dp).padding(start = 20.dp, end = 8.dp, top = 10.dp, bottom = 10.dp),
         verticalAlignment = Alignment.CenterVertically) {
@@ -323,6 +335,7 @@ fun TrackRow(track: Track, active: Boolean = false, enabled: Boolean = true, onC
             Text(track.displayTitle, maxLines = 2, overflow = TextOverflow.Ellipsis, style = MaterialTheme.typography.titleSmall,
                 color = if (active) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurface)
             Text(track.displayArtist, maxLines = 1, overflow = TextOverflow.Ellipsis, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            TranscriptionStatus(transcription)
         }
         trailing()
     }

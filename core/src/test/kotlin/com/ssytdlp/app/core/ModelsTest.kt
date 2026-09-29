@@ -26,4 +26,40 @@ class ModelsTest {
         assertEquals(2, page.page)
         assertEquals(9L, page.version)
     }
+
+    @Test fun `library reads filename keyed transcription records and saved request options`() {
+        val library = ApiJson.decodeFromString<Library>("""{"jobs":[{"id":"source","transcriptions":{
+            "folder/song.mp3":{"status":"transcribed","requestedAt":"2026-09-28T12:00:00Z",
+                "completedAt":"2026-09-28T12:01:00Z","lyricsIncluded":true,
+                "options":{"language":"vi","Multilingual":false,"NoVocals":true,
+                    "VietLyricsFallback":true,"lyrics_mode":"align"},"noVocalsName":"extra.mp3"},
+            "failed.mp3":{"status":"failed","error":"Service unavailable"},
+            "restart.mp3":{"status":"interrupted"},
+            "pending.mp3":{"status":"sent"}
+        }}]}""")
+        val records = library.jobs.single().transcriptions
+        val done = records.getValue("folder/song.mp3")
+        assertEquals("transcribed", done.status)
+        assertEquals("2026-09-28T12:00:00Z", done.requestedAt)
+        assertEquals("2026-09-28T12:01:00Z", done.completedAt)
+        assertTrue(done.lyricsIncluded)
+        assertEquals(SavedTranscriptionOptions("vi", false, true, true, "align"), done.options)
+        assertEquals("Service unavailable", records.getValue("failed.mp3").error)
+        assertEquals("interrupted", records.getValue("restart.mp3").status)
+        assertEquals("sent", records.getValue("pending.mp3").status)
+    }
+
+    @Test fun `legacy transcription records preserve absent options and tri state booleans`() {
+        assertTrue(ApiJson.decodeFromString<Job>("""{"id":"old"}""").transcriptions.isEmpty())
+        assertTrue(ApiJson.decodeFromString<Job>("""{"id":"old","transcriptions":null}""").transcriptions.isEmpty())
+        val legacy = ApiJson.decodeFromString<Transcription>("""{"status":"transcribed"}""")
+        assertFalse(legacy.lyricsIncluded)
+        assertNull(legacy.options)
+        val defaults = ApiJson.decodeFromString<Transcription>("""{"status":"sent","options":{}}""")
+        assertEquals(SavedTranscriptionOptions(), defaults.options)
+        assertNull(defaults.options!!.multilingual)
+        val explicitFalse = ApiJson.decodeFromString<Transcription>("""{"options":{"Multilingual":false,"NoVocals":null}}""")
+        assertEquals(false, explicitFalse.options!!.multilingual)
+        assertNull(explicitFalse.options!!.noVocals)
+    }
 }

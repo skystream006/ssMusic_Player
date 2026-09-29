@@ -22,8 +22,19 @@ import kotlinx.serialization.json.*
 data class LibraryState(
     val library: Library = Library(), val tracks: TrackPage = TrackPage(),
     val selectedId: String? = null, val search: String = "", val page: Int = 1,
-    val loading: Boolean = false
-)
+    val loading: Boolean = false,
+    val pendingTranscriptions: Map<String, Transcription> = emptyMap()
+) {
+    fun transcription(track: Track): Transcription? = pendingTranscriptions[track.key]
+        ?: library.jobs.find { it.id == track.jobId }?.transcriptions?.get(track.name)
+
+    fun withTranscriptions(jobs: List<Job>): LibraryState {
+        val latest = jobs.associateBy { it.id }
+        return copy(library = library.copy(jobs = library.jobs.map { job ->
+            job.copy(transcriptions = latest[job.id]?.transcriptions.orEmpty())
+        }))
+    }
+}
 
 class MusicViewModel(application: Application) : AndroidViewModel(application) {
     private val app = application as MusicApplication
@@ -195,6 +206,10 @@ class MusicViewModel(application: Application) : AndroidViewModel(application) {
     }
 
     suspend fun pollJobs() { runAction { jobs = ApiJson.decodeFromJsonElement(api.request("/api/jobs")) } }
+    suspend fun pollTranscriptions() { runAction {
+        val result = ApiJson.decodeFromJsonElement<Library>(api.request("/api/library"))
+        library = library.withTranscriptions(result.jobs)
+    } }
     suspend fun pollSettings() { runAction { backup = api.request("/api/library/backup").jsonObject; health = api.request("/api/health").jsonObject } }
 
     fun createJob(url: String, video: Boolean, metadataOnly: Boolean) = launchAction {
@@ -271,8 +286,18 @@ class MusicViewModel(application: Application) : AndroidViewModel(application) {
     }
 
     fun transcribe(track: Track, options: TranscriptionOptions) = launchAction {
-        api.request("/api/jobs/${encode(track.jobId)}/files/${encode(track.name)}/transcribe", "POST", options.toRequestBody())
-        message("Transcription queued.")
+        val body = options.toRequestBody()
+        val pending = Transcription(status = "sent", requestedAt = java.time.Instant.now().toString(),
+            lyricsIncluded = options.addLyrics, options = ApiJson.decodeFromJsonElement<SavedTranscriptionOptions>(body))
+        library = library.copy(pendingTranscriptions = library.pendingTranscriptions + (track.key to pending))
+        try {
+            api.request("/api/jobs/${encode(track.jobId)}/files/${encode(track.name)}/transcribe", "POST", body)
+            message("Transcription complete.")
+            refreshTracks()
+        } finally {
+            library = library.copy(pendingTranscriptions = library.pendingTranscriptions - track.key)
+            if (sessions.account.value != null) pollTranscriptions()
+        }
     }
 
     fun setTheme(theme: String = preferences.theme, mode: String = preferences.mode ?: "light") = launchAction {
