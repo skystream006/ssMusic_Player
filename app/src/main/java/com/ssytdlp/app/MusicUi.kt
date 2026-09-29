@@ -152,7 +152,7 @@ fun MusicApp(model: MusicViewModel, requestNotifications: () -> Unit) {
                 }
             }
             PlaybackEdgeLighting(account != null && playback.playing && !playerOpen, Modifier.matchParentSize(),
-                enabled = model.edgeLightingEnabled)
+                enabled = model.edgeLightingEnabled, style = model.edgeLightingStyle)
         }
         if (account != null && playerOpen) PlayerSheet(model, playback, { playerOpen = false })
     }

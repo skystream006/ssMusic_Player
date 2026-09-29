@@ -67,6 +67,64 @@ class EdgeLightingTest {
         assertEquals(edgeOscillation(crest, 0f, 1f), edgeOscillation(crest, 1f, 1f), 0.0001f)
     }
 
+    @Test fun stylesHaveDistinctBoundedMotionAndWaveformUsesActualSamples() {
+        val waveform = floatArrayOf(-1f, 0f, 1f, 0f)
+        fun displacement(style: EdgeLightingStyle, position: Float, progress: Float = 0f, level: Float = 1f) =
+            edgeDisplacement(style, position, progress, level, waveform)
+        assertEquals(1f, displacement(EdgeLightingStyle.OSCILLATION, 1f / 48f), 0.0001f)
+        assertEquals(1f, displacement(EdgeLightingStyle.VIBRATION, 0f, 1f / 384f), 0.0001f)
+        assertEquals(1f, displacement(EdgeLightingStyle.VIBRATION, 0.75f, 1f / 384f), 0.0001f)
+        assertEquals(0f, displacement(EdgeLightingStyle.CIRCULATING, 0.3f, 0.1f), 0f)
+        assertEquals(-1f, displacement(EdgeLightingStyle.AUDIO_WAVEFORM, 0f), 0f)
+        assertEquals(-0.5f, displacement(EdgeLightingStyle.AUDIO_WAVEFORM, 0.125f), 0f)
+        assertEquals(1f, displacement(EdgeLightingStyle.AUDIO_WAVEFORM, 0.5f), 0f)
+        assertEquals(-1f, displacement(EdgeLightingStyle.AUDIO_WAVEFORM, 1f), 0f)
+        assertEquals(0f, edgeDisplacement(EdgeLightingStyle.AUDIO_WAVEFORM, 0f, 0f, 1f,
+            floatArrayOf(Float.NaN)), 0f)
+        EdgeLightingStyle.entries.forEach { style ->
+            assertEquals(0f, edgeDisplacement(style, 0.23f, 0.1f, 0f, floatArrayOf()), 0f)
+            for (index in 0..100) {
+                assertTrue(displacement(style, index / 100f, index / 100f) in -1f..1f)
+            }
+        }
+    }
+
+    @Test fun lightingDefaultsOffWithoutReadingAudio() {
+        compose.setContent {
+            MaterialTheme {
+                EdgeLighting(true, { error("Disabled lighting must not read audio") },
+                    Modifier.fillMaxSize().testTag("edges"))
+            }
+        }
+        compose.onNodeWithTag("edges").assertDoesNotExist()
+    }
+
+    @Test fun switchingStylesReadsWaveformOnlyWhenSelected() {
+        enableAnimations()
+        var style by mutableStateOf(EdgeLightingStyle.OSCILLATION)
+        var waveformReads = 0
+        compose.mainClock.autoAdvance = false
+        compose.setContent {
+            MaterialTheme {
+                EdgeLighting(true, { 0.5f }, Modifier.fillMaxSize().testTag("edges"),
+                    enabled = true, style = style, audioWaveform = { waveformReads++; floatArrayOf(-1f, 1f) })
+            }
+        }
+        compose.mainClock.advanceTimeBy(100)
+        compose.runOnIdle { assertEquals(0, waveformReads) }
+        EdgeLightingStyle.entries.forEach { option ->
+            update { style = option }
+            compose.mainClock.advanceTimeBy(100)
+            compose.onNodeWithTag("edges").assertIsDisplayed()
+        }
+        compose.runOnIdle { assertTrue(waveformReads > 0) }
+        update { style = EdgeLightingStyle.CIRCULATING }
+        compose.mainClock.advanceTimeBy(100)
+        val reads = compose.runOnIdle { waveformReads }
+        compose.mainClock.advanceTimeBy(100)
+        compose.runOnIdle { assertEquals(reads, waveformReads) }
+    }
+
     // With a paused clock, writes must be applied explicitly so the recomposer sees them.
     private fun update(block: () -> Unit) = compose.runOnIdle { block(); Snapshot.sendApplyNotifications() }
 
@@ -110,7 +168,7 @@ class EdgeLightingTest {
             MaterialTheme {
                 Box(Modifier.fillMaxSize()) {
                     Button(onClick = { clicks++ }) { Text("Playback control") }
-                    EdgeLighting(playing, { 0.5f }, Modifier.matchParentSize().testTag("edges"))
+                    EdgeLighting(playing, { 0.5f }, Modifier.matchParentSize().testTag("edges"), enabled = true)
                 }
             }
         }
@@ -134,7 +192,7 @@ class EdgeLightingTest {
         compose.mainClock.autoAdvance = false
         compose.setContent {
             CompositionLocalProvider(LocalLifecycleOwner provides owner) {
-                MaterialTheme { EdgeLighting(true, { 1f }, Modifier.fillMaxSize().testTag("edges")) }
+                MaterialTheme { EdgeLighting(true, { 1f }, Modifier.fillMaxSize().testTag("edges"), enabled = true) }
             }
         }
         compose.onNodeWithTag("edges").assertIsDisplayed()
@@ -148,11 +206,13 @@ class EdgeLightingTest {
 
     @Test fun borderFollowsThemeChangesWithoutCoveringTheCenter() {
         var accent by mutableStateOf(Color.Red)
+        var style by mutableStateOf(EdgeLightingStyle.OSCILLATION)
         compose.mainClock.autoAdvance = false
         compose.setContent {
             MaterialTheme(colorScheme = darkColorScheme(primary = accent)) {
                 Box(Modifier.fillMaxSize().background(Color.Black)) {
-                    EdgeLighting(true, { 0f }, Modifier.matchParentSize())
+                    EdgeLighting(true, { 0f }, Modifier.matchParentSize(), enabled = true, style = style,
+                        audioWaveform = { error("Reduced motion must not read waveform") })
                 }
             }
         }
@@ -170,9 +230,13 @@ class EdgeLightingTest {
             assertTrue(litPixels > 0)
             assertEquals(Color.Black, pixels[pixels.width / 2, pixels.height / 2])
         }
-        assertTint(red = true)
-        update { accent = Color.Blue }
-        compose.mainClock.advanceTimeByFrame()
-        assertTint(red = false)
+        EdgeLightingStyle.entries.forEach { option ->
+            update { style = option; accent = Color.Red }
+            compose.mainClock.advanceTimeBy(100)
+            assertTint(red = true)
+            update { accent = Color.Blue }
+            compose.mainClock.advanceTimeByFrame()
+            assertTint(red = false)
+        }
     }
 }

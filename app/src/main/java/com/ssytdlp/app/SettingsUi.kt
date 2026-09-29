@@ -12,6 +12,8 @@ import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.selection.selectable
+import androidx.compose.foundation.selection.selectableGroup
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
@@ -85,7 +87,8 @@ fun SettingsScreen(model: MusicViewModel, download: (String, String) -> Unit) {
                 { model.setTheme(mode = if (it) "dark" else "light") }, enabled = !model.busy)
         }
         }
-        EdgeLightingSetting(model.edgeLightingEnabled, model::chooseEdgeLighting)
+        EdgeLightingSetting(model.edgeLightingEnabled, model.edgeLightingStyle,
+            model::chooseEdgeLightingStyle, model::chooseEdgeLighting)
         HorizontalDivider()
         Text("Library backup", style = MaterialTheme.typography.titleMedium)
         SingleChoiceSegmentedButtonRow(Modifier.fillMaxWidth()) {
@@ -137,11 +140,32 @@ fun SettingsScreen(model: MusicViewModel, download: (String, String) -> Unit) {
 }
 
 @Composable
-internal fun EdgeLightingSetting(enabled: Boolean, onEnabledChange: (Boolean) -> Unit) {
-    Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-        Text("Edge lighting", Modifier.weight(1f))
-        Switch(enabled, onEnabledChange,
-            modifier = Modifier.semantics { contentDescription = "Edge lighting" })
+internal fun EdgeLightingSetting(
+    enabled: Boolean,
+    style: EdgeLightingStyle = EdgeLightingStyle.OSCILLATION,
+    onStyleChange: (EdgeLightingStyle) -> Unit = {},
+    onEnabledChange: (Boolean) -> Unit
+) {
+    Column {
+        Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+            Text("Edge lighting", Modifier.weight(1f))
+            Switch(enabled, onEnabledChange,
+                modifier = Modifier.semantics { contentDescription = "Edge lighting" })
+        }
+        if (enabled) {
+            Column(Modifier.selectableGroup()) {
+                EdgeLightingStyle.entries.forEach { option ->
+                    Row(Modifier.fillMaxWidth().heightIn(min = 48.dp)
+                        .selectable(selected = style == option, role = Role.RadioButton,
+                            onClick = { onStyleChange(option) }).padding(horizontal = 12.dp),
+                        verticalAlignment = Alignment.CenterVertically) {
+                        RadioButton(selected = style == option, onClick = null)
+                        Spacer(Modifier.width(12.dp))
+                        Text(option.label)
+                    }
+                }
+            }
+        }
     }
 }
 

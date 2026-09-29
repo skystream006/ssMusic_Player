@@ -5,11 +5,12 @@ import androidx.media3.common.util.UnstableApi
 import androidx.media3.exoplayer.audio.TeeAudioProcessor
 import java.nio.ByteBuffer
 import java.nio.ByteOrder
+import kotlin.math.abs
 import kotlin.math.sqrt
 
 @androidx.annotation.OptIn(UnstableApi::class)
 class AudioLevelMeter(private val nanoTime: () -> Long = System::nanoTime) : TeeAudioProcessor.AudioBufferSink {
-    private data class Sample(val level: Float, val time: Long)
+    private data class Sample(val level: Float, val time: Long, val waveform: FloatArray = floatArrayOf())
     @Volatile private var sample = Sample(0f, 0L)
     private var encoding = C.ENCODING_INVALID
     private var channels = 1
@@ -33,22 +34,35 @@ class AudioLevelMeter(private val nanoTime: () -> Long = System::nanoTime) : Tee
         val stride = ((count + 511) / 512).coerceAtLeast(1)
         var energy = 0.0
         var measured = 0
+        val waveform = FloatArray(count.coerceAtMost(128))
         for (index in 0 until count step stride) {
+            val bin = (index.toLong() * waveform.size / count).toInt()
             repeat(channels) { channel ->
                 val offset = input.position() + (index * channels + channel) * bytesPerSample
                 val value = if (bytesPerSample == 2) input.getShort(offset) / 32768f else input.getFloat(offset)
                 val normalized = if (value.isFinite()) value.coerceIn(-1f, 1f) else 0f
                 energy += normalized.toDouble() * normalized
+                if (abs(normalized) > abs(waveform[bin])) waveform[bin] = normalized
                 measured++
             }
         }
-        sample = Sample(sqrt(energy / measured).toFloat().coerceIn(0f, 1f), nanoTime())
+        sample = Sample(sqrt(energy / measured).toFloat().coerceIn(0f, 1f), nanoTime(), waveform)
     }
 
     fun level(): Float {
         val current = sample
+        return current.level * freshness(current)
+    }
+
+    fun waveform(): FloatArray {
+        val current = sample
+        val scale = freshness(current)
+        return FloatArray(current.waveform.size) { current.waveform[it] * scale }
+    }
+
+    private fun freshness(current: Sample): Float {
         val age = ((nanoTime() - current.time) / 1_000_000f).coerceAtLeast(0f)
-        return current.level * (1f - age / 250f).coerceIn(0f, 1f)
+        return (1f - age / 250f).coerceIn(0f, 1f)
     }
 
     fun clear() { sample = Sample(0f, 0L) }

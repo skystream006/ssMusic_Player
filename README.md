@@ -230,15 +230,18 @@ and Manrope body text. Real album covers remain unchanged. **Settings > Appearan
 can switch back to **Server theme** without overwriting the web client's preferences.
 The choice is stored on this device. Authentication still uses the primary server.
 
-While music is playing, a smooth two-highlight gradient circulates around the app
-and expanded player edges in the current theme's accent color, completing a lap
-every 12 seconds. Its glow and gentle line oscillation respond to decoded audio
-levels, without changing the sound, recording the microphone, or vibrating the
-phone. **Settings > Appearance > Edge lighting** enables or disables the effect
-for both views, and remembers the choice on this device. Lighting stops when
-paused, buffering, or in the background; disabling system animations leaves a stationary glow.
-Audio outputs that bypass PCM processing still show the circulating glow, without
-audio-reactive motion.
+**Settings > Appearance > Edge lighting** is disabled by default. Enabling it
+expands four styles: **Oscillation** (audio-reactive ripples), **Vibration**
+(a rapidly pulsing border, not phone vibration), **Circulating** (a smooth
+two-highlight gradient completing a lap every 12 seconds), and **Audio waveform**
+(a border shaped by decoded PCM audio samples). The switch and selected style
+are remembered on this device, including when lighting is turned off.
+
+While music is playing, the selected effect follows the app and expanded player
+edges in the current theme's accent color. It does not change the sound or record
+the microphone. Lighting stops when paused, buffering, or in the background;
+disabling system animations leaves a stationary glow. Audio outputs that bypass
+PCM processing still show a glow, but only the Circulating style moves.
 
 Device settings start collapsed when notifications are allowed and battery use is
 unrestricted, and refresh when returning from Android settings. Debug logging
