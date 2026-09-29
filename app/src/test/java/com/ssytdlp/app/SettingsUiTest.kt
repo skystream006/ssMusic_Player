@@ -67,13 +67,13 @@ class SettingsUiTest {
         val preferences = context.getSharedPreferences("settings", Context.MODE_PRIVATE)
         preferences.edit().remove("edge_lighting").commit()
         // No session is saved here; an empty JVM keystore permits application initialization.
-        val provider = object : Provider("SettingsTestKeyStore", "1.0", "Empty test session keystore") {}
+        val provider = object : Provider("SettingsTestKeyStore", 1.0, "Empty test session keystore") {}
         provider.put("KeyStore.AndroidKeyStore", Security.getProvider("SUN").getService("KeyStore", "JKS").className)
         Security.addProvider(provider)
         val models = ViewModelStore()
         try {
             val application = MusicApplication()
-            ReflectionHelpers.callInstanceMethod(application, "attach", ClassParameter.from(Context::class.java, context))
+            ReflectionHelpers.callInstanceMethod<Unit>(application, "attach", ClassParameter.from(Context::class.java, context))
             application.onCreate()
             lateinit var initial: MusicViewModel
             compose.runOnUiThread {
