@@ -31,7 +31,7 @@ import java.time.format.FormatStyle
 internal val Transcription.label: String?
     get() = when (status) {
         "sent" -> "Transcription request sent"
-        "transcribed" -> if (lyricsIncluded) "Lyrics included" else "AI transcription"
+        "transcribed" -> if (lyricsIncluded) "Lyrics Included" else "AI Transcribed"
         "failed" -> "Transcription failed"
         "interrupted" -> "Interrupted"
         else -> null

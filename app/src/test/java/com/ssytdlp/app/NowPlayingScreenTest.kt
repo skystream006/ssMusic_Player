@@ -3,12 +3,15 @@ package com.ssytdlp.app
 import android.app.Application
 import android.content.Context
 import androidx.activity.ComponentActivity
+import androidx.compose.runtime.MutableState
 import androidx.compose.ui.test.*
 import androidx.compose.ui.test.junit4.StateRestorationTester
 import androidx.compose.ui.test.junit4.createAndroidComposeRule
 import androidx.lifecycle.ViewModelStore
 import androidx.test.core.app.ApplicationProvider
 import com.ssytdlp.app.core.Track
+import com.ssytdlp.app.core.LyricLine
+import com.ssytdlp.app.core.SongMetadata
 import java.security.Provider
 import java.security.Security
 import org.junit.After
@@ -72,5 +75,31 @@ class NowPlayingScreenTest {
         restoration.emulateSavedInstanceStateRestore()
         compose.onNodeWithText("Queue").assertIsSelected()
         compose.onNodeWithText("Blue hour").assertIsDisplayed()
+    }
+
+    @Test fun lyricsTabTracksDisplayedSourceWithoutChangingSelection() {
+        val track = Track(jobId = "preview", name = "song.mp3")
+        val metadata = ReflectionHelpers.getField<MutableState<SongMetadata?>>(model, "metadata\$delegate")
+        compose.setContent { MusicTheme { NowPlayingScreen(model, PlaybackState(track = track)) } }
+        compose.onNodeWithText("Lyrics").performClick().assertIsSelected()
+        compose.onNodeWithText("Loading lyrics...").assertIsDisplayed()
+
+        compose.runOnIdle {
+            metadata.value = SongMetadata(sylt = listOf(LyricLine(0.0, "Synchronized line")), uslt = "Plain lyrics")
+        }
+        compose.onNodeWithText("SYLT Lyrics").assertIsSelected()
+        compose.onNodeWithText("Synchronized line").assertIsDisplayed()
+        compose.onNodeWithText("Plain lyrics").assertDoesNotExist()
+        compose.onNodeWithText("USLT Lyrics").assertDoesNotExist()
+
+        compose.runOnIdle { metadata.value = metadata.value!!.copy(sylt = emptyList()) }
+        compose.onNodeWithText("USLT Lyrics").assertIsSelected()
+        compose.onNodeWithText("Plain lyrics").assertIsDisplayed()
+        compose.onNodeWithText("SYLT Lyrics").assertDoesNotExist()
+
+        compose.runOnIdle { metadata.value = SongMetadata(uslt = " ") }
+        compose.onNodeWithText("Lyrics").assertIsSelected()
+        compose.onNodeWithText("No lyrics available").assertIsDisplayed()
+        compose.onNodeWithText("USLT Lyrics").assertDoesNotExist()
     }
 }
