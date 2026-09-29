@@ -193,23 +193,26 @@ class NowPlayingScreenTest {
         val original = artwork.fetchSemanticsNode().boundsInRoot
         val title = compose.onNodeWithText("Blue hour").fetchSemanticsNode().boundsInRoot
         compose.mainClock.autoAdvance = false
-        listOf(100f, -100f).forEach { distance ->
-            compose.onNodeWithTag("page").performTouchInput {
-                down(original.center)
-                moveBy(Offset(distance, 0f), delayMillis = 300)
+        try {
+            listOf(100f, -100f).forEach { distance ->
+                compose.onNodeWithTag("page").performTouchInput {
+                    down(original.center)
+                    moveBy(Offset(distance, 0f), delayMillis = 300)
+                }
+                compose.mainClock.advanceTimeBy(64)
+                val moved = artwork.fetchSemanticsNode().boundsInRoot.left - original.left
+                assertTrue(moved * distance > 0f)
+                assertTrue(kotlin.math.abs(moved) > 50f)
+                assertEquals(title, compose.onNodeWithText("Blue hour").fetchSemanticsNode().boundsInRoot)
+                compose.onNodeWithTag("page").performTouchInput { if (distance > 0f) up() else cancel() }
+                compose.mainClock.advanceTimeBy(32)
+                assertTrue(kotlin.math.abs(artwork.fetchSemanticsNode().boundsInRoot.left - original.left) > 1f)
+                compose.mainClock.advanceTimeBy(2_000)
+                assertEquals(original.left, artwork.fetchSemanticsNode().boundsInRoot.left, 1f)
             }
-            compose.mainClock.advanceTimeBy(64)
-            val moved = artwork.fetchSemanticsNode().boundsInRoot.left - original.left
-            assertTrue(moved * distance > 0f)
-            assertTrue(kotlin.math.abs(moved) > 50f)
-            assertEquals(title, compose.onNodeWithText("Blue hour").fetchSemanticsNode().boundsInRoot)
-            compose.onNodeWithTag("page").performTouchInput { if (distance > 0f) up() else cancel() }
-            compose.mainClock.advanceTimeBy(32)
-            assertTrue(kotlin.math.abs(artwork.fetchSemanticsNode().boundsInRoot.left - original.left) > 1f)
-            compose.mainClock.advanceTimeBy(2_000)
-            assertEquals(original.left, artwork.fetchSemanticsNode().boundsInRoot.left, 1f)
+        } finally {
+            compose.mainClock.autoAdvance = true
         }
-        compose.mainClock.autoAdvance = true
     }
 
     @Test fun changingTracksOrTabsDuringADragDoesNotLeaveArtworkDisplaced() {
@@ -223,29 +226,32 @@ class NowPlayingScreenTest {
         val artwork = compose.onNodeWithContentDescription("Album artwork unavailable")
         val original = artwork.fetchSemanticsNode().boundsInRoot
         compose.mainClock.autoAdvance = false
-        compose.onNodeWithTag("page").performTouchInput {
-            down(original.center)
-            moveBy(Offset(100f, 0f), delayMillis = 300)
+        try {
+            compose.onNodeWithTag("page").performTouchInput {
+                down(original.center)
+                moveBy(Offset(100f, 0f), delayMillis = 300)
+            }
+            compose.mainClock.advanceTimeBy(64)
+            compose.runOnIdle {
+                state.value = state.value.copy(track = track.copy(name = "another.mp3"))
+                Snapshot.sendApplyNotifications()
+            }
+            compose.mainClock.advanceTimeBy(64)
+            assertEquals(original.left, artwork.fetchSemanticsNode().boundsInRoot.left, 1f)
+            compose.onNodeWithTag("page").performTouchInput { cancel() }
+            compose.onNodeWithTag("page").performTouchInput {
+                down(original.center)
+                moveBy(Offset(-100f, 0f), delayMillis = 300)
+            }
+            compose.mainClock.advanceTimeBy(64)
+            compose.onNodeWithTag("page").performTouchInput { cancel() }
+            compose.onNodeWithText("Queue").performClick()
+            compose.mainClock.advanceTimeBy(64)
+            compose.onNodeWithText("Player").performClick()
+            compose.mainClock.advanceTimeBy(64)
+            assertEquals(original.left, artwork.fetchSemanticsNode().boundsInRoot.left, 1f)
+        } finally {
+            compose.mainClock.autoAdvance = true
         }
-        compose.mainClock.advanceTimeBy(64)
-        compose.runOnIdle {
-            state.value = state.value.copy(track = track.copy(name = "another.mp3"))
-            Snapshot.sendApplyNotifications()
-        }
-        compose.mainClock.advanceTimeBy(64)
-        assertEquals(original.left, artwork.fetchSemanticsNode().boundsInRoot.left, 1f)
-        compose.onNodeWithTag("page").performTouchInput { cancel() }
-        compose.onNodeWithTag("page").performTouchInput {
-            down(original.center)
-            moveBy(Offset(-100f, 0f), delayMillis = 300)
-        }
-        compose.mainClock.advanceTimeBy(64)
-        compose.onNodeWithText("Queue").performClick()
-        compose.mainClock.advanceTimeBy(64)
-        compose.onNodeWithTag("page").performTouchInput { cancel() }
-        compose.onNodeWithText("Player").performClick()
-        compose.mainClock.advanceTimeBy(64)
-        assertEquals(original.left, artwork.fetchSemanticsNode().boundsInRoot.left, 1f)
-        compose.mainClock.autoAdvance = true
     }
 }
