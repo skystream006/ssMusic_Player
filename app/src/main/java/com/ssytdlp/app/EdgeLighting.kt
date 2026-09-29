@@ -37,22 +37,52 @@ internal const val EDGE_CIRCULATION_SECONDS = 12f
 internal fun edgeOscillation(position: Float, progress: Float, level: Float): Float =
     sin(2f * PI.toFloat() * (position * 12f - progress * 18f)) * level
 
-private data class EdgeFrame(val progress: Float = 0f, val level: Float = 0f)
+internal fun edgeDisplacement(
+    style: EdgeLightingStyle, position: Float, progress: Float, level: Float, waveform: FloatArray
+): Float = when (style) {
+    EdgeLightingStyle.OSCILLATION -> edgeOscillation(position, progress, level)
+    EdgeLightingStyle.VIBRATION -> sin(2f * PI.toFloat() * progress * 96f) * level
+    EdgeLightingStyle.CIRCULATING -> 0f
+    EdgeLightingStyle.AUDIO_WAVEFORM -> {
+        if (waveform.isEmpty()) 0f else {
+            val sample = position.coerceIn(0f, 1f) * waveform.size
+            val index = sample.toInt()
+            fun value(index: Int): Float = waveform[index % waveform.size].let {
+                if (it.isFinite()) it.coerceIn(-1f, 1f) else 0f
+            }
+            val fraction = sample - index
+            value(index) * (1f - fraction) + value(index + 1) * fraction
+        }
+    }
+}
+
+private data class EdgeFrame(
+    val progress: Float = 0f, val level: Float = 0f, val waveform: FloatArray = floatArrayOf()
+)
 
 @Composable
-internal fun PlaybackEdgeLighting(playing: Boolean, modifier: Modifier = Modifier, enabled: Boolean = true) {
+internal fun PlaybackEdgeLighting(
+    playing: Boolean, modifier: Modifier = Modifier, enabled: Boolean = false,
+    style: EdgeLightingStyle = EdgeLightingStyle.OSCILLATION
+) {
     val meter = (LocalContext.current.applicationContext as? MusicApplication)?.audioLevels
-    EdgeLighting(playing, { meter?.level() ?: 0f }, modifier, enabled)
+    EdgeLighting(playing, { meter?.level() ?: 0f }, modifier, enabled, style,
+        { meter?.waveform() ?: floatArrayOf() })
 }
 
 @Composable
-internal fun EdgeLighting(playing: Boolean, audioLevel: () -> Float, modifier: Modifier = Modifier, enabled: Boolean = true) {
+internal fun EdgeLighting(
+    playing: Boolean, audioLevel: () -> Float, modifier: Modifier = Modifier, enabled: Boolean = false,
+    style: EdgeLightingStyle = EdgeLightingStyle.OSCILLATION,
+    audioWaveform: () -> FloatArray = { floatArrayOf() }
+) {
     val lifecycleState by LocalLifecycleOwner.current.lifecycle.currentStateAsState()
     if (!enabled || !playing || !lifecycleState.isAtLeast(Lifecycle.State.RESUMED)) return
     val primary = MaterialTheme.colorScheme.primary
     val currentLevel by rememberUpdatedState(audioLevel)
-    var frame by remember { mutableStateOf(EdgeFrame()) }
-    LaunchedEffect(Unit) {
+    val currentWaveform by rememberUpdatedState(audioWaveform)
+    var frame by remember(style) { mutableStateOf(EdgeFrame()) }
+    LaunchedEffect(style) {
         val motionScale = coroutineContext[MotionDurationScale]
         var previous = withFrameNanos { it }
         var elapsed = 0f
@@ -70,7 +100,8 @@ internal fun EdgeLighting(playing: Boolean, audioLevel: () -> Float, modifier: M
                 val target = if (raw.isFinite()) sqrt(raw.coerceIn(0f, 1f)) else 0f
                 val response = if (target > envelope) 18f else 7f
                 envelope += (target - envelope) * (delta * response).coerceAtMost(1f)
-                frame = EdgeFrame(elapsed / EDGE_CIRCULATION_SECONDS, envelope)
+                frame = EdgeFrame(elapsed / EDGE_CIRCULATION_SECONDS, envelope,
+                    if (style == EdgeLightingStyle.AUDIO_WAVEFORM) currentWaveform() else floatArrayOf())
             }
         }
     }
@@ -90,22 +121,25 @@ internal fun EdgeLighting(playing: Boolean, audioLevel: () -> Float, modifier: M
         }
         val line = Path()
         val baseWidth = 1.5.dp.toPx()
-        val amplitude = 2.5.dp.toPx()
+        val amplitude = (if (style == EdgeLightingStyle.AUDIO_WAVEFORM) 4.5.dp else 2.5.dp).toPx()
         onDrawBehind {
             if (length <= 0f || size.minDimension <= 0f) return@onDrawBehind
             val animation = frame
             line.reset()
             repeat(samples) { index ->
-                val displacement = amplitude * edgeOscillation(index.toFloat() / samples, animation.progress, animation.level)
+                val displacement = amplitude * edgeDisplacement(style, index.toFloat() / samples,
+                    animation.progress, animation.level, animation.waveform)
                 val point = points[index] + normals[index] * displacement
                 if (index == 0) line.moveTo(point.x, point.y) else line.lineTo(point.x, point.y)
             }
             line.close()
             // A continuous gradient avoids seams between individual trail segments.
-            val gradient = Brush.sweepGradient(List(65) { index ->
+            val gradient = if (style == EdgeLightingStyle.CIRCULATING) Brush.sweepGradient(List(65) { index ->
                 val strength = (0.5f + 0.5f * cos(4f * PI.toFloat() * (index / 64f - animation.progress)))
                 primary.copy(alpha = 0.12f + strength * strength * (0.65f + animation.level * 0.2f))
-            })
+            }) else Brush.linearGradient(listOf(
+                primary.copy(alpha = 0.65f + animation.level * 0.2f),
+                primary.copy(alpha = 0.65f + animation.level * 0.2f)))
             drawPath(line, gradient, alpha = 0.04f, style = Stroke(14.dp.toPx()))
             drawPath(line, gradient, alpha = 0.08f, style = Stroke(9.dp.toPx()))
             drawPath(line, gradient, alpha = 0.16f, style = Stroke(5.dp.toPx()))

@@ -60,12 +60,33 @@ class SettingsUiTest {
     @Test fun edgeLightingSwitchHonorsDisabledPreferenceInitially() {
         compose.setContent { MaterialTheme { EdgeLightingSetting(false) {} } }
         compose.onNodeWithContentDescription("Edge lighting").assertIsOff()
+        EdgeLightingStyle.entries.forEach { compose.onNodeWithText(it.label).assertDoesNotExist() }
     }
 
-    @Test fun edgeLightingPreferenceDefaultsOnAndPersistsAcrossViewModels() {
+    @Test fun edgeLightingChoicesExpandSelectAndRetainSelectionWhenToggled() {
+        val enabled = mutableStateOf(false)
+        val style = mutableStateOf(EdgeLightingStyle.OSCILLATION)
+        compose.setContent {
+            MaterialTheme {
+                EdgeLightingSetting(enabled.value, style.value, { style.value = it }) { enabled.value = it }
+            }
+        }
+        compose.onNodeWithContentDescription("Edge lighting").performClick()
+        compose.onNodeWithText("Oscillation").assertIsSelected()
+        EdgeLightingStyle.entries.forEach {
+            compose.onNodeWithText(it.label).assertIsDisplayed().performClick().assertIsSelected()
+            compose.runOnIdle { assertEquals(it, style.value) }
+        }
+        compose.onNodeWithContentDescription("Edge lighting").performClick()
+        EdgeLightingStyle.entries.forEach { compose.onNodeWithText(it.label).assertDoesNotExist() }
+        compose.onNodeWithContentDescription("Edge lighting").performClick()
+        compose.onNodeWithText("Audio waveform").assertIsSelected()
+    }
+
+    @Test fun edgeLightingPreferenceDefaultsOffAndPersistsAcrossViewModels() {
         val context = ApplicationProvider.getApplicationContext<Application>()
         val preferences = context.getSharedPreferences("settings", Context.MODE_PRIVATE)
-        preferences.edit().remove("edge_lighting").commit()
+        preferences.edit().remove("edge_lighting").remove("edge_lighting_style").commit()
         // No session is saved here; an empty JVM keystore permits application initialization.
         val provider = object : Provider("SettingsTestKeyStore", 1.0, "Empty test session keystore") {}
         provider.put("KeyStore.AndroidKeyStore", Security.getProvider("SUN").getService("KeyStore", "JKS").className)
@@ -80,10 +101,17 @@ class SettingsUiTest {
                 initial = MusicViewModel(application)
                 models.put("initial", initial)
             }
-            assertTrue(initial.edgeLightingEnabled)
+            assertFalse(initial.edgeLightingEnabled)
+            assertEquals(EdgeLightingStyle.OSCILLATION, initial.edgeLightingStyle)
             compose.setContent {
-                MaterialTheme { EdgeLightingSetting(initial.edgeLightingEnabled, initial::chooseEdgeLighting) }
+                MaterialTheme {
+                    EdgeLightingSetting(initial.edgeLightingEnabled, initial.edgeLightingStyle,
+                        initial::chooseEdgeLightingStyle, initial::chooseEdgeLighting)
+                }
             }
+            compose.onNodeWithContentDescription("Edge lighting").assertIsOff().performClick()
+            compose.onNodeWithText("Vibration").performClick()
+            assertEquals(EdgeLightingStyle.VIBRATION, initial.edgeLightingStyle)
             compose.onNodeWithContentDescription("Edge lighting").assertIsOn().performClick()
             compose.onNodeWithContentDescription("Edge lighting").assertIsOff()
             assertFalse(initial.edgeLightingEnabled)
@@ -92,16 +120,23 @@ class SettingsUiTest {
                 val recreated = MusicViewModel(application)
                 models.put("recreated", recreated)
                 assertFalse(recreated.edgeLightingEnabled)
+                assertEquals(EdgeLightingStyle.VIBRATION, recreated.edgeLightingStyle)
                 recreated.chooseEdgeLighting(true)
                 assertTrue(preferences.getBoolean("edge_lighting", false))
+                recreated.chooseEdgeLightingStyle(EdgeLightingStyle.AUDIO_WAVEFORM)
                 val enabledAgain = MusicViewModel(application)
                 models.put("enabledAgain", enabledAgain)
                 assertTrue(enabledAgain.edgeLightingEnabled)
+                assertEquals(EdgeLightingStyle.AUDIO_WAVEFORM, enabledAgain.edgeLightingStyle)
+                preferences.edit().putString("edge_lighting_style", "unknown-style").commit()
+                val unknownStyle = MusicViewModel(application)
+                models.put("unknownStyle", unknownStyle)
+                assertEquals(EdgeLightingStyle.OSCILLATION, unknownStyle.edgeLightingStyle)
             }
         } finally {
             compose.runOnUiThread { models.clear() }
             Security.removeProvider(provider.name)
-            preferences.edit().remove("edge_lighting").commit()
+            preferences.edit().remove("edge_lighting").remove("edge_lighting_style").commit()
         }
     }
 
