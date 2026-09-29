@@ -106,8 +106,7 @@ class TranscriptionStatusUiTest {
             "Transcription request sent\nRequested: Unknown",
             useUnmergedTree = true
         ).performClick()
-        compose.mainClock.advanceTimeBy(600)
-        compose.waitUntil(5_000) {
+        compose.mainClock.advanceTimeUntil(5_000) {
             compose.onAllNodesWithText("Requested: Unknown").fetchSemanticsNodes().isNotEmpty()
         }
     }
