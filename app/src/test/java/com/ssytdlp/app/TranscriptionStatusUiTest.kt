@@ -77,7 +77,7 @@ class TranscriptionStatusUiTest {
         var menuCount = 0
         compose.setContent {
             MusicTheme {
-                Box(Modifier.width(200.dp)) {
+                Box(Modifier.width(160.dp)) {
                     TrackRow(Track(name = "song.mp3", title = "A long song title", artist = "A long artist name"),
                         transcription = record.value, onClick = { playCount++ }) {
                         ToolButton(Icons.Rounded.MoreVert, "Song actions") { menuCount++ }
@@ -109,7 +109,7 @@ class TranscriptionStatusUiTest {
         compose.setContent {
             MusicTheme {
                 CompositionLocalProvider(LocalDensity provides Density(LocalDensity.current.density, fontScale = 2f)) {
-                    Box(Modifier.width(180.dp)) {
+                    Box(Modifier.width(120.dp)) {
                         TranscriptionStatus(Transcription(status = "sent"))
                     }
                 }
