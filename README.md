@@ -193,9 +193,10 @@ lyrics in Prompt, Align, or Correct mode. All toggles start off; supplied lyrics
 must be nonblank and at most 100,000 characters.
 
 Library tracks show the server's transcription status: request sent, AI
-transcription, Lyrics included, failed, or interrupted. Hover, long-press, or tap
+transcription, Lyrics included, failed, or interrupted. Tap
 the status for request/finish times, saved language and options, and any error;
-supplied lyrics are never shown in the tooltip. Status refreshes every 10 seconds
+tap X or outside the popup to close it. Supplied lyrics are never shown in the
+popup. Status refreshes every 10 seconds
 while the library is visible and after a transcription request.
 
 Library mutations use the server's compact, version-checked endpoints. Conflicts

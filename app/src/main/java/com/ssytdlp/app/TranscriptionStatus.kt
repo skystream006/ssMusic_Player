@@ -1,17 +1,21 @@
-@file:OptIn(androidx.compose.material3.ExperimentalMaterial3Api::class)
-
 package com.ssytdlp.app
 
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.Check
+import androidx.compose.material.icons.rounded.Close
 import androidx.compose.material.icons.rounded.ErrorOutline
 import androidx.compose.material.icons.rounded.Refresh
 import androidx.compose.material.icons.rounded.Schedule
 import androidx.compose.material3.*
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.semantics.contentDescription
@@ -23,7 +27,6 @@ import java.time.Instant
 import java.time.ZoneId
 import java.time.format.DateTimeFormatter
 import java.time.format.FormatStyle
-import kotlinx.coroutines.launch
 
 internal val Transcription.label: String?
     get() = when (status) {
@@ -68,26 +71,35 @@ private fun transcriptionDate(value: String?): String {
 internal fun TranscriptionStatus(transcription: Transcription?) {
     val label = transcription?.label ?: return
     val details = transcription.tooltip()
-    val state = rememberTooltipState()
-    val scope = rememberCoroutineScope()
+    var showDetails by remember { mutableStateOf(false) }
     val color = when (transcription.status) {
         "failed", "interrupted" -> MaterialTheme.colorScheme.error
         else -> MaterialTheme.colorScheme.primary
     }
-    TooltipBox(positionProvider = TooltipDefaults.rememberPlainTooltipPositionProvider(),
-        tooltip = { PlainTooltip { Text(details) } }, state = state) {
-        Row(Modifier.clickable(onClickLabel = "Show transcription details") { scope.launch { state.show() } }
-            .semantics { contentDescription = "$label\n$details" }
-            .padding(vertical = 4.dp), verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(4.dp)) {
-            Icon(when (transcription.status) {
-                "sent" -> Icons.Rounded.Refresh
-                "failed" -> Icons.Rounded.ErrorOutline
-                "interrupted" -> Icons.Rounded.Schedule
-                else -> Icons.Rounded.Check
-            }, null, Modifier.size(14.dp), tint = color)
-            Text(label, style = MaterialTheme.typography.labelSmall, color = color,
-                maxLines = 2, overflow = TextOverflow.Ellipsis)
-        }
+    Row(Modifier.clickable(onClickLabel = "Show transcription details") { showDetails = true }
+        .semantics { contentDescription = "$label\n$details" }
+        .padding(vertical = 4.dp), verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+        Icon(when (transcription.status) {
+            "sent" -> Icons.Rounded.Refresh
+            "failed" -> Icons.Rounded.ErrorOutline
+            "interrupted" -> Icons.Rounded.Schedule
+            else -> Icons.Rounded.Check
+        }, null, Modifier.size(14.dp), tint = color)
+        Text(label, style = MaterialTheme.typography.labelSmall, color = color,
+            maxLines = 2, overflow = TextOverflow.Ellipsis)
+    }
+    if (showDetails) {
+        AlertDialog(onDismissRequest = { showDetails = false },
+            title = {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Text(label, Modifier.weight(1f))
+                    IconButton(onClick = { showDetails = false }) {
+                        Icon(Icons.Rounded.Close, contentDescription = "Close transcription details")
+                    }
+                }
+            },
+            text = { Text(details, Modifier.verticalScroll(rememberScrollState())) },
+            confirmButton = {})
     }
 }
