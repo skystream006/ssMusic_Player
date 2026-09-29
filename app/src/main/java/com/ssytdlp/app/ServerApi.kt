@@ -28,6 +28,10 @@ import kotlin.coroutines.resumeWithException
 
 class ApiException(val status: Int, message: String, val payload: JsonObject? = null) : IOException(message)
 
+internal fun shouldLogApiStatus(account: Account?, path: String): Boolean =
+    account?.user?.role?.equals("shared", ignoreCase = true) != true ||
+        path != "/api/health" && path != "/api/jobs"
+
 class ServerApi(
     private val currentAccount: () -> Account?,
     private val clearAccount: (String) -> Unit,
@@ -37,8 +41,14 @@ class ServerApi(
 
     private val transport = client.newBuilder()
         .addInterceptor { chain ->
+            val account = currentAccount()
+            val path = chain.request().url.encodedPath
             try {
-                chain.proceed(chain.request()).also { DebugLog.event(DebugEvent.API_STATUS, status = it.code) }
+                chain.proceed(chain.request()).also {
+                    if (shouldLogApiStatus(account, path)) {
+                        DebugLog.event(DebugEvent.API_STATUS, status = it.code)
+                    }
+                }
             } catch (error: IOException) {
                 DebugLog.event(DebugEvent.API_FAILURE, error = error)
                 throw error
