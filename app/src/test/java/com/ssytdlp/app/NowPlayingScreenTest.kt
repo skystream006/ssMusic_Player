@@ -114,12 +114,14 @@ class NowPlayingScreenTest {
         compose.setContent { MusicTheme { NowPlayingScreen(model, PlaybackState(track = track)) } }
         compose.onNodeWithText("Northbound").assertIsDisplayed()
         compose.onNodeWithText("Not transcribed").assertDoesNotExist()
+        compose.onNodeWithContentDescription("Transcription status unknown", substring = true).assertDoesNotExist()
 
         compose.runOnIdle {
             library.value = LibraryState(library = Library(jobs = listOf(Job(id = "source",
                 transcriptions = mapOf(track.name to Transcription(status = "transcribed", lyricsIncluded = true))))))
         }
         compose.onNodeWithText("Lyrics Included").assertIsDisplayed()
+        compose.onNodeWithContentDescription("Lyrics Included", substring = true).assertIsDisplayed()
     }
 
     @Test fun queueShowsRefreshedStatusInsteadOfItsOriginalTrackSnapshot() {
