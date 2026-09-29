@@ -103,6 +103,7 @@ class TranscriptionStatusUiTest {
 
     private fun openDetails() {
         compose.onNodeWithContentDescription("Transcription request sent\nRequested: Unknown").performClick()
+        compose.mainClock.advanceTimeBy(600)
         compose.waitUntil(5_000) {
             compose.onAllNodesWithText("Requested: Unknown").fetchSemanticsNodes().isNotEmpty()
         }
