@@ -44,7 +44,7 @@ class TranscriptionStatusUiTest {
 
     @Test fun songWithoutTranscriptionInformationHidesStatus() {
         compose.setContent {
-            MusicTheme { TrackRow(Track(name = "song.mp3"), onClick = {}) }
+            MusicTheme(waveAppearance = false) { TrackRow(Track(name = "song.mp3"), onClick = {}) }
         }
         compose.onNodeWithText("AI Transcribed").assertDoesNotExist()
         compose.onNodeWithText("Lyrics Included").assertDoesNotExist()
@@ -57,7 +57,7 @@ class TranscriptionStatusUiTest {
         val record = mutableStateOf<Transcription?>(null)
         val track = Track(jobId = "source", name = "song.mp3")
         compose.setContent {
-            MusicTheme {
+            MusicTheme(waveAppearance = false) {
                 LibraryContent(
                     LibraryState(library = Library(jobs = listOf(Job(id = "source",
                         transcriptions = record.value?.let { mapOf(track.name to it) }.orEmpty()))),
@@ -79,7 +79,7 @@ class TranscriptionStatusUiTest {
         val state = mutableStateOf(LibraryState(library = Library(jobs = listOf(Job(id = "source"))),
             tracks = TrackPage(files = listOf(track), total = 1)))
         compose.setContent {
-            MusicTheme {
+            MusicTheme(waveAppearance = false) {
                 LibraryContent(state.value, PlaybackState(connected = true),
                     onBrowse = {}, onPlay = {}, onSearch = {}, onPage = {}) { _, _ -> }
             }
@@ -99,7 +99,7 @@ class TranscriptionStatusUiTest {
         var playCount = 0
         var menuCount = 0
         compose.setContent {
-            MusicTheme {
+            MusicTheme(waveAppearance = false) {
                 Box(Modifier.width(width.value)) {
                     TrackRow(Track(name = "song.mp3", title = "A long song title", artist = "A long artist name"),
                         transcription = record.value, onClick = { playCount++ }) {
@@ -132,7 +132,7 @@ class TranscriptionStatusUiTest {
 
     @Test fun largeFontFallsBackToIconWithFullStatusDetails() {
         compose.setContent {
-            MusicTheme {
+            MusicTheme(waveAppearance = false) {
                 CompositionLocalProvider(LocalDensity provides Density(LocalDensity.current.density, fontScale = 2f)) {
                     Box(Modifier.width(48.dp)) {
                         TranscriptionStatus(Transcription(status = "sent"))
@@ -178,7 +178,7 @@ class TranscriptionStatusUiTest {
             )
         )
         compose.setContent {
-            MusicTheme {
+            MusicTheme(waveAppearance = false) {
                 TrackRow(Track(name = "song.mp3"), transcription = transcription, onClick = { playCount++ })
             }
         }
