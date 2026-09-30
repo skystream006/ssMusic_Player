@@ -33,6 +33,7 @@ class TranscriptionControlsTest {
     @Test fun suppliedLyricsDefaultToAlign() {
         assertEquals("align", TranscriptionOptions().lyricsMode)
         assertEquals("align", TranscriptionOptions(addLyrics = true, lyrics = "Line").toRequestBody()["lyrics_mode"]?.jsonPrimitive?.content)
+        compose.mainClock.autoAdvance = false
         compose.setContent { MusicTheme { TranscribeDialog({}, {}) } }
         compose.onNodeWithText("Add lyrics").performScrollTo().performClick()
         compose.onNodeWithText("Align").performScrollTo().assertIsDisplayed()
@@ -41,6 +42,7 @@ class TranscriptionControlsTest {
     @Test fun lockHidesEveryOptionAndSubmitsOnlyOnConfirmation() {
         var transcribed = 0
         var locked = 0
+        compose.mainClock.autoAdvance = false
         compose.setContent { MusicTheme { TranscribeDialog({}, { transcribed++ }, lock = { locked++ }) } }
         compose.onNodeWithText("Add lyrics").performScrollTo().performClick()
         compose.onNodeWithText("Transcribe").assertIsNotEnabled()
@@ -106,6 +108,7 @@ class TranscriptionControlsTest {
         val original = SongMetadata(title = "Song", uslt = "Keep these lyrics", transcriptionLocked = true)
         val value = mutableStateOf(original)
         var saved: SongMetadata? = null
+        compose.mainClock.autoAdvance = false
         compose.setContent {
             MusicTheme { MetadataDialog(value.value, { value.value = it }, dismiss = {}, save = { saved = it }) }
         }
