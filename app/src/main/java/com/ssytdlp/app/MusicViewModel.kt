@@ -85,12 +85,15 @@ class MusicViewModel(application: Application) : AndroidViewModel(application) {
     val serverOrigin = app.serverConfig.origin
     private var trackRequest: CoroutineJob? = null
     private var operation: CoroutineJob? = null
+    private val accountRefresh = Mutex()
     private val transcriptionPoll = Mutex()
     private var transcriptionGeneration = 0L
 
     init {
         viewModelScope.launch {
-            sessions.account.collectLatest { account ->
+            sessions.account.distinctUntilChangedBy { account ->
+                account?.let { Triple(it.origin, it.user.id, it.session) }
+            }.collectLatest { account ->
                 if (account == null) {
                     operation?.cancel()
                     trackRequest?.cancel()
@@ -104,7 +107,7 @@ class MusicViewModel(application: Application) : AndroidViewModel(application) {
                     library = LibraryState(selectedId = sessions.playback.selectedLibrary(account))
                     playback.connect()
                     runAction {
-                        api.request("/api/auth/me")
+                        if (!refreshAccount()) return@runAction
                         preferences = ApiJson.decodeFromJsonElement(api.request("/api/preferences"))
                         loadLibrary()
                         refreshTracks()
@@ -256,7 +259,22 @@ class MusicViewModel(application: Application) : AndroidViewModel(application) {
             }
         }
     }
-    suspend fun pollSettings() { runAction { backup = api.request("/api/library/backup").jsonObject; health = api.request("/api/health").jsonObject } }
+    private suspend fun refreshAccount(): Boolean = accountRefresh.withLock {
+        val account = sessions.account.value ?: return@withLock false
+        val response = ApiJson.decodeFromJsonElement<UserResponse>(api.request("/api/auth/me"))
+        sessions.updateUser(account, response.user)
+    }
+
+    suspend fun pollSettings() { runAction {
+        if (!refreshAccount()) return@runAction
+        if (sessions.account.value?.user?.isShared == true) {
+            backup = null
+            health = null
+            return@runAction
+        }
+        backup = api.request("/api/library/backup").jsonObject
+        health = api.request("/api/health").jsonObject
+    } }
 
     fun createJob(url: String, video: Boolean, metadataOnly: Boolean) = launchAction {
         try {

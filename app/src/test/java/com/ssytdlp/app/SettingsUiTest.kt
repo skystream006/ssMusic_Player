@@ -27,12 +27,19 @@ import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.lifecycle.viewModelScope
 import androidx.test.core.app.ApplicationProvider
 import com.ssytdlp.app.core.Account
+import com.ssytdlp.app.core.ApiJson
 import com.ssytdlp.app.core.Session
 import com.ssytdlp.app.core.User
+import com.ssytdlp.app.core.UserResponse
 import java.security.Provider
 import java.security.Security
 import kotlinx.coroutines.cancel
 import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.serialization.encodeToString
+import okhttp3.OkHttpClient
+import okhttp3.Protocol
+import okhttp3.Response
+import okhttp3.ResponseBody.Companion.toResponseBody
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
@@ -205,7 +212,7 @@ class SettingsUiTest {
 
     @Test
     fun sharedRoleHidesJobsAndLibraryBackupSettings() {
-        withSettingsModel(role = "Shared") { model ->
+        withSettingsModel(role = "shared") { model ->
             compose.runOnUiThread { owner.lifecycle.currentState = Lifecycle.State.CREATED }
             setPermissions(notifications = true, unrestrictedBattery = true)
             compose.setContent {
@@ -216,6 +223,30 @@ class SettingsUiTest {
             compose.onNodeWithText("Jobs").assertDoesNotExist()
             compose.onNodeWithText("Library backup").assertDoesNotExist()
             compose.onNodeWithText("Device").performScrollTo().assertIsDisplayed()
+        }
+    }
+
+    @Test
+    @Config(qualifiers = "w800dp-h1600dp")
+    fun settingsRespondToRoleChangesWithoutReopeningTheScreen() {
+        withSettingsModel(role = "admin") { model ->
+            compose.runOnUiThread { owner.lifecycle.currentState = Lifecycle.State.STARTED }
+            setPermissions(notifications = true, unrestrictedBattery = true)
+            compose.setContent {
+                CompositionLocalProvider(LocalLifecycleOwner provides owner) {
+                    MusicTheme { SettingsScreen(model, { _, _ -> }) {} }
+                }
+            }
+            compose.onNodeWithText("Jobs").assertIsDisplayed()
+            compose.onNodeWithText("Library backup").assertIsDisplayed()
+            val account = ReflectionHelpers.getField<MutableStateFlow<Account?>>(model.sessions, "mutableAccount")
+            compose.runOnIdle { account.value = account.value!!.let { it.copy(user = it.user.copy(role = "shared")) } }
+            compose.onNodeWithText("Jobs").assertDoesNotExist()
+            compose.onNodeWithText("Library backup").assertDoesNotExist()
+            compose.onNodeWithText("Device").assertIsDisplayed()
+            compose.runOnIdle { account.value = account.value!!.let { it.copy(user = it.user.copy(role = "user")) } }
+            compose.onNodeWithText("Jobs").assertIsDisplayed()
+            compose.onNodeWithText("Library backup").assertIsDisplayed()
         }
     }
 
@@ -373,6 +404,13 @@ class SettingsUiTest {
             val application = MusicApplication()
             ReflectionHelpers.callInstanceMethod<Unit>(application, "attach", ClassParameter.from(Context::class.java, context))
             application.onCreate()
+            val client = OkHttpClient.Builder().addInterceptor { chain ->
+                val body = if (chain.request().url.encodedPath == "/api/auth/me")
+                    ApiJson.encodeToString(UserResponse(application.sessions.account.value!!.user)) else "{}"
+                Response.Builder().request(chain.request()).protocol(Protocol.HTTP_1_1)
+                    .code(200).message("OK").body(body.toResponseBody()).build()
+            }.build()
+            ReflectionHelpers.setField(application, "api", ServerApi({ application.sessions.account.value }, {}, client))
             lateinit var model: MusicViewModel
             compose.runOnUiThread {
                 model = MusicViewModel(application)

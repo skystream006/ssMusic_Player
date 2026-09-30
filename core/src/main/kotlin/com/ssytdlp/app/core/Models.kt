@@ -9,7 +9,12 @@ import java.net.URI
 val ApiJson = Json { ignoreUnknownKeys = true; coerceInputValues = true; encodeDefaults = true }
 
 @Serializable
-data class User(val id: String = "", val name: String = "", val role: String = "user", val status: String = "approved")
+data class User(
+    val id: String = "", val name: String = "", val role: String = "user", val status: String = "approved",
+    val sharedUserIds: List<String> = emptyList()
+) {
+    val isShared: Boolean get() = role.equals("shared", ignoreCase = true)
+}
 
 @Serializable
 data class Session(val token: String, val expiresAt: String, val tokenType: String = "Bearer")

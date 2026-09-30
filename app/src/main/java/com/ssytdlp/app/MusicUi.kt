@@ -120,6 +120,9 @@ fun MusicApp(model: MusicViewModel, requestNotifications: () -> Unit) {
     var screen by rememberSaveable { mutableIntStateOf(0) }
     var settingsReturnScreen by rememberSaveable { mutableIntStateOf(0) }
     val lifecycle = LocalLifecycleOwner.current.lifecycle
+    LaunchedEffect(account?.user?.isShared, screen) {
+        if (account?.user?.isShared == true && screen == 3) screen = 2
+    }
     LaunchedEffect(lifecycle, account, screen) {
         if (account != null && screen in 0..1) lifecycle.repeatOnLifecycle(Lifecycle.State.STARTED) {
             while (true) { model.pollTranscriptions(); delay(10_000) }
@@ -168,7 +171,7 @@ fun MusicApp(model: MusicViewModel, requestNotifications: () -> Unit) {
                             0 -> LibraryScreen(model, playback, requestNotifications, download)
                             1 -> NowPlayingScreen(model, playback)
                             2 -> SettingsScreen(model, download, onJobs = { screen = 3 })
-                            3 -> JobsScreen(model, requestNotifications, download)
+                            3 -> if (account?.user?.isShared != true) JobsScreen(model, requestNotifications, download)
                         }
                     }
                 }

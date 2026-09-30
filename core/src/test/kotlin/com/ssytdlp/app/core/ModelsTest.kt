@@ -1,9 +1,32 @@
 package com.ssytdlp.app.core
 
+import kotlinx.serialization.encodeToString
 import org.junit.Assert.*
 import org.junit.Test
 
 class ModelsTest {
+    @Test fun `login and current user responses retain shared account details`() {
+        val user = """{"id":"listener","name":"Listener","role":"shared","status":"approved","sharedUserIds":["owner"],"createdAt":"2026-09-30"}"""
+        val login = ApiJson.decodeFromString<LoginResponse>(
+            """{"user":$user,"session":{"token":"test-session","expiresAt":"2099-01-01T00:00:00Z","tokenType":"Bearer"}}""")
+        val current = ApiJson.decodeFromString<UserResponse>("""{"user":$user}""")
+        assertEquals(current.user, login.user)
+        assertEquals("shared", current.user.role)
+        assertEquals("approved", current.user.status)
+        assertEquals(listOf("owner"), current.user.sharedUserIds)
+        assertTrue(current.user.isShared)
+        val account = Account("https://music.example", login.user, login.session)
+        assertEquals(account, ApiJson.decodeFromString<Account>(ApiJson.encodeToString(account)))
+    }
+
+    @Test fun `shared role matching accepts server and legacy casing without restricting other roles`() {
+        listOf("shared", "Shared", "SHARED").forEach { assertTrue(User(role = it).isShared) }
+        listOf("user", "admin").forEach { assertFalse(User(role = it).isShared) }
+        val legacy = ApiJson.decodeFromString<User>("""{"id":"listener","role":"user"}""")
+        assertEquals(emptyList<String>(), legacy.sharedUserIds)
+        assertFalse(legacy.isShared)
+    }
+
     @Test fun `resource URLs preserve escaped nested file names and query versions`() {
         assertEquals("https://music.example.com:8443/api/jobs/123/stream/%5BNoVocals%5D%2FSong.mp3?v=42",
             ServerResource.resolve("https://music.example.com:8443", "/api/jobs/123/stream/%5BNoVocals%5D%2FSong.mp3?v=42"))

@@ -267,6 +267,9 @@ PCM processing still show a glow, but only the Circulating style moves.
 In Settings, **Jobs** sits directly below **Appearance**. App update buttons are
 arranged side by side. **Library backup** and **Server** start collapsed and can
 be expanded by tapping their headings.
+Shared accounts hide **Jobs** and **Library backup** using the server's user role
+from app sign-in and `/api/auth/me`. User details refresh at startup and while
+Settings is open; Shared accounts do not poll backup or health endpoints.
 
 Device settings start collapsed when notifications are allowed and battery use is
 unrestricted, and refresh when returning from Android settings. Debug logging

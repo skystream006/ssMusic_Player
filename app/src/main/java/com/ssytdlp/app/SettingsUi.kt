@@ -46,7 +46,7 @@ fun SettingsScreen(model: MusicViewModel, download: (String, String) -> Unit, on
     val lifecycle = LocalLifecycleOwner.current.lifecycle
     val currentAccount by model.sessions.account.collectAsStateWithLifecycle()
     val account = currentAccount ?: return
-    val showJobsAndBackup = account.user.role != "Shared"
+    val showJobsAndBackup = !account.user.isShared
     var logout by remember { mutableStateOf(false) }
     var schedule by remember { mutableStateOf(false) }
     var backupFormat by rememberSaveable { mutableStateOf("android") }
@@ -142,7 +142,7 @@ fun SettingsScreen(model: MusicViewModel, download: (String, String) -> Unit, on
         Text("ssMusic Player ${BuildConfig.VERSION_NAME}", style = MaterialTheme.typography.labelSmall, modifier = Modifier.padding(bottom = 20.dp))
     }
     if (logout) ConfirmDialog("Sign out?", "Playback will stop and this device's server session will be revoked.", { logout = false }) { logout = false; model.logout() }
-    if (schedule) BackupScheduleDialog(model) { schedule = false }
+    if (schedule && showJobsAndBackup) BackupScheduleDialog(model) { schedule = false }
 }
 
 @Composable

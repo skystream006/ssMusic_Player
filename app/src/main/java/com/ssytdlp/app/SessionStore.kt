@@ -7,6 +7,7 @@ import android.util.Base64
 import com.ssytdlp.app.core.Account
 import com.ssytdlp.app.core.ApiJson
 import com.ssytdlp.app.core.PendingLogin
+import com.ssytdlp.app.core.User
 import java.security.KeyStore
 import java.time.Instant
 import javax.crypto.Cipher
@@ -35,6 +36,16 @@ class SessionStore(context: Context) {
         pending = null
         playback.setAccount(account)
         mutableAccount.value = account
+    }
+
+    @Synchronized fun updateUser(expected: Account, user: User): Boolean {
+        if (mutableAccount.value != expected || user.id != expected.user.id) return false
+        if (user != expected.user) {
+            val updated = expected.copy(user = user)
+            write("account", ApiJson.encodeToString(updated))
+            mutableAccount.value = updated
+        }
+        return true
     }
 
     @Synchronized fun clear(expectedToken: String? = null) {
