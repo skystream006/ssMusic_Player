@@ -11,9 +11,10 @@ import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.gestures.awaitEachGesture
+import androidx.compose.foundation.gestures.awaitFirstDown
+import androidx.compose.foundation.gestures.calculateZoom
 import androidx.compose.foundation.gestures.detectHorizontalDragGestures
-import androidx.compose.foundation.gestures.rememberTransformableState
-import androidx.compose.foundation.gestures.transformable
 import androidx.compose.foundation.interaction.collectIsDraggedAsState
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
@@ -37,6 +38,7 @@ import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.ImageBitmap
 import androidx.compose.ui.graphics.asImageBitmap
+import androidx.compose.ui.input.pointer.PointerEventPass
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.input.nestedscroll.NestedScrollConnection
 import androidx.compose.ui.input.nestedscroll.NestedScrollSource
@@ -259,9 +261,9 @@ internal fun LyricsContent(lyrics: SongMetadata?, position: Long, trackKey: Stri
     textScale: Float = 1f, onZoom: (Float) -> Unit = {}) {
     val scale = normalizeLyricsTextScale(textScale)
     key(trackKey, lyrics?.sylt, lyrics?.uslt, preferUslt) {
-        val zoomState = rememberTransformableState { zoomChange, _, _ -> onZoom(zoomChange) }
-        val zoomModifier = modifier.transformable(zoomState, canPan = { false },
-            enabled = lyrics?.sylt?.isNotEmpty() == true || !lyrics?.uslt.isNullOrBlank())
+        var pinching by remember { mutableStateOf(false) }
+        val zoomModifier = if (lyrics?.sylt?.isNotEmpty() == true || !lyrics?.uslt.isNullOrBlank())
+            modifier.lyricsPinchZoom(onZoom) { pinching = it } else modifier
         if (lyrics?.sylt?.isNotEmpty() == true && !(preferUslt && !lyrics.uslt.isNullOrBlank())) {
             val active = lyrics.sylt.indexOfLast { it.time * 1000 <= position }
             val listState = rememberLazyListState()
@@ -313,8 +315,8 @@ internal fun LyricsContent(lyrics: SongMetadata?, position: Long, trackKey: Stri
                     seekTarget = null
                 }
             }
-            LaunchedEffect(target, following, manualScroll, dragging, tap, zoomState.isTransformInProgress) {
-                if (following && !manualScroll && !dragging && !zoomState.isTransformInProgress && target >= 0)
+            LaunchedEffect(target, following, manualScroll, dragging, tap, pinching) {
+                if (following && !manualScroll && !dragging && !pinching && target >= 0)
                     listState.animateScrollToItem(target)
             }
             LazyColumn(zoomModifier.fillMaxWidth().nestedScroll(scrollConnection), state = listState,
@@ -341,6 +343,36 @@ internal fun LyricsContent(lyrics: SongMetadata?, position: Long, trackKey: Stri
         } else Column(zoomModifier.fillMaxWidth().verticalScroll(rememberScrollState()).padding(28.dp)) {
             Text(lyrics?.uslt?.ifBlank { null } ?: error ?: if (lyrics == null && !isVideo) "Loading lyrics..." else "No lyrics available",
                 style = MaterialTheme.typography.bodyLarge.scaledLyrics(if (lyrics?.uslt.isNullOrBlank()) 1f else scale))
+        }
+    }
+}
+
+@Composable
+private fun Modifier.lyricsPinchZoom(onZoom: (Float) -> Unit, onPinchingChanged: (Boolean) -> Unit): Modifier {
+    val currentOnZoom by rememberUpdatedState(onZoom)
+    val currentOnPinchingChanged by rememberUpdatedState(onPinchingChanged)
+    return pointerInput(Unit) {
+        awaitEachGesture {
+            awaitFirstDown(requireUnconsumed = false, pass = PointerEventPass.Initial)
+            var pinching = false
+            try {
+                do {
+                    // Claim multi-touch before lyric clicks or vertical scrolling can consume it.
+                    val event = awaitPointerEvent(PointerEventPass.Initial)
+                    if (event.changes.count { it.pressed } >= 2) {
+                        if (!pinching) {
+                            pinching = true
+                            currentOnPinchingChanged(true)
+                        }
+                        val zoomChange = event.calculateZoom()
+                        if (zoomChange.isFinite() && zoomChange > 0f && zoomChange != 1f) currentOnZoom(zoomChange)
+                    }
+                    // Keep consuming until all fingers lift, so a pinch cannot finish as a tap or drag.
+                    if (pinching) event.changes.forEach { it.consume() }
+                } while (event.changes.any { it.pressed })
+            } finally {
+                currentOnPinchingChanged(false)
+            }
         }
     }
 }

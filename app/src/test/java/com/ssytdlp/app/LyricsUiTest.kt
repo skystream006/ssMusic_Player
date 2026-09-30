@@ -91,6 +91,59 @@ class LyricsUiTest {
         }
     }
 
+    @Test fun verticalPinchAcrossClickableRowsZoomsInsteadOfSeekingOrScrolling() {
+        showLyrics()
+        pinchLyrics(zoomIn = true, vertical = true)
+        compose.runOnIdle {
+            assertTrue(textScale.floatValue > 1f)
+            assertTrue(seeks.isEmpty())
+            position.longValue = 300_000
+        }
+        compose.onNodeWithText("Line 30").assertIsDisplayed()
+        pinchLyrics(zoomIn = false, vertical = true)
+        compose.runOnIdle {
+            assertTrue(textScale.floatValue < 1f)
+            assertTrue(seeks.isEmpty())
+            position.longValue = 200_000
+        }
+        compose.onNodeWithText("Line 20").assertIsDisplayed()
+    }
+
+    @Test fun verticalPinchInPlainLyricsDoesNotBecomeAScroll() {
+        preferUslt.value = true
+        metadata.value = metadata.value!!.copy(uslt = List(80) { "Plain lyric $it" }.joinToString("\n"))
+        showLyrics()
+        compose.onNodeWithTag("lyrics").performTouchInput { swipeUp(durationMillis = 1_000) }
+        val originalScroll = compose.onNodeWithTag("lyrics").fetchSemanticsNode()
+            .config[SemanticsProperties.VerticalScrollAxisRange].value()
+        assertTrue(originalScroll > 0f)
+        pinchLyrics(zoomIn = false, vertical = true)
+        val finalScroll = compose.onNodeWithTag("lyrics").fetchSemanticsNode()
+            .config[SemanticsProperties.VerticalScrollAxisRange].value()
+        assertEquals(originalScroll, finalScroll, 0f)
+        compose.runOnIdle { assertTrue(textScale.floatValue < 1f) }
+    }
+
+    @Test fun liftingOneFingerAfterPinchingDoesNotStartADragOrSeek() {
+        position.longValue = 100_000
+        showLyrics()
+        compose.onNodeWithTag("lyrics").performTouchInput {
+            down(0, center - Offset(20f, 0f))
+            down(1, center + Offset(20f, 0f))
+            moveTo(0, center - Offset(60f, 0f))
+            moveTo(1, center + Offset(60f, 0f))
+            up(0)
+            moveTo(1, center + Offset(60f, -100f), delayMillis = 300)
+            up(1)
+        }
+        compose.runOnIdle {
+            assertTrue(textScale.floatValue > 1f)
+            assertTrue(seeks.isEmpty())
+            position.longValue = 300_000
+        }
+        compose.onNodeWithText("Line 30").assertIsDisplayed()
+    }
+
     @Test fun zoomIsRetainedWhenLyricsSourceOrTrackChanges() {
         showLyrics()
         pinchLyrics(zoomIn = true)
@@ -373,10 +426,10 @@ class LyricsUiTest {
         compose.onNodeWithTag("lyrics").performTouchInput { swipeUp(durationMillis = 1_000) }
     }
 
-    private fun pinchLyrics(zoomIn: Boolean) {
+    private fun pinchLyrics(zoomIn: Boolean, vertical: Boolean = false) {
         compose.onNodeWithTag("lyrics").performTouchInput {
-            val near = Offset(width * 0.1f, 0f)
-            val far = Offset(width * 0.35f, 0f)
+            val near = if (vertical) Offset(0f, height * 0.1f) else Offset(width * 0.1f, 0f)
+            val far = if (vertical) Offset(0f, height * 0.35f) else Offset(width * 0.35f, 0f)
             val start = if (zoomIn) near else far
             val end = if (zoomIn) far else near
             pinch(start0 = center - start, end0 = center - end,
