@@ -65,7 +65,7 @@ class AccountRefreshTest {
         application = context as MusicApplication
         ReflectionHelpers.setField(application, "api", ServerApi({ sessions.account.value }, { sessions.clear(it) },
             OkHttpClient.Builder().sslSocketFactory(clientTls.sslSocketFactory(), clientTls.trustManager).build()))
-        account = Account(server.url("/").toString().removeSuffix("/"), User("listener", "Listener"),
+        account = Account(server.url("/").newBuilder().host("localhost").build().toString().removeSuffix("/"), User("listener", "Listener"),
             Session("T".repeat(43), "2099-01-01T00:00:00Z"))
     }
 
