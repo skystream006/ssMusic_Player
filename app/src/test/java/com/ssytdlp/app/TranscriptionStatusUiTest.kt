@@ -93,11 +93,12 @@ class TranscriptionStatusUiTest {
 
     @Test fun narrowRowsKeepClickableStatusIconsWithoutPlayingSongOrOpeningMenu() {
         val record = mutableStateOf<Transcription?>(null)
+        val width = mutableStateOf(160.dp)
         var playCount = 0
         var menuCount = 0
         compose.setContent {
             MusicTheme {
-                Box(Modifier.width(160.dp)) {
+                Box(Modifier.width(width.value)) {
                     TrackRow(Track(name = "song.mp3", title = "A long song title", artist = "A long artist name"),
                         transcription = record.value, onClick = { playCount++ }) {
                         ToolButton(Icons.Rounded.MoreVert, "Song actions") { menuCount++ }
@@ -119,6 +120,7 @@ class TranscriptionStatusUiTest {
             assertEquals(0, menuCount)
         }
         compose.onNodeWithContentDescription("Song actions").performClick()
+        compose.runOnIdle { width.value = 220.dp }
         compose.onNodeWithText("A long song title").performClick()
         compose.runOnIdle {
             assertEquals(1, playCount)

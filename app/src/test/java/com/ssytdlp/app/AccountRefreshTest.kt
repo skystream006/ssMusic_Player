@@ -95,7 +95,7 @@ class AccountRefreshTest {
         server.enqueue(MockResponse().setBody("""{"theme":"midnight"}"""))
         server.enqueue(MockResponse().setBody("""{"songCount":1}"""))
         server.enqueue(MockResponse().setBody("""{"files":[{"jobId":"job","name":"song.mp3"}]}"""))
-        val model = createModel(collectSession = true)
+        val model = createModel(collectSession = true, connectPlayback = false)
         compose.waitUntil(timeoutMillis = 10_000) { model.library.tracks.files.size == 1 }
         assertEquals(shared, sessions.account.value!!.user)
         assertEquals(shared, SessionStore(context).account.value!!.user)
@@ -167,10 +167,10 @@ class AccountRefreshTest {
         assertEquals(replacement, sessions.account.value)
     }
 
-    private fun createModel(collectSession: Boolean = false): MusicViewModel {
+    private fun createModel(collectSession: Boolean = false, connectPlayback: Boolean = true): MusicViewModel {
         lateinit var model: MusicViewModel
         compose.runOnUiThread {
-            model = MusicViewModel(application)
+            model = MusicViewModel(application, connectPlayback)
             models.put("music", model)
             if (!collectSession) model.viewModelScope.cancel()
         }
