@@ -1,5 +1,6 @@
 package com.ssytdlp.app
 
+import android.animation.ValueAnimator
 import android.app.Application
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
@@ -10,17 +11,31 @@ import com.ssytdlp.app.core.ApiJson
 import com.ssytdlp.app.core.SongMetadata
 import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
+import org.junit.After
 import org.junit.Assert.*
+import org.junit.Before
 import org.junit.Rule
 import org.junit.Test
 import org.junit.runner.RunWith
 import org.robolectric.RobolectricTestRunner
 import org.robolectric.annotation.Config
+import org.robolectric.annotation.GraphicsMode
+import org.robolectric.util.ReflectionHelpers
+import org.robolectric.util.ReflectionHelpers.ClassParameter
 
 @RunWith(RobolectricTestRunner::class)
 @Config(sdk = [34], application = Application::class, qualifiers = "w360dp-h800dp")
+@GraphicsMode(GraphicsMode.Mode.LEGACY)
 class TranscriptionControlsTest {
     @get:Rule val compose = createAndroidComposeRule<ComponentActivity>()
+
+    private fun setDurationScale(scale: Float) {
+        ReflectionHelpers.callStaticMethod<Any?>(ValueAnimator::class.java, "setDurationScale",
+            ClassParameter.from(Float::class.javaPrimitiveType, scale))
+    }
+
+    @Before fun disableAnimations() = setDurationScale(0f)
+    @After fun enableAnimations() = setDurationScale(1f)
 
     @Test fun onlyActiveHealthEnablesTranscription() {
         assertFalse(null.transcriptionActive)
@@ -34,23 +49,20 @@ class TranscriptionControlsTest {
     @Test fun suppliedLyricsDefaultToAlign() {
         assertEquals("align", TranscriptionOptions().lyricsMode)
         assertEquals("align", TranscriptionOptions(addLyrics = true, lyrics = "Line").toRequestBody()["lyrics_mode"]?.jsonPrimitive?.content)
-        compose.mainClock.autoAdvance = false
         compose.setContent { MusicTheme { TranscribeDialog({}, {}) } }
         compose.onNodeWithText("Add lyrics").performScrollTo().performClick()
-        compose.mainClock.advanceTimeByFrame()
+        compose.waitUntil(5_000) { compose.onAllNodesWithText("Align").fetchSemanticsNodes().isNotEmpty() }
         compose.onNodeWithText("Align").performScrollTo().assertIsDisplayed()
     }
 
     @Test fun lockHidesEveryOptionAndSubmitsOnlyOnConfirmation() {
         var transcribed = 0
         var locked = 0
-        compose.mainClock.autoAdvance = false
         compose.setContent { MusicTheme { TranscribeDialog({}, { transcribed++ }, lock = { locked++ }) } }
         compose.onNodeWithText("Add lyrics").performScrollTo().performClick()
-        compose.mainClock.advanceTimeByFrame()
+        compose.waitUntil(5_000) { compose.onAllNodesWithText("Align").fetchSemanticsNodes().isNotEmpty() }
         compose.onNodeWithText("Transcribe").assertIsNotEnabled()
         compose.onNodeWithContentDescription("Lock transcription").performClick()
-        compose.mainClock.advanceTimeByFrame()
         listOf("Add lyrics", "Auto-detect", "Multilingual", "Viet Lyrics Fallback", "Align").forEach {
             compose.onNodeWithText(it).assertDoesNotExist()
         }
@@ -112,17 +124,13 @@ class TranscriptionControlsTest {
         val original = SongMetadata(title = "Song", uslt = "Keep these lyrics", transcriptionLocked = true)
         val value = mutableStateOf(original)
         var saved: SongMetadata? = null
-        compose.mainClock.autoAdvance = false
         compose.activity.setContent {
             MusicTheme { MetadataDialog(value.value, { value.value = it }, dismiss = {}, save = { saved = it }) }
         }
-        compose.mainClock.advanceTimeByFrame()
         compose.onNodeWithContentDescription("Unlock transcription").performClick()
-        compose.mainClock.advanceTimeByFrame()
         compose.onNodeWithText("Save").performClick()
         compose.runOnIdle { assertEquals(original.copy(transcriptionLocked = false), saved) }
         compose.onNodeWithContentDescription("Lock transcription").performClick()
-        compose.mainClock.advanceTimeByFrame()
         compose.onNodeWithText("Save").performClick()
         compose.runOnIdle { assertEquals(original, saved) }
     }
