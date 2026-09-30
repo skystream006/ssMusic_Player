@@ -180,7 +180,7 @@ it does not prove an installed app's identity. Authorize only sign-ins you start
 | Library | All Music, server-side search and 50-track pages, folder navigation, playlist counts, linked tracks |
 | Organization | Create/rename/remove/move folders, move playlists, add/move/remove song memberships, reorder complete unfiltered playlists |
 | Playback | Authenticated audio/video streams, persistent mini-player, full player, seek, next/previous, queue editing, shuffle, repeat, instrumental companions |
-| Lyrics and tags | Album artwork, timestamp-highlighted seekable SYLT lyrics, plain USLT lyrics, MP3 title/artist/album/genre/year/rating editing, transcription requests |
+| Lyrics and tags | Album artwork, timestamp-highlighted seekable SYLT lyrics, plain USLT lyrics, editing both lyric formats and MP3 tags/ratings, transcription requests and locking |
 | Jobs | Add audio/video YouTube jobs, metadata-only jobs, status polling, search, owner filter, rerun, rename, delete, contributors, add existing files to playlists, save ZIPs |
 | Import | Android document picker for media files or iTunes XML + ZIP; server-local XML + ZIP imports; server upload limits enforced while streaming |
 | Backup | Android/iTunes exports, progress, download latest ZIP, daily/weekly UTC schedules |
@@ -194,8 +194,23 @@ permissions. Tap the selected star again to clear a rating, then **Save**.
 **Transcribe lyrics** opens the server-compatible **Transcribe Song** options:
 auto-detect or a supported language, Multilingual, a no-vocals karaoke version,
 Viet Lyrics Fallback (locks the language to Vietnamese), and optional supplied
-lyrics in Prompt, Align, or Correct mode. All toggles start off; supplied lyrics
+lyrics in Prompt, Align (default), or Correct mode. All toggles start off; supplied lyrics
 must be nonblank and at most 100,000 characters.
+
+For non-Shared accounts, transcription is enabled only when the server reports
+the service as Active. Hover or long-press the disabled action for the explanation;
+use the app's Refresh button after the service becomes available. Shared accounts
+remain read-only and do not query the health endpoint.
+
+The lock button at the top right of **Transcribe Song** hides all transcription
+options; confirm **Lock transcription** to save without sending a transcription
+request. Locked songs hide **Transcribe lyrics**. Use the lock/unlock button in
+**Edit song / rating**, then **Save**, to change the lock. Locking does not prevent
+manual lyric editing.
+
+While viewing lyrics, permitted MP3 editors can choose **Edit lyrics** to edit
+both SYLT timestamps/text and USLT text, including clearing either format.
+Saving updates the displayed lyrics; canceling leaves them unchanged.
 
 Library and queue tracks always show transcription status: request sent, AI
 transcription, Lyrics included, failed, interrupted, not transcribed (no record),
@@ -210,7 +225,8 @@ Library mutations use the server's compact, version-checked endpoints. Conflicts
 refresh the library and require retrying the intended action. Ownership and
 contributor restrictions are preserved; the server remains authoritative.
 Removing a last song link can delete the physical file, and deleting a job
-deletes it for all users. Both require confirmation.
+deletes it for all users. Both require confirmation. When removing a link deletes
+the file, the completion message names the deleted song.
 
 Playback queues initially contain the displayed page; **Add to queue** can add
 tracks from other pages. Browsing another page or tab does not replace playback.

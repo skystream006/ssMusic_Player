@@ -61,16 +61,16 @@ class MusicDeviceTest {
         compose.onNode(hasSetTextAction()).performTextReplacement("  Known words  ")
         compose.onNodeWithText("Transcribe").assertIsEnabled().performClick()
         compose.runOnIdle {
-            assertEquals("prompt", submitted?.lyricsMode)
+            assertEquals("align", submitted?.lyricsMode)
             assertEquals("Known words", submitted?.toRequestBody()?.get("lyrics")?.let {
                 (it as kotlinx.serialization.json.JsonPrimitive).content
             })
         }
-        compose.onNodeWithText("Prompt").performScrollTo().performClick()
-        compose.onNodeWithText("Align").performClick()
-        compose.onNodeWithText("Transcribe").performClick()
-        compose.runOnIdle { assertEquals("align", submitted?.lyricsMode) }
         compose.onNodeWithText("Align").performScrollTo().performClick()
+        compose.onNodeWithText("Prompt").performClick()
+        compose.onNodeWithText("Transcribe").performClick()
+        compose.runOnIdle { assertEquals("prompt", submitted?.lyricsMode) }
+        compose.onNodeWithText("Prompt").performScrollTo().performClick()
         compose.onNodeWithText("Correct").performClick()
         compose.onNodeWithText("Transcribe").performClick()
         compose.runOnIdle { assertEquals("correct", submitted?.lyricsMode) }

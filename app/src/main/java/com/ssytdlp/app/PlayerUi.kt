@@ -263,8 +263,28 @@ fun PlayerTransport(state: PlaybackState, onSeek: (Long) -> Unit, previous: () -
 
 @Composable
 fun Lyrics(model: MusicViewModel, state: PlaybackState, modifier: Modifier, preferUslt: Boolean = false) {
-    LyricsContent(model.metadata, state.position, state.track?.key, model.playback::seek, modifier,
-        model.metadataError, state.track?.mediaType == "video", preferUslt, model.lyricsTextScale, model::zoomLyrics)
+    val account by model.sessions.account.collectAsStateWithLifecycle()
+    val track = state.track
+    val metadata = model.metadata
+    var editing by remember(track?.key) { mutableStateOf(false) }
+    val canEdit = track?.name?.endsWith(".mp3", true) == true && metadata?.canEdit == true &&
+        account?.user?.let { !it.isShared } == true
+    Column(modifier) {
+        if (canEdit) Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
+            TextButton(onClick = { editing = true }, enabled = !model.busy) {
+                Icon(Icons.Rounded.Edit, null)
+                Spacer(Modifier.width(8.dp))
+                Text("Edit lyrics")
+            }
+        }
+        LyricsContent(metadata, state.position, track?.key, model.playback::seek, Modifier.weight(1f),
+            model.metadataError, track?.mediaType == "video", preferUslt, model.lyricsTextScale, model::zoomLyrics)
+    }
+    if (editing && canEdit && track != null && metadata != null) key(track.key) {
+        LyricsEditorDialog(metadata, preferUslt, model.busy, dismiss = { editing = false }) { changes ->
+            model.saveLyrics(track, changes) { editing = false }
+        }
+    }
 }
 
 @Composable
@@ -436,7 +456,8 @@ fun TrackMenu(model: MusicViewModel, track: Track, index: Int, download: (String
     var transcribe by remember { mutableStateOf(false) }
     val account by model.sessions.account.collectAsStateWithLifecycle()
     val user = account?.user
-    val canModify = user != null && model.library.library.jobs.find { it.id == track.jobId }?.canModify(user) == true
+    val canModify = user != null && !user.isShared &&
+        model.library.library.jobs.find { it.id == track.jobId }?.canModify(user) == true
     Box {
         ToolButton(Icons.Rounded.MoreVert, "Options for ${track.displayTitle}", enabled = !model.busy) { open = true }
         DropdownMenu(open, { open = false }) {
@@ -453,7 +474,9 @@ fun TrackMenu(model: MusicViewModel, track: Track, index: Int, download: (String
             }
             if (canModify && track.name.endsWith(".mp3", true)) {
                 DropdownMenuItem(text = { Text("Edit song / rating") }, leadingIcon = { Icon(Icons.Rounded.Edit, null) }, onClick = { open = false; edit = true })
-                DropdownMenuItem(text = { Text("Transcribe lyrics") }, leadingIcon = { Icon(Icons.Rounded.Lyrics, null) }, onClick = { open = false; transcribe = true })
+                TranscribeMenuItem(model.library.transcriptionLocked(track), model.transcriptionAvailable, model.busy) {
+                    open = false; transcribe = true
+                }
             }
             if (canModify && track.playlistId != null) DropdownMenuItem(text = { Text("Remove from playlist") }, leadingIcon = { Icon(Icons.Rounded.DeleteOutline, null) }, onClick = { open = false; remove = true })
         }
@@ -469,26 +492,54 @@ fun TrackMenu(model: MusicViewModel, track: Track, index: Int, download: (String
 }
 
 @Composable
+internal fun TranscribeMenuItem(locked: Boolean, available: Boolean, busy: Boolean = false, onClick: () -> Unit) {
+    if (locked) return
+    TooltipBox(positionProvider = TooltipDefaults.rememberPlainTooltipPositionProvider(),
+        tooltip = { if (!available) PlainTooltip { Text(INACTIVE_TRANSCRIPTION_MESSAGE) } },
+        state = rememberTooltipState()) {
+        DropdownMenuItem(text = { Text("Transcribe lyrics") }, leadingIcon = { Icon(Icons.Rounded.Lyrics, null) },
+            enabled = available && !busy,
+            modifier = Modifier.semantics {
+                if (!available) contentDescription = INACTIVE_TRANSCRIPTION_MESSAGE
+            }, onClick = onClick)
+    }
+}
+
+@Composable
 fun MetadataDialog(model: MusicViewModel, track: Track, ratingOnly: Boolean = false, dismiss: () -> Unit) {
     var value by remember(track.key) { mutableStateOf<SongMetadata?>(null) }
+    var originalLock by remember(track.key) { mutableStateOf(false) }
     var error by remember(track.key) { mutableStateOf<String?>(null) }
     val account by model.sessions.account.collectAsStateWithLifecycle()
     val canEdit = track.name.endsWith(".mp3", true) && account?.user?.let { user ->
-        model.library.library.jobs.find { it.id == track.jobId }?.canModify(user)
+        !user.isShared && model.library.library.jobs.find { it.id == track.jobId }?.canModify(user) == true
     } == true
     LaunchedEffect(track.key) {
-        try { value = ApiJson.decodeFromJsonElement(model.api.request(songPath(track, "lyrics"))) }
+        try {
+            value = ApiJson.decodeFromJsonElement(model.api.request(songPath(track, "lyrics")))
+            originalLock = value?.transcriptionLocked == true
+        }
         catch (failure: Exception) { if (failure is kotlinx.coroutines.CancellationException) throw failure; error = failure.message }
     }
     MetadataDialog(value, { value = it }, error = error, busy = model.busy, ratingOnly = ratingOnly,
-        canEdit = canEdit, dismiss = dismiss) { song -> model.saveMetadata(track, song); dismiss() }
+        canEdit = canEdit, dismiss = dismiss) { song ->
+        model.saveMetadata(track, song, song.transcriptionLocked.takeIf { !ratingOnly && it != originalLock })
+        dismiss()
+    }
 }
 
 @Composable
 fun MetadataDialog(value: SongMetadata?, onValueChange: (SongMetadata) -> Unit, error: String? = null,
     busy: Boolean = false, ratingOnly: Boolean = false, canEdit: Boolean = true,
     dismiss: () -> Unit, save: (SongMetadata) -> Unit) {
-    AlertDialog(onDismissRequest = dismiss, title = { Text(if (ratingOnly) "Rate song" else "Song information") }, text = {
+    AlertDialog(onDismissRequest = dismiss, title = {
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Text(if (ratingOnly) "Rate song" else "Song information", Modifier.weight(1f))
+            if (!ratingOnly && value != null) TranscriptionLockButton(value.transcriptionLocked, canEdit && !busy) {
+                onValueChange(value.copy(transcriptionLocked = it))
+            }
+        }
+    }, text = {
         Column(Modifier.verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(10.dp)) {
             if (!canEdit) Text("Rating changes require permission to edit an MP3 file.")
             if (value == null) Text(error ?: "Loading...")
@@ -517,21 +568,32 @@ fun MetadataDialog(value: SongMetadata?, onValueChange: (SongMetadata) -> Unit, 
 
 @Composable
 fun TranscribeDialog(model: MusicViewModel, track: Track, dismiss: () -> Unit) {
-    TranscribeDialog(dismiss, { options -> model.transcribe(track, options); dismiss() }, model.busy)
+    TranscribeDialog(dismiss, { options -> model.transcribe(track, options); dismiss() }, model.busy,
+        available = model.transcriptionAvailable && !model.library.transcriptionLocked(track),
+        lock = { model.lockTranscription(track, true); dismiss() })
 }
 
 @Composable
-fun TranscribeDialog(dismiss: () -> Unit, submit: (TranscriptionOptions) -> Unit, busy: Boolean = false) {
+fun TranscribeDialog(dismiss: () -> Unit, submit: (TranscriptionOptions) -> Unit, busy: Boolean = false,
+    available: Boolean = true, lock: () -> Unit = {}) {
+    var locked by rememberSaveable { mutableStateOf(false) }
     var language by rememberSaveable { mutableStateOf("") }
     var multilingual by rememberSaveable { mutableStateOf(false) }
     var instrumental by rememberSaveable { mutableStateOf(false) }
     var vietLyricsFallback by rememberSaveable { mutableStateOf(false) }
     var addLyrics by rememberSaveable { mutableStateOf(false) }
-    var lyricsMode by rememberSaveable { mutableStateOf("prompt") }
+    var lyricsMode by rememberSaveable { mutableStateOf("align") }
     var lyrics by rememberSaveable { mutableStateOf("") }
     val options = TranscriptionOptions(language, multilingual, instrumental, vietLyricsFallback, addLyrics, lyricsMode, lyrics)
-    AlertDialog(onDismissRequest = { if (!busy) dismiss() }, title = { Text("Transcribe Song") }, text = {
-        Column(Modifier.verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+    AlertDialog(onDismissRequest = { if (!busy) dismiss() }, title = {
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Text("Transcribe Song", Modifier.weight(1f))
+            TranscriptionLockButton(locked, !busy) { locked = it }
+        }
+    }, text = {
+        if (locked) Text("Submit to lock transcription for this song. You can unlock it in Edit song.")
+        else Column(Modifier.verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+            if (!available) Text(INACTIVE_TRANSCRIPTION_MESSAGE)
             Text("Language (optional)")
             ChoiceField("Language (optional)", transcriptionLanguages.first { it.first == language }.second,
                 transcriptionLanguages.map { it.second }, enabled = !busy && !vietLyricsFallback) { selected ->
@@ -561,8 +623,19 @@ fun TranscribeDialog(dismiss: () -> Unit, submit: (TranscriptionOptions) -> Unit
                     enabled = !busy, minLines = 4, maxLines = 8, modifier = Modifier.fillMaxWidth())
             }
         }
-    }, confirmButton = { TextButton(onClick = { submit(options) }, enabled = options.isValid && !busy) { Text("Transcribe") } },
+    }, confirmButton = {
+        TextButton(onClick = { if (locked) lock() else submit(options) },
+            enabled = !busy && (locked || (available && options.isValid))) { Text(if (locked) "Lock transcription" else "Transcribe") }
+    },
         dismissButton = { TextButton(onClick = dismiss, enabled = !busy) { Text("Cancel") } })
+}
+
+@Composable
+private fun TranscriptionLockButton(locked: Boolean, enabled: Boolean, onChange: (Boolean) -> Unit) {
+    IconToggleButton(checked = locked, enabled = enabled, onCheckedChange = onChange) {
+        Icon(if (locked) Icons.Rounded.Lock else Icons.Rounded.LockOpen,
+            if (locked) "Unlock transcription" else "Lock transcription")
+    }
 }
 
 @Composable
