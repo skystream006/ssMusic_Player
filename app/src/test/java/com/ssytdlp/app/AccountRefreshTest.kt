@@ -67,7 +67,10 @@ class AccountRefreshTest {
         application = context as MusicApplication
         ReflectionHelpers.setField(application, "api", ServerApi({ sessions.account.value }, { sessions.clear(it) },
             OkHttpClient.Builder()
-                .dns { hostname -> if (hostname == "localhost") listOf(loopback) else okhttp3.Dns.SYSTEM.lookup(hostname) }
+                .dns(object : okhttp3.Dns {
+                    override fun lookup(hostname: String): List<InetAddress> =
+                        if (hostname == "localhost") listOf(loopback) else okhttp3.Dns.SYSTEM.lookup(hostname)
+                })
                 .sslSocketFactory(clientTls.sslSocketFactory(), clientTls.trustManager).build()))
         account = Account(server.url("/").newBuilder().host("localhost").build().toString().removeSuffix("/"), User("listener", "Listener"),
             Session("T".repeat(43), "2099-01-01T00:00:00Z"))
