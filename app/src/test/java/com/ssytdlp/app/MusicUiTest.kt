@@ -16,6 +16,7 @@ import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.CompositionLocalProvider
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
@@ -295,15 +296,68 @@ class MusicUiTest {
         compose.runOnIdle { assertTrue(paused) }
     }
 
-    @Test fun longTrackNamesLeaveTheirMenuAccessibleOnNarrowScreens() {
+    @Test fun songRatingsAppearBesideTheirMenusWithoutChangingRowActions() {
+        val track = Track("job", "song.mp3", title = "Rated song", rating = 4)
+        val library = LibraryState(tracks = TrackPage(files = listOf(track), total = 1))
+        var selected = -1
+        var menu = false
+        compose.setContent {
+            MusicTheme {
+                LibraryContent(library, PlaybackState(connected = true), {}, { selected = it }, {}, {}) { song, _ ->
+                    ToolButton(Icons.Rounded.MoreVert, "Options for ${song.displayTitle}") { menu = true }
+                }
+            }
+        }
+        val rating = compose.onNodeWithContentDescription("Rating: 4 out of 5", useUnmergedTree = true)
+            .assertIsDisplayed().assertHasNoClickAction()
+        compose.onNodeWithText("4/5", useUnmergedTree = true).assertIsDisplayed()
+        val options = compose.onNodeWithContentDescription("Options for Rated song").assertIsDisplayed()
+        val ratingBounds = rating.getUnclippedBoundsInRoot()
+        val menuBounds = options.getUnclippedBoundsInRoot()
+        assertTrue(ratingBounds.right <= menuBounds.left)
+        assertEquals(menuBounds.center.y, ratingBounds.center.y)
+        options.performClick()
+        compose.runOnIdle { assertTrue(menu); assertEquals(-1, selected) }
+        compose.onNodeWithText("Rated song").performClick()
+        compose.runOnIdle { assertEquals(0, selected) }
+    }
+
+    @Test fun songRatingReflectsUpdatesAndDisappearsWhenCleared() {
+        val track = mutableStateOf(Track("job", "song.mp3", title = "Song"))
+        compose.setContent {
+            MusicTheme {
+                TrackRow(track.value, onClick = {}) {
+                    ToolButton(Icons.Rounded.MoreVert, "Song options") {}
+                }
+            }
+        }
+        val ratings = hasContentDescription("Rating:", substring = true)
+        compose.onAllNodes(ratings, useUnmergedTree = true).assertCountEquals(0)
+        for (rating in 1..5) {
+            compose.runOnIdle { track.value = track.value.copy(rating = rating) }
+            compose.onAllNodes(ratings, useUnmergedTree = true).assertCountEquals(1)
+            compose.onNodeWithContentDescription("Rating: $rating out of 5", useUnmergedTree = true).assertIsDisplayed()
+            compose.onNodeWithText("$rating/5", useUnmergedTree = true).assertIsDisplayed()
+        }
+        compose.runOnIdle { track.value = track.value.copy(rating = 0) }
+        compose.onAllNodes(ratings, useUnmergedTree = true).assertCountEquals(0)
+        compose.onNodeWithText("Song").assertIsDisplayed()
+        compose.onNodeWithContentDescription("Song options").assertIsDisplayed()
+    }
+
+    @Test
+    @Config(qualifiers = "w320dp-h780dp")
+    fun longTrackNamesLeaveTheirRatingAndMenuAccessibleWithLargeText() {
         val title = "A long song title with enough words to wrap across several lines on a phone"
         var selected = false
         var menu = false
         compose.setContent {
-            MusicTheme {
-                Box(Modifier.width(320.dp)) {
-                    TrackRow(Track("job", "song.mp3", title, "An artist with a long name"), onClick = { selected = true }) {
-                        ToolButton(Icons.Rounded.MoreVert, "Song options") { menu = true }
+            CompositionLocalProvider(LocalDensity provides Density(LocalDensity.current.density, 1.5f)) {
+                MusicTheme {
+                    Box(Modifier.width(320.dp)) {
+                        TrackRow(Track("job", "song.mp3", title, "An artist with a long name", rating = 5), onClick = { selected = true }) {
+                            ToolButton(Icons.Rounded.MoreVert, "Song options") { menu = true }
+                        }
                     }
                 }
             }
@@ -313,6 +367,10 @@ class MusicUiTest {
         compose.onNodeWithContentDescription("Song options").assertIsDisplayed().performClick()
         compose.runOnIdle { assertTrue(menu) }
         val menuBounds = compose.onNodeWithContentDescription("Song options").getUnclippedBoundsInRoot()
+        val ratingBounds = compose.onNodeWithContentDescription("Rating: 5 out of 5", useUnmergedTree = true)
+            .assertIsDisplayed().getUnclippedBoundsInRoot()
+        assertTrue(ratingBounds.right <= menuBounds.left)
+        assertTrue(ratingBounds.left >= compose.onNodeWithText(title, useUnmergedTree = true).getUnclippedBoundsInRoot().right)
         assertTrue(menuBounds.right <= 320.dp)
     }
 

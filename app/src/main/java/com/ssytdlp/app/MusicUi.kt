@@ -31,6 +31,8 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.semantics.clearAndSetSemantics
+import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.Font
 import androidx.compose.ui.text.font.FontWeight
@@ -349,6 +351,13 @@ fun TrackRow(track: Track, active: Boolean = false, enabled: Boolean = true, tra
                 color = if (active) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurface)
             Text(track.displayArtist, maxLines = 1, overflow = TextOverflow.Ellipsis, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
             TranscriptionStatus(transcription)
+        }
+        if (track.rating > 0) Row(Modifier.padding(horizontal = 4.dp).clearAndSetSemantics {
+            contentDescription = "Rating: ${track.rating} out of 5"
+        }, verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+            Icon(Icons.Rounded.Star, null, Modifier.size(16.dp), tint = MaterialTheme.colorScheme.primary)
+            Text("${track.rating}/5", style = MaterialTheme.typography.labelMedium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 1)
         }
         trailing()
     }
