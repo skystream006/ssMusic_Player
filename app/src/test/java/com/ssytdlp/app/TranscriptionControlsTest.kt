@@ -2,6 +2,7 @@ package com.ssytdlp.app
 
 import android.app.Application
 import androidx.activity.ComponentActivity
+import androidx.activity.compose.setContent
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.ui.test.*
 import androidx.compose.ui.test.junit4.createAndroidComposeRule
@@ -36,6 +37,7 @@ class TranscriptionControlsTest {
         compose.mainClock.autoAdvance = false
         compose.setContent { MusicTheme { TranscribeDialog({}, {}) } }
         compose.onNodeWithText("Add lyrics").performScrollTo().performClick()
+        compose.mainClock.advanceTimeByFrame()
         compose.onNodeWithText("Align").performScrollTo().assertIsDisplayed()
     }
 
@@ -45,8 +47,10 @@ class TranscriptionControlsTest {
         compose.mainClock.autoAdvance = false
         compose.setContent { MusicTheme { TranscribeDialog({}, { transcribed++ }, lock = { locked++ }) } }
         compose.onNodeWithText("Add lyrics").performScrollTo().performClick()
+        compose.mainClock.advanceTimeByFrame()
         compose.onNodeWithText("Transcribe").assertIsNotEnabled()
         compose.onNodeWithContentDescription("Lock transcription").performClick()
+        compose.mainClock.advanceTimeByFrame()
         listOf("Add lyrics", "Auto-detect", "Multilingual", "Viet Lyrics Fallback", "Align").forEach {
             compose.onNodeWithText(it).assertDoesNotExist()
         }
@@ -109,13 +113,16 @@ class TranscriptionControlsTest {
         val value = mutableStateOf(original)
         var saved: SongMetadata? = null
         compose.mainClock.autoAdvance = false
-        compose.setContent {
+        compose.activity.setContent {
             MusicTheme { MetadataDialog(value.value, { value.value = it }, dismiss = {}, save = { saved = it }) }
         }
+        compose.mainClock.advanceTimeByFrame()
         compose.onNodeWithContentDescription("Unlock transcription").performClick()
+        compose.mainClock.advanceTimeByFrame()
         compose.onNodeWithText("Save").performClick()
         compose.runOnIdle { assertEquals(original.copy(transcriptionLocked = false), saved) }
         compose.onNodeWithContentDescription("Lock transcription").performClick()
+        compose.mainClock.advanceTimeByFrame()
         compose.onNodeWithText("Save").performClick()
         compose.runOnIdle { assertEquals(original, saved) }
     }
