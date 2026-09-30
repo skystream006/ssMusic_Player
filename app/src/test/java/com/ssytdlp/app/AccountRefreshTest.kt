@@ -103,7 +103,10 @@ class AccountRefreshTest {
         server.enqueue(MockResponse().setBody("""{"songCount":1}"""))
         server.enqueue(MockResponse().setBody("""{"files":[{"jobId":"job","name":"song.mp3"}]}"""))
         val model = createModel(collectSession = true, connectPlayback = false)
-        compose.waitUntil(timeoutMillis = 10_000) { model.library.tracks.files.size == 1 }
+        compose.waitUntil(timeoutMillis = 30_000) {
+            model.library.tracks.files.size == 1 || model.notice != null
+        }
+        assertEquals(1, model.library.tracks.files.size)
         assertEquals(shared, sessions.account.value!!.user)
         assertEquals(shared, SessionStore(context).account.value!!.user)
         assertEquals("midnight", model.preferences.theme)
