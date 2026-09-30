@@ -315,7 +315,7 @@ class MusicUiTest {
         val ratingBounds = rating.getUnclippedBoundsInRoot()
         val menuBounds = options.getUnclippedBoundsInRoot()
         assertTrue(ratingBounds.right <= menuBounds.left)
-        assertEquals(menuBounds.center.y.value, ratingBounds.center.y.value, 1f)
+        assertEquals((menuBounds.top.value + menuBounds.bottom.value) / 2f, (ratingBounds.top.value + ratingBounds.bottom.value) / 2f, 1f)
         options.performClick()
         compose.runOnIdle { assertTrue(menu); assertEquals(-1, selected) }
         compose.onNodeWithText("Rated song").performClick()
