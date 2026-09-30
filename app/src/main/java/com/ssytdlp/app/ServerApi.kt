@@ -29,7 +29,7 @@ import kotlin.coroutines.resumeWithException
 class ApiException(val status: Int, message: String, val payload: JsonObject? = null) : IOException(message)
 
 internal fun shouldLogApiStatus(account: Account?, path: String): Boolean =
-    account?.user?.role?.equals("shared", ignoreCase = true) != true ||
+    account?.user?.isShared != true ||
         path != "/api/health" && path != "/api/jobs"
 
 class ServerApi(
