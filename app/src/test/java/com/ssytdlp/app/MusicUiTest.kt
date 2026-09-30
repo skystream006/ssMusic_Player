@@ -23,6 +23,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.semantics.SemanticsActions
+import androidx.compose.ui.semantics.SemanticsProperties
 import androidx.compose.ui.test.*
 import androidx.compose.ui.test.junit4.createAndroidComposeRule
 import androidx.compose.ui.unit.dp
@@ -283,6 +284,25 @@ class MusicUiTest {
         compose.onNodeWithContentDescription("Playback position").assertDoesNotExist()
     }
 
+    @Test fun miniPlayerKeepsDraggedPositionWhilePlaybackUpdatesAndSeeksOnRelease() {
+        val state = mutableStateOf(previewPlayback())
+        val seeks = mutableListOf<Long>()
+        compose.setContent { MusicTheme { MiniPlayer(state.value, null, {}, {}, {}, seeks::add) } }
+        val slider = compose.onNodeWithContentDescription("Playback position")
+        slider.performTouchInput {
+            down(center)
+            moveTo(Offset(width * 0.8f, centerY), delayMillis = 300)
+        }
+        val dragged = slider.fetchSemanticsNode().config[SemanticsProperties.ProgressBarRangeInfo].current
+        compose.runOnIdle {
+            assertTrue(seeks.isEmpty())
+            state.value = state.value.copy(position = 5_000)
+        }
+        assertEquals(dragged, slider.fetchSemanticsNode().config[SemanticsProperties.ProgressBarRangeInfo].current, 0f)
+        slider.performTouchInput { up() }
+        compose.runOnIdle { assertEquals(listOf(dragged.toLong()), seeks) }
+    }
+
     @Test fun singleSongQueueDoesNotSwipeNext() {
         var previous = 0
         var next = 0
@@ -363,38 +383,44 @@ class MusicUiTest {
         val library = LibraryState(tracks = TrackPage(files = listOf(track), total = 1))
         var selected = -1
         var menu = false
+        var rated: Track? = null
         compose.setContent {
             MusicTheme {
-                LibraryContent(library, PlaybackState(connected = true), {}, { selected = it }, {}, {}) { song, _ ->
+                LibraryContent(library, PlaybackState(connected = true), {}, { selected = it }, {}, {},
+                    onRating = { rated = it }) { song, _ ->
                     ToolButton(Icons.Rounded.MoreVert, "Options for ${song.displayTitle}") { menu = true }
                 }
             }
         }
         val rating = compose.onNodeWithContentDescription("Rating: 4 out of 5", useUnmergedTree = true)
-            .assertIsDisplayed().assertHasNoClickAction()
+            .assertIsDisplayed().assertHasClickAction()
         compose.onNodeWithText("4/5", useUnmergedTree = true).assertIsDisplayed()
         val options = compose.onNodeWithContentDescription("Options for Rated song").assertIsDisplayed()
         val ratingBounds = rating.getUnclippedBoundsInRoot()
         val menuBounds = options.getUnclippedBoundsInRoot()
         assertTrue(ratingBounds.right <= menuBounds.left)
         assertEquals((menuBounds.top.value + menuBounds.bottom.value) / 2f, (ratingBounds.top.value + ratingBounds.bottom.value) / 2f, 1f)
+        rating.performClick()
+        compose.runOnIdle { assertEquals(track, rated); assertFalse(menu); assertEquals(-1, selected) }
         options.performClick()
         compose.runOnIdle { assertTrue(menu); assertEquals(-1, selected) }
         compose.onNodeWithText("Rated song").performClick()
         compose.runOnIdle { assertEquals(0, selected) }
     }
 
-    @Test fun songRatingReflectsUpdatesAndDisappearsWhenCleared() {
+    @Test fun songRatingRemainsVisibleAndClickableWhenUnratedOrCleared() {
         val track = mutableStateOf(Track("job", "song.mp3", title = "Song"))
+        var ratingClicks = 0
         compose.setContent {
             MusicTheme {
-                TrackRow(track.value, onClick = {}) {
+                TrackRow(track.value, onRatingClick = { ratingClicks++ }, onClick = {}) {
                     ToolButton(Icons.Rounded.MoreVert, "Song options") {}
                 }
             }
         }
         val ratings = hasContentDescription("Rating:", substring = true)
-        compose.onAllNodes(ratings, useUnmergedTree = true).assertCountEquals(0)
+        compose.onNodeWithContentDescription("Rating: 0 out of 5").assertIsDisplayed().performClick()
+        compose.onNodeWithText("0/5", useUnmergedTree = true).assertIsDisplayed()
         for (rating in 1..5) {
             compose.runOnIdle { track.value = track.value.copy(rating = rating) }
             compose.onAllNodes(ratings, useUnmergedTree = true).assertCountEquals(1)
@@ -402,9 +428,86 @@ class MusicUiTest {
             compose.onNodeWithText("$rating/5", useUnmergedTree = true).assertIsDisplayed()
         }
         compose.runOnIdle { track.value = track.value.copy(rating = 0) }
-        compose.onAllNodes(ratings, useUnmergedTree = true).assertCountEquals(0)
+        compose.onAllNodes(ratings, useUnmergedTree = true).assertCountEquals(1)
+        compose.onNodeWithContentDescription("Rating: 0 out of 5").assertIsDisplayed().performClick()
+        compose.runOnIdle { assertEquals(2, ratingClicks) }
         compose.onNodeWithText("Song").assertIsDisplayed()
         compose.onNodeWithContentDescription("Song options").assertIsDisplayed()
+    }
+
+    @Test fun ratingDialogSetsAndClearsRatingWithoutChangingOtherMetadata() {
+        val original = SongMetadata(title = "Song", artist = "Artist", album = "Album", genre = "Pop",
+            year = "2026", uslt = "Lyrics")
+        val value = mutableStateOf(original)
+        val open = mutableStateOf(true)
+        var saved: SongMetadata? = null
+        compose.setContent {
+            MusicTheme {
+                if (open.value) MetadataDialog(value.value, { value.value = it }, ratingOnly = true,
+                    dismiss = { open.value = false }) { saved = it; open.value = false }
+            }
+        }
+        compose.onNodeWithText("Rate song").assertIsDisplayed()
+        compose.onNodeWithText("Title").assertDoesNotExist()
+        compose.onNodeWithText("Rating: 0 / 5").assertIsDisplayed()
+        compose.onNodeWithContentDescription("4 stars").performClick().assertIsOn()
+        compose.onNodeWithText("Rating: 4 / 5").assertIsDisplayed()
+        compose.onNodeWithContentDescription("4 stars").performClick().assertIsOff()
+        compose.onNodeWithText("Rating: 0 / 5").assertIsDisplayed()
+        compose.onNodeWithText("Save").performClick()
+        compose.runOnIdle {
+            assertEquals(original, saved)
+            open.value = true
+        }
+        compose.onNodeWithContentDescription("5 stars").performClick()
+        compose.onNodeWithText("Save").performClick()
+        compose.runOnIdle { assertEquals(original.copy(rating = 5), saved) }
+        compose.onNode(isDialog()).assertDoesNotExist()
+    }
+
+    @Test fun ratingDialogCancelDoesNotSaveChanges() {
+        val value = mutableStateOf(SongMetadata(rating = 3))
+        val open = mutableStateOf(true)
+        var saved = false
+        compose.setContent {
+            MusicTheme {
+                if (open.value) MetadataDialog(value.value, { value.value = it }, ratingOnly = true,
+                    dismiss = { open.value = false }) { saved = true }
+            }
+        }
+        compose.onNodeWithText("Rating: 3 / 5").assertIsDisplayed()
+        compose.onNodeWithContentDescription("2 stars").performClick()
+        compose.onNodeWithText("Cancel").performClick()
+        compose.onNode(isDialog()).assertDoesNotExist()
+        compose.runOnIdle { assertFalse(saved) }
+    }
+
+    @Test fun ratingDialogCannotSaveWhileLoadingFailedBusyOrReadOnly() {
+        val value = mutableStateOf<SongMetadata?>(null)
+        val error = mutableStateOf<String?>(null)
+        val busy = mutableStateOf(false)
+        val canEdit = mutableStateOf(true)
+        compose.setContent {
+            MusicTheme {
+                MetadataDialog(value.value, { value.value = it }, error = error.value, busy = busy.value,
+                    ratingOnly = true, canEdit = canEdit.value, dismiss = {}) {}
+            }
+        }
+        compose.onNodeWithText("Loading...").assertIsDisplayed()
+        compose.onNodeWithText("Save").assertIsNotEnabled()
+        compose.runOnIdle { error.value = "Could not load song information." }
+        compose.onNodeWithText("Could not load song information.").assertIsDisplayed()
+        compose.onNodeWithText("Save").assertIsNotEnabled()
+        compose.runOnIdle { value.value = SongMetadata(rating = 2); busy.value = true }
+        compose.onNodeWithText("Save").assertIsNotEnabled()
+        compose.onNodeWithContentDescription("3 stars").assertIsNotEnabled()
+        compose.runOnIdle { busy.value = false; canEdit.value = false }
+        compose.onNodeWithText("Rating changes require permission to edit an MP3 file.").assertIsDisplayed()
+        compose.onNodeWithText("Save").assertIsNotEnabled()
+        compose.onNodeWithContentDescription("3 stars").assertIsNotEnabled()
+        compose.onNodeWithText("Cancel").assertIsEnabled()
+        compose.runOnIdle { canEdit.value = true }
+        compose.onNodeWithText("Save").assertIsEnabled()
     }
 
     @Test
@@ -413,11 +516,13 @@ class MusicUiTest {
         val title = "A long song title with enough words to wrap across several lines on a phone"
         var selected = false
         var menu = false
+        var rated = false
         compose.setContent {
             CompositionLocalProvider(LocalDensity provides Density(LocalDensity.current.density, 1.5f)) {
                 MusicTheme {
                     Box(Modifier.width(320.dp)) {
-                        TrackRow(Track("job", "song.mp3", title, "An artist with a long name", rating = 5), onClick = { selected = true }) {
+                        TrackRow(Track("job", "song.mp3", title, "An artist with a long name", rating = 5),
+                            onRatingClick = { rated = true }, onClick = { selected = true }) {
                             ToolButton(Icons.Rounded.MoreVert, "Song options") { menu = true }
                         }
                     }
@@ -434,6 +539,8 @@ class MusicUiTest {
         assertTrue(ratingBounds.right <= menuBounds.left)
         assertTrue(ratingBounds.left >= compose.onNodeWithText(title, useUnmergedTree = true).getUnclippedBoundsInRoot().right)
         assertTrue(menuBounds.right <= 320.dp)
+        compose.onNodeWithContentDescription("Rating: 5 out of 5").performClick()
+        compose.runOnIdle { assertTrue(rated) }
     }
 
     @Test fun playlistChoiceUsesStableIdentifiers() {

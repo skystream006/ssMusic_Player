@@ -90,6 +90,49 @@ class NowPlayingScreenTest {
         compose.onNodeWithText("Blue hour").assertIsDisplayed()
     }
 
+    @Test fun libraryUnratedSongOpensRatingDialogEvenWhenPlaybackIsDisconnected() {
+        val track = Track(jobId = "preview", name = "song.mp3")
+        val library = ReflectionHelpers.getField<MutableState<LibraryState>>(model, "library\$delegate")
+        compose.runOnIdle { library.value = LibraryState(tracks = TrackPage(files = listOf(track))) }
+        compose.setContent { MusicTheme { LibraryScreen(model, PlaybackState(), {}, { _, _ -> }) } }
+        compose.onNodeWithContentDescription("Rating: 0 out of 5").assertIsDisplayed().performClick()
+        compose.onNode(isDialog()).assertIsDisplayed()
+        compose.onNodeWithText("Rate song").assertIsDisplayed()
+        compose.onNodeWithText("Cancel").performClick()
+        compose.onNode(isDialog()).assertDoesNotExist()
+        compose.onNodeWithContentDescription("Rating: 0 out of 5").assertIsDisplayed()
+    }
+
+    @Test fun queueRatingOpensOnlyOneDialogAndCanBeDismissed() {
+        val track = Track(jobId = "preview", name = "song.mp3")
+        val next = track.copy(name = "next.mp3", rating = 4)
+        compose.setContent {
+            MusicTheme { NowPlayingScreen(model, PlaybackState(track = track, queue = listOf(track, next))) }
+        }
+        compose.onNodeWithText("Queue").performClick()
+        compose.onNodeWithContentDescription("Rating: 4 out of 5").performClick()
+        compose.onAllNodes(isDialog()).assertCountEquals(1)
+        compose.onNodeWithText("Rate song").assertIsDisplayed()
+        compose.onNodeWithText("Cancel").performClick()
+        compose.onNode(isDialog()).assertDoesNotExist()
+        compose.onAllNodesWithContentDescription("Remove from queue").assertCountEquals(2)
+    }
+
+    @Test fun queueRatingReflectsSavedAndClearedValuesOutsideTheCurrentLibraryPage() {
+        val track = Track(jobId = "preview", name = "song.mp3", rating = 4)
+        val library = ReflectionHelpers.getField<MutableState<LibraryState>>(model, "library\$delegate")
+        compose.setContent { MusicTheme { NowPlayingScreen(model, PlaybackState(track = track, queue = listOf(track))) } }
+        compose.onNodeWithText("Queue").performClick()
+        compose.onNodeWithContentDescription("Rating: 4 out of 5").assertIsDisplayed()
+        compose.runOnIdle { library.value = library.value.copy(ratings = mapOf(track.key to 2)) }
+        compose.onNodeWithContentDescription("Rating: 2 out of 5").assertIsDisplayed()
+        compose.runOnIdle {
+            library.value = library.value.copy(ratings = mapOf(track.key to 0))
+                .withTrackPage(TrackPage(files = listOf(Track("other", "other.mp3"))))
+        }
+        compose.onNodeWithContentDescription("Rating: 0 out of 5").assertIsDisplayed().assertHasClickAction()
+    }
+
     @Test fun lyricsPinchPersistsAcrossTabsTracksAndViewModelRecreation() {
         val track = Track(jobId = "preview", name = "song.mp3")
         val state = mutableStateOf(PlaybackState(track = track, queue = listOf(track)))

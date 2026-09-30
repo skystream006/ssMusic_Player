@@ -186,6 +186,11 @@ it does not prove an installed app's identity. Authorize only sign-ins you start
 | Backup | Android/iTunes exports, progress, download latest ZIP, daily/weekly UTC schedules |
 | Settings | Updates at the top, Blue Wave appearance, edge-lighting toggle, optional server-synced theme and light/dark mode, account expiry, server media count, collapsible device/debugging sections, browser account/admin access |
 
+Drag the bottom mini-player's progress slider to seek without leaving Library.
+Track ratings remain visible even at zero; tap the star beside a track's menu
+or queue controls to open **Rate song**. Saving uses the existing MP3 editing
+permissions. Tap the selected star again to clear a rating, then **Save**.
+
 **Transcribe lyrics** opens the server-compatible **Transcribe Song** options:
 auto-detect or a supported language, Multilingual, a no-vocals karaoke version,
 Viet Lyrics Fallback (locks the language to Vietnamese), and optional supplied

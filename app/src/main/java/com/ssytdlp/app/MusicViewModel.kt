@@ -27,7 +27,8 @@ data class LibraryState(
     val selectedId: String? = null, val search: String = "", val page: Int = 1,
     val loading: Boolean = false,
     val pendingTranscriptions: Map<String, Transcription> = emptyMap(),
-    val transcriptions: Map<String, Transcription?> = emptyMap()
+    val transcriptions: Map<String, Transcription?> = emptyMap(),
+    val ratings: Map<String, Int> = emptyMap()
 ) {
     fun withLibrary(result: Library): LibraryState = copy(
         library = result, selectedId = selectedId?.takeIf { id -> result.entries.any { it.id == id } })
@@ -36,8 +37,11 @@ data class LibraryState(
         ?: if (transcriptions.containsKey(track.key)) transcriptions[track.key]
         else track.transcription ?: library.jobs.find { it.id == track.jobId }?.transcriptions?.get(track.name)
 
+    fun rating(track: Track): Int = ratings[track.key] ?: track.rating
+
     fun withTrackPage(result: TrackPage): LibraryState = copy(
         tracks = result, page = result.page,
+        ratings = ratings + result.files.associate { it.key to it.rating },
         transcriptions = transcriptions + result.files.associate { track ->
             track.key to (track.transcription ?: library.jobs.find { it.id == track.jobId }?.transcriptions?.get(track.name))
         })
@@ -326,6 +330,7 @@ class MusicViewModel(application: Application) : AndroidViewModel(application) {
     fun saveMetadata(track: Track, value: SongMetadata) = launchAction {
         api.request("/api/jobs/${encode(track.jobId)}/files/${encode(track.name)}/metadata", "PATCH", json(
             "title" to value.title, "artist" to value.artist, "album" to value.album, "genre" to value.genre, "year" to value.year, "rating" to value.rating))
+        library = library.copy(ratings = library.ratings + (track.key to value.rating))
         refreshTracks()
         if (playback.state.value.track?.key == track.key) metadata = ApiJson.decodeFromJsonElement(api.request(songPath(track, "lyrics")))
         message("Song information saved.")

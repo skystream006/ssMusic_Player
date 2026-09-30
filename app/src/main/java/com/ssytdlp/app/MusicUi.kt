@@ -33,6 +33,7 @@ import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.semantics.clearAndSetSemantics
 import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.Font
 import androidx.compose.ui.text.font.FontWeight
@@ -228,16 +229,19 @@ private fun AppSettingsSheet(onDismiss: () -> Unit) {
 @Composable
 fun LibraryScreen(model: MusicViewModel, playback: PlaybackState, requestNotifications: () -> Unit, download: (String, String) -> Unit) {
     var browser by rememberSaveable { mutableStateOf(false) }
+    var ratingTrack by remember { mutableStateOf<Track?>(null) }
     LibraryContent(model.library, playback, onBrowse = { browser = true }, onPlay = { index ->
         requestNotifications()
         model.playback.play(model.library.tracks.files, index)
-    }, onSearch = model::search, onPage = model::page) { track, index -> TrackMenu(model, track, index, download) }
+    }, onSearch = model::search, onPage = model::page, onRating = { ratingTrack = it }) { track, index -> TrackMenu(model, track, index, download) }
     if (browser) LibraryBrowser(model) { browser = false }
+    ratingTrack?.let { track -> MetadataDialog(model, track, ratingOnly = true) { ratingTrack = null } }
 }
 
 @Composable
 fun LibraryContent(state: LibraryState, playback: PlaybackState, onBrowse: () -> Unit, onPlay: (Int) -> Unit,
-    onSearch: (String) -> Unit, onPage: (Int) -> Unit, trackActions: @Composable (Track, Int) -> Unit) {
+    onSearch: (String) -> Unit, onPage: (Int) -> Unit, onRating: (Track) -> Unit = {},
+    trackActions: @Composable (Track, Int) -> Unit) {
     val selected = state.library.entries.find { it.id == state.selectedId }
     val title = selected?.let { entry -> state.library.playlists.find { it.id == entry.id }?.playlistTitle?.ifBlank { null } ?: entry.name } ?: "All Music"
     Column(Modifier.fillMaxSize()) {
@@ -262,8 +266,8 @@ fun LibraryContent(state: LibraryState, playback: PlaybackState, onBrowse: () ->
                 EmptyState(Icons.Rounded.LibraryMusic, if (state.search.isNotBlank()) "No matching music" else "Your library is empty")
             }
             itemsIndexed(state.tracks.files, key = { _, track -> track.key }) { index, track ->
-                TrackRow(track, active = playback.track?.key == track.key, enabled = playback.connected && !state.loading,
-                    transcription = state.transcription(track), onClick = {
+                TrackRow(track.copy(rating = state.rating(track)), active = playback.track?.key == track.key, enabled = playback.connected && !state.loading,
+                    transcription = state.transcription(track), onRatingClick = { onRating(track) }, onClick = {
                     onPlay(index)
                 }) {
                     trackActions(track, index)
@@ -336,30 +340,37 @@ fun EntryMenu(model: MusicViewModel, entry: LibraryEntry) {
 
 @Composable
 fun TrackRow(track: Track, active: Boolean = false, enabled: Boolean = true, transcription: Transcription? = null,
-    onClick: () -> Unit, trailing: @Composable () -> Unit = {}) {
-    Row(Modifier.fillMaxWidth().background(if (active) MaterialTheme.colorScheme.primary.copy(alpha = 0.08f) else Color.Transparent)
-        .clickable(enabled = enabled, onClick = onClick).heightIn(min = 78.dp).padding(start = 20.dp, end = 8.dp, top = 10.dp, bottom = 10.dp),
-        verticalAlignment = Alignment.CenterVertically) {
-        Box(Modifier.size(46.dp).clip(RoundedCornerShape(6.dp)).background(MaterialTheme.colorScheme.surfaceContainer)
-            .border(1.dp, if (active) MaterialTheme.colorScheme.primary.copy(alpha = 0.4f) else MaterialTheme.colorScheme.outlineVariant, RoundedCornerShape(6.dp)),
-            contentAlignment = Alignment.Center) {
-            Icon(if (active) Icons.Rounded.GraphicEq else if (track.mediaType == "video") Icons.Rounded.Movie else Icons.Rounded.MusicNote,
-                null, Modifier.size(22.dp), tint = if (active) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant)
+    onRatingClick: () -> Unit = {}, onClick: () -> Unit, trailing: @Composable () -> Unit = {}) {
+    BoxWithConstraints(Modifier.fillMaxWidth()) {
+        val compact = maxWidth < 240.dp
+        Row(Modifier.fillMaxWidth().background(if (active) MaterialTheme.colorScheme.primary.copy(alpha = 0.08f) else Color.Transparent)
+            .clickable(enabled = enabled, onClick = onClick).heightIn(min = 78.dp)
+            .padding(start = if (compact) 8.dp else 20.dp, end = 8.dp, top = 10.dp, bottom = 10.dp),
+            verticalAlignment = Alignment.CenterVertically) {
+            if (!compact) Box(Modifier.size(46.dp).clip(RoundedCornerShape(6.dp)).background(MaterialTheme.colorScheme.surfaceContainer)
+                .border(1.dp, if (active) MaterialTheme.colorScheme.primary.copy(alpha = 0.4f) else MaterialTheme.colorScheme.outlineVariant, RoundedCornerShape(6.dp)),
+                contentAlignment = Alignment.Center) {
+                Icon(if (active) Icons.Rounded.GraphicEq else if (track.mediaType == "video") Icons.Rounded.Movie else Icons.Rounded.MusicNote,
+                    null, Modifier.size(22.dp), tint = if (active) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant)
+            }
+            Column(Modifier.weight(1f).padding(start = if (compact) 4.dp else 14.dp, end = 4.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                Text(track.displayTitle, maxLines = 2, overflow = TextOverflow.Ellipsis, style = MaterialTheme.typography.titleSmall,
+                    color = if (active) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurface)
+                Text(track.displayArtist, maxLines = 1, overflow = TextOverflow.Ellipsis, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                TranscriptionStatus(transcription)
+            }
+            Row(Modifier.clickable(role = Role.Button, onClickLabel = "Rate song", onClick = onRatingClick)
+                .sizeIn(minWidth = 48.dp, minHeight = 48.dp).padding(horizontal = 4.dp).clearAndSetSemantics {
+                contentDescription = "Rating: ${track.rating} out of 5"
+            }, verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(4.dp, Alignment.CenterHorizontally)) {
+                Icon(if (track.rating > 0) Icons.Rounded.Star else Icons.Rounded.StarBorder,
+                    null, Modifier.size(16.dp), tint = MaterialTheme.colorScheme.primary)
+                if (!compact) Text("${track.rating}/5", style = MaterialTheme.typography.labelMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 1)
+            }
+            trailing()
         }
-        Column(Modifier.weight(1f).padding(start = 14.dp, end = 4.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
-            Text(track.displayTitle, maxLines = 2, overflow = TextOverflow.Ellipsis, style = MaterialTheme.typography.titleSmall,
-                color = if (active) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurface)
-            Text(track.displayArtist, maxLines = 1, overflow = TextOverflow.Ellipsis, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-            TranscriptionStatus(transcription)
-        }
-        if (track.rating > 0) Row(Modifier.padding(horizontal = 4.dp).clearAndSetSemantics {
-            contentDescription = "Rating: ${track.rating} out of 5"
-        }, verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(4.dp)) {
-            Icon(Icons.Rounded.Star, null, Modifier.size(16.dp), tint = MaterialTheme.colorScheme.primary)
-            Text("${track.rating}/5", style = MaterialTheme.typography.labelMedium,
-                color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 1)
-        }
-        trailing()
     }
 }
 
