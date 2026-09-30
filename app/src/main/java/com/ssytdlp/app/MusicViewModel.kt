@@ -51,7 +51,7 @@ data class LibraryState(
             .associate { it.key to job.transcriptions[it.name] })
 }
 
-class MusicViewModel(application: Application) : AndroidViewModel(application) {
+class MusicViewModel @JvmOverloads constructor(application: Application, private val connectPlayback: Boolean = true) : AndroidViewModel(application) {
     private val app = application as MusicApplication
     val sessions = app.sessions
     val api = app.api
@@ -109,7 +109,7 @@ class MusicViewModel(application: Application) : AndroidViewModel(application) {
                     health = null
                 } else {
                     library = LibraryState(selectedId = sessions.playback.selectedLibrary(account))
-                    playback.connect()
+                    if (connectPlayback) playback.connect()
                     runAction {
                         if (!refreshAccount()) return@runAction
                         preferences = ApiJson.decodeFromJsonElement(api.request("/api/preferences"))
