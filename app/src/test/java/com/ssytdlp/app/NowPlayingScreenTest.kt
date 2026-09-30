@@ -107,6 +107,32 @@ class NowPlayingScreenTest {
         compose.onNodeWithText("Edit lyrics").assertDoesNotExist()
     }
 
+    @Test fun advancingPlaybackKeepsOpenLyricsDraftBoundToOriginalSong() {
+        val track = Track(jobId = "preview", name = "song.mp3")
+        val state = mutableStateOf(PlaybackState(track = track))
+        val metadata = ReflectionHelpers.getField<MutableState<SongMetadata?>>(model, "metadata\$delegate")
+        val account = ReflectionHelpers.getField<MutableStateFlow<Account?>>(model.sessions, "mutableAccount")
+        compose.runOnIdle {
+            model.viewModelScope.cancel()
+            account.value = Account("https://music.example", User(id = "owner"), Session("test", "2099-01-01T00:00:00Z"))
+            metadata.value = SongMetadata(uslt = "Original lyrics", canEdit = true)
+        }
+        compose.setContent { MusicTheme { NowPlayingScreen(model, state.value) } }
+        compose.onNodeWithText("USLT Lyrics").performClick()
+        compose.onNodeWithText("Edit lyrics").performClick()
+        compose.onNodeWithTag("uslt-editor").performTextReplacement("Unsaved draft")
+        compose.runOnIdle {
+            state.value = state.value.copy(track = Track(jobId = "preview", name = "next.mp3"))
+            metadata.value = SongMetadata(uslt = "Next song lyrics", canEdit = false)
+        }
+        compose.onNode(isDialog()).assertIsDisplayed()
+        compose.onNodeWithTag("uslt-editor").assertTextContains("Unsaved draft")
+        compose.onNodeWithText("Save").assertIsEnabled()
+        compose.onNodeWithText("Cancel").performClick()
+        compose.onNode(isDialog()).assertDoesNotExist()
+        compose.onNodeWithText("Next song lyrics").assertIsDisplayed()
+    }
+
     @Test fun pageShowsPlayerLyricsAndQueueAndRestoresSelectedTab() {
         val track = Track(jobId = "preview", name = "song.mp3", title = "Blue hour", artist = "Northbound")
         val state = PlaybackState(track = track, queue = listOf(track), duration = 180_000)

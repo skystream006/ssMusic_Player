@@ -266,12 +266,16 @@ fun Lyrics(model: MusicViewModel, state: PlaybackState, modifier: Modifier, pref
     val account by model.sessions.account.collectAsStateWithLifecycle()
     val track = state.track
     val metadata = model.metadata
-    var editing by remember(track?.key) { mutableStateOf(false) }
+    var editing by remember(account?.origin, account?.user?.id, account?.session) {
+        mutableStateOf<Triple<Track, SongMetadata, Boolean>?>(null)
+    }
     val canEdit = track?.name?.endsWith(".mp3", true) == true && metadata?.canEdit == true &&
         account?.user?.let { !it.isShared } == true
     Column(modifier) {
         if (canEdit) Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
-            TextButton(onClick = { editing = true }, enabled = !model.busy) {
+            TextButton(onClick = {
+                if (track != null && metadata != null) editing = Triple(track, metadata, preferUslt)
+            }, enabled = !model.busy) {
                 Icon(Icons.Rounded.Edit, null)
                 Spacer(Modifier.width(8.dp))
                 Text("Edit lyrics")
@@ -280,9 +284,11 @@ fun Lyrics(model: MusicViewModel, state: PlaybackState, modifier: Modifier, pref
         LyricsContent(metadata, state.position, track?.key, model.playback::seek, Modifier.weight(1f),
             model.metadataError, track?.mediaType == "video", preferUslt, model.lyricsTextScale, model::zoomLyrics)
     }
-    if (editing && canEdit && track != null && metadata != null) key(track.key) {
-        LyricsEditorDialog(metadata, preferUslt, model.busy, dismiss = { editing = false }) { changes ->
-            model.saveLyrics(track, changes) { editing = false }
+    editing?.takeIf { account?.user?.isShared == false }?.let { (editTrack, editMetadata, editUslt) ->
+        key(editTrack.key) {
+            LyricsEditorDialog(editMetadata, editUslt, model.busy, dismiss = { editing = null }) { changes ->
+                model.saveLyrics(editTrack, changes) { editing = null }
+            }
         }
     }
 }
