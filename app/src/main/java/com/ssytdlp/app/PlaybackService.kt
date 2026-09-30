@@ -26,6 +26,7 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.launch
@@ -34,6 +35,7 @@ import kotlinx.serialization.encodeToString
 @androidx.annotation.OptIn(UnstableApi::class)
 class PlaybackService : MediaSessionService() {
     private var session: MediaSession? = null
+    private var persistence: PlaybackPersistence? = null
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
 
     override fun onCreate() {
@@ -55,6 +57,16 @@ class PlaybackService : MediaSessionService() {
             .setHandleAudioBecomingNoisy(true)
             .setWakeMode(C.WAKE_MODE_NETWORK)
             .build()
+        val account = app.sessions.account.value
+        if (account != null) {
+            persistence = PlaybackPersistence(player, app.sessions.playback, account) { it.toMediaItem(app.api) }
+            scope.launch {
+                while (true) {
+                    delay(1_000)
+                    if (player.isPlaying) persistence?.save()
+                }
+            }
+        }
         val openApp = PendingIntent.getActivity(this, 0, Intent(this, MainActivity::class.java),
             PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE)
         session = MediaSession.Builder(this, player).setSessionActivity(openApp)
@@ -70,7 +82,7 @@ class PlaybackService : MediaSessionService() {
                     } catch (error: Exception) { Futures.immediateFailedFuture(error) }
                 }
             }).build()
-        val owner = app.sessions.account.value?.let { it.origin to it.user.id }
+        val owner = account?.let { it.origin to it.user.id }
         scope.launch {
             app.sessions.account.map { it?.let { account -> account.origin to account.user.id } }.distinctUntilChanged().collect { identity ->
                 if (identity == null || identity != owner) {
@@ -85,8 +97,15 @@ class PlaybackService : MediaSessionService() {
     override fun onGetSession(controllerInfo: MediaSession.ControllerInfo): MediaSession? =
         session.takeIf { controllerInfo.packageName == packageName || controllerInfo.isTrusted }
 
+    override fun onTaskRemoved(rootIntent: Intent?) {
+        persistence?.save(synchronous = true)
+        super.onTaskRemoved(rootIntent)
+    }
+
     override fun onDestroy() {
         scope.cancel()
+        persistence?.close()
+        persistence = null
         session?.run { player.release(); release() }
         (application as MusicApplication).audioLevels.clear()
         session = null

@@ -93,14 +93,14 @@ class PlaybackConnection(private val context: Context, private val api: ServerAp
             if (player.playbackState == Player.STATE_IDLE) player.prepare()
         }
     }
-    fun toggle() { controller?.let { if (it.isPlaying) it.pause() else { if (it.playerError != null) it.prepare(); it.play() } } }
+    fun toggle() { controller?.let { if (it.isPlaying) it.pause() else { if (it.playerError != null || it.playbackState == Player.STATE_IDLE) it.prepare(); it.play() } } }
     fun seek(position: Long) { controller?.seekTo(position.coerceAtLeast(0)) }
     fun next() { controller?.seekToNextMediaItem() }
     fun previous() { controller?.seekToPrevious() }
     fun previousTrack() { controller?.seekToPreviousMediaItem() }
     fun shuffle() { controller?.let { it.shuffleModeEnabled = !it.shuffleModeEnabled } }
     fun repeat() { controller?.let { it.repeatMode = (it.repeatMode + 1) % 3 } }
-    fun select(index: Int) { controller?.let { it.seekToDefaultPosition(index); it.play() } }
+    fun select(index: Int) { controller?.let { it.seekToDefaultPosition(index); if (it.playbackState == Player.STATE_IDLE) it.prepare(); it.play() } }
     fun remove(index: Int) { controller?.removeMediaItem(index) }
     fun disconnect(stop: Boolean = false) {
         DebugLog.event(DebugEvent.PLAYBACK_DISCONNECTED)

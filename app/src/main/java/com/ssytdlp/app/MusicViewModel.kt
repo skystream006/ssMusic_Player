@@ -48,7 +48,7 @@ class MusicViewModel(application: Application) : AndroidViewModel(application) {
     val sessions = app.sessions
     val api = app.api
     val playback = PlaybackConnection(application, api, viewModelScope)
-    var library by mutableStateOf(LibraryState())
+    var library by mutableStateOf(LibraryState(selectedId = sessions.account.value?.let(sessions.playback::selectedLibrary)))
         private set
     var jobs by mutableStateOf<List<Job>>(emptyList())
         private set
@@ -94,6 +94,7 @@ class MusicViewModel(application: Application) : AndroidViewModel(application) {
                     backup = null
                     health = null
                 } else {
+                    library = LibraryState(selectedId = sessions.playback.selectedLibrary(account))
                     playback.connect()
                     runAction {
                         api.request("/api/auth/me")
@@ -183,6 +184,7 @@ class MusicViewModel(application: Application) : AndroidViewModel(application) {
 
     fun selectLibrary(entryId: String?) {
         library = library.copy(selectedId = entryId, page = 1, search = "", tracks = TrackPage())
+        sessions.account.value?.let { sessions.playback.saveSelectedLibrary(it, entryId) }
         refreshTracks()
     }
 
@@ -210,8 +212,11 @@ class MusicViewModel(application: Application) : AndroidViewModel(application) {
     }
 
     private suspend fun loadLibrary() {
+        val account = sessions.account.value ?: return
         val result = ApiJson.decodeFromJsonElement<Library>(api.request("/api/library"))
+        if (sessions.account.value != account) return
         library = library.copy(library = result, selectedId = library.selectedId?.takeIf { id -> result.entries.any { it.id == id } })
+        sessions.playback.saveSelectedLibrary(account, library.selectedId)
     }
 
     suspend fun pollJobs() { runAction { jobs = ApiJson.decodeFromJsonElement(api.request("/api/jobs")) } }
