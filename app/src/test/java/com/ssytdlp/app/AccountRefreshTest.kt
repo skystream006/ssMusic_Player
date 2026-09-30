@@ -14,6 +14,7 @@ import com.ssytdlp.app.core.User
 import com.ssytdlp.app.core.UserResponse
 import java.io.InputStream
 import java.io.OutputStream
+import java.net.InetAddress
 import java.security.Key
 import java.security.KeyStoreSpi
 import java.security.Provider
@@ -58,14 +59,14 @@ class AccountRefreshTest {
         context = ApplicationProvider.getApplicationContext()
         context.getSharedPreferences("private_session", Context.MODE_PRIVATE).edit().clear().commit()
         context.getSharedPreferences("playback", Context.MODE_PRIVATE).edit().clear().commit()
-        val certificate = HeldCertificate.Builder().commonName("localhost").addSubjectAlternativeName("localhost").build()
+        val certificate = HeldCertificate.Builder().commonName("localhost").addSubjectAlternativeName("127.0.0.1").build()
         val serverTls = HandshakeCertificates.Builder().heldCertificate(certificate).build()
         val clientTls = HandshakeCertificates.Builder().addTrustedCertificate(certificate.certificate).build()
-        server = MockWebServer().apply { useHttps(serverTls.sslSocketFactory(), false); start() }
+        server = MockWebServer().apply { useHttps(serverTls.sslSocketFactory(), false); start(InetAddress.getByName("127.0.0.1"), 0) }
         application = context as MusicApplication
         ReflectionHelpers.setField(application, "api", ServerApi({ sessions.account.value }, { sessions.clear(it) },
             OkHttpClient.Builder().sslSocketFactory(clientTls.sslSocketFactory(), clientTls.trustManager).build()))
-        account = Account(server.url("/").newBuilder().host("localhost").build().toString().removeSuffix("/"), User("listener", "Listener"),
+        account = Account(server.url("/").newBuilder().host("127.0.0.1").build().toString().removeSuffix("/"), User("listener", "Listener"),
             Session("T".repeat(43), "2099-01-01T00:00:00Z"))
     }
 
