@@ -3,14 +3,19 @@ package com.ssytdlp.app
 import android.app.Application
 import androidx.activity.ComponentActivity
 import androidx.compose.foundation.layout.size
+import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableLongStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.snapshots.Snapshot
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.semantics.SemanticsActions
+import androidx.compose.ui.semantics.SemanticsProperties
 import androidx.compose.ui.test.*
 import androidx.compose.ui.test.junit4.createAndroidComposeRule
+import androidx.compose.ui.text.TextLayoutResult
+import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.unit.dp
 import com.ssytdlp.app.core.LyricLine
 import com.ssytdlp.app.core.SongMetadata
@@ -38,7 +43,95 @@ class LyricsUiTest {
     private val error = mutableStateOf<String?>(null)
     private val video = mutableStateOf(false)
     private val preferUslt = mutableStateOf(false)
+    private val textScale = mutableFloatStateOf(1f)
     private val seeks = mutableListOf<Long>()
+
+    @Test fun pinchResizesSynchronizedLyricsAndLineSpacingWithoutSeeking() {
+        showLyrics()
+        val activeStyle = textStyle("Line 0")
+        val inactiveStyle = textStyle("Line 1")
+        val timestampStyle = textStyle("00:00:00")
+        pinchLyrics(zoomIn = true)
+        val scale = compose.runOnIdle {
+            assertTrue(seeks.isEmpty())
+            assertTrue(textScale.floatValue > 1f)
+            textScale.floatValue
+        }
+        assertScaledStyle(activeStyle, textStyle("Line 0"), scale)
+        assertScaledStyle(inactiveStyle, textStyle("Line 1"), scale)
+        assertEquals(timestampStyle, textStyle("00:00:00"))
+        compose.onNodeWithText("Line 0").performClick()
+        compose.runOnIdle {
+            assertEquals(listOf(0L), seeks)
+            position.longValue = 300_000
+        }
+        compose.onNodeWithText("Line 30").assertIsDisplayed()
+    }
+
+    @Test fun pinchInAndOutResizesPlainLyricsAndKeepsThemScrollable() {
+        preferUslt.value = true
+        metadata.value = metadata.value!!.copy(uslt = List(80) { "Plain lyric $it" }.joinToString("\n"))
+        val text = metadata.value!!.uslt!!
+        showLyrics()
+        val initialStyle = textStyle(text)
+        pinchLyrics(zoomIn = true)
+        val enlarged = compose.runOnIdle { textScale.floatValue }
+        assertTrue(enlarged > 1f)
+        assertScaledStyle(initialStyle, textStyle(text), enlarged)
+        pinchLyrics(zoomIn = false)
+        val reduced = compose.runOnIdle { textScale.floatValue }
+        assertTrue(reduced < enlarged)
+        assertScaledStyle(initialStyle, textStyle(text), reduced)
+        compose.onNodeWithTag("lyrics").performTouchInput { swipeUp(durationMillis = 1_000) }
+        val scroll = compose.onNodeWithTag("lyrics").fetchSemanticsNode().config[SemanticsProperties.VerticalScrollAxisRange]
+        assertTrue(scroll.value() > 0f)
+        compose.runOnIdle {
+            assertEquals(reduced, textScale.floatValue, 0f)
+            assertTrue(seeks.isEmpty())
+        }
+    }
+
+    @Test fun zoomIsRetainedWhenLyricsSourceOrTrackChanges() {
+        showLyrics()
+        pinchLyrics(zoomIn = true)
+        val enlargedStyle = textStyle("Line 0")
+        val scale = compose.runOnIdle {
+            preferUslt.value = true
+            textScale.floatValue
+        }
+        val plainStyle = textStyle("Unsynchronized lyrics")
+        compose.runOnIdle {
+            textScale.floatValue = 1f
+        }
+        assertScaledStyle(textStyle("Unsynchronized lyrics"), plainStyle, scale)
+        compose.runOnIdle {
+            textScale.floatValue = scale
+            preferUslt.value = false
+            trackKey.value = "second-track"
+        }
+        assertEquals(enlargedStyle, textStyle("Line 0"))
+    }
+
+    @Test fun zoomDoesNotResumeFollowingAfterManualScroll() {
+        showLyrics()
+        scrollAway()
+        compose.runOnIdle {
+            assertEquals(1f, textScale.floatValue, 0f)
+            position.longValue = 300_000
+        }
+        pinchLyrics(zoomIn = true)
+        compose.onNodeWithText("Line 30").assertIsNotDisplayed()
+        compose.runOnIdle { assertTrue(seeks.isEmpty()) }
+    }
+
+    @Test fun fallbackMessagesDoNotZoom() {
+        metadata.value = null
+        showLyrics()
+        val initialStyle = textStyle("Loading lyrics...")
+        pinchLyrics(zoomIn = true)
+        assertEquals(initialStyle, textStyle("Loading lyrics..."))
+        compose.runOnIdle { assertEquals(1f, textScale.floatValue, 0f) }
+    }
 
     @Test fun synchronizedLyricsShowTheirTimestamps() {
         showLyrics()
@@ -280,13 +373,36 @@ class LyricsUiTest {
         compose.onNodeWithTag("lyrics").performTouchInput { swipeUp(durationMillis = 1_000) }
     }
 
+    private fun pinchLyrics(zoomIn: Boolean) {
+        compose.onNodeWithTag("lyrics").performTouchInput {
+            val near = Offset(width * 0.1f, 0f)
+            val far = Offset(width * 0.35f, 0f)
+            val start = if (zoomIn) near else far
+            val end = if (zoomIn) far else near
+            pinch(start0 = center - start, end0 = center - end,
+                start1 = center + start, end1 = center + end, durationMillis = 600)
+        }
+    }
+
+    private fun textStyle(text: String): TextStyle {
+        val results = mutableListOf<TextLayoutResult>()
+        compose.onNodeWithText(text).performSemanticsAction(SemanticsActions.GetTextLayoutResult) { it(results) }
+        return results.single().layoutInput.style
+    }
+
+    private fun assertScaledStyle(original: TextStyle, scaled: TextStyle, scale: Float) {
+        assertEquals(original.fontSize.value * scale, scaled.fontSize.value, 0.01f)
+        assertEquals(original.lineHeight.value * scale, scaled.lineHeight.value, 0.01f)
+    }
+
     private fun showLyrics(seekImmediately: Boolean = true) {
         compose.setContent {
             MusicTheme {
                 LyricsContent(metadata.value, position.longValue, trackKey.value, {
                     seeks += it
                     if (seekImmediately) position.longValue = it
-                }, Modifier.size(320.dp, 240.dp).testTag("lyrics"), error.value, video.value, preferUslt.value)
+                }, Modifier.size(320.dp, 240.dp).testTag("lyrics"), error.value, video.value, preferUslt.value,
+                    textScale.floatValue, { textScale.floatValue = normalizeLyricsTextScale(textScale.floatValue * it) })
             }
         }
     }

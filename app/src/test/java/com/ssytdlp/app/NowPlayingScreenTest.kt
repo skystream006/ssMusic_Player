@@ -90,6 +90,76 @@ class NowPlayingScreenTest {
         compose.onNodeWithText("Blue hour").assertIsDisplayed()
     }
 
+    @Test fun lyricsPinchPersistsAcrossTabsTracksAndViewModelRecreation() {
+        val track = Track(jobId = "preview", name = "song.mp3")
+        val state = mutableStateOf(PlaybackState(track = track, queue = listOf(track)))
+        val metadata = ReflectionHelpers.getField<MutableState<SongMetadata?>>(model, "metadata\$delegate")
+        compose.runOnIdle {
+            metadata.value = SongMetadata(sylt = listOf(LyricLine(0.0, "Zoomable lyrics")), uslt = "Plain lyrics")
+            assertEquals(1f, model.lyricsTextScale, 0f)
+        }
+        compose.setContent {
+            MusicTheme {
+                Box(Modifier.fillMaxSize().testTag("page")) { NowPlayingScreen(model, state.value) }
+            }
+        }
+        compose.onNodeWithText("SYLT Lyrics").performClick()
+        val center = compose.onNodeWithText("Zoomable lyrics").fetchSemanticsNode().boundsInRoot.center
+        compose.onNodeWithTag("page").performTouchInput {
+            pinch(start0 = center - Offset(20f, 0f), end0 = center - Offset(60f, 0f),
+                start1 = center + Offset(20f, 0f), end1 = center + Offset(60f, 0f), durationMillis = 600)
+        }
+        val savedScale = compose.runOnIdle { model.lyricsTextScale }
+        assertTrue(savedScale > 1f)
+        compose.onNodeWithText("SYLT Lyrics").performClick()
+        compose.onNodeWithText("Plain lyrics").assertIsDisplayed()
+        compose.onNodeWithText("Queue").performClick()
+        compose.onNodeWithText("USLT Lyrics").performClick()
+        compose.runOnIdle { state.value = state.value.copy(track = track.copy(name = "next.mp3")) }
+        compose.onNodeWithText("Zoomable lyrics").assertIsDisplayed()
+        compose.runOnIdle {
+            assertEquals(savedScale, model.lyricsTextScale, 0f)
+            val application = model.getApplication<MusicApplication>()
+            val preferences = application.getSharedPreferences("settings", Context.MODE_PRIVATE)
+            assertEquals(savedScale, preferences.getFloat("lyrics_text_scale", 1f), 0f)
+            val restored = MusicViewModel(application)
+            models.put("restored", restored)
+            assertEquals(savedScale, restored.lyricsTextScale, 0f)
+        }
+    }
+
+    @Test fun lyricsZoomAccumulatesChangesAndClampsToReadableBounds() {
+        compose.runOnIdle {
+            model.zoomLyrics(1.2f)
+            model.zoomLyrics(1.25f)
+            assertEquals(1.5f, model.lyricsTextScale, 0.0001f)
+            model.zoomLyrics(100f)
+            assertEquals(MAX_LYRICS_TEXT_SCALE, model.lyricsTextScale, 0f)
+            model.zoomLyrics(0.001f)
+            assertEquals(MIN_LYRICS_TEXT_SCALE, model.lyricsTextScale, 0f)
+            listOf(0f, -1f, Float.NaN, Float.POSITIVE_INFINITY, Float.NEGATIVE_INFINITY).forEach { invalid ->
+                model.zoomLyrics(invalid)
+                assertEquals(MIN_LYRICS_TEXT_SCALE, model.lyricsTextScale, 0f)
+            }
+            val preferences = model.getApplication<MusicApplication>().getSharedPreferences("settings", Context.MODE_PRIVATE)
+            assertEquals(MIN_LYRICS_TEXT_SCALE, preferences.getFloat("lyrics_text_scale", 1f), 0f)
+        }
+    }
+
+    @Test fun savedLyricsZoomIsValidatedWhenLoading() {
+        compose.runOnIdle {
+            val application = model.getApplication<MusicApplication>()
+            val preferences = application.getSharedPreferences("settings", Context.MODE_PRIVATE)
+            listOf(Float.NaN to 1f, Float.POSITIVE_INFINITY to 1f, Float.NEGATIVE_INFINITY to 1f,
+                0f to MIN_LYRICS_TEXT_SCALE, 20f to MAX_LYRICS_TEXT_SCALE, 1.4f to 1.4f).forEach { (saved, expected) ->
+                preferences.edit().putFloat("lyrics_text_scale", saved).commit()
+                val restored = MusicViewModel(application)
+                models.put("restored", restored)
+                assertEquals(expected, restored.lyricsTextScale, 0f)
+            }
+        }
+    }
+
     @Test fun queueShowsSavedAndPendingTranscriptionStatus() {
         val track = Track(jobId = "source", name = "song.mp3")
         val library = ReflectionHelpers.getField<MutableState<LibraryState>>(model, "library\$delegate")
