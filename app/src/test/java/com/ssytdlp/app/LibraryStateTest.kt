@@ -47,6 +47,18 @@ class LibraryStateTest {
         assertNull(state.transcription(track.copy(name = "missing.mp3")))
     }
 
+    @Test fun `lock refresh overrides stale tracks and keeps explicit unlocks across pages`() {
+        val locked = track.copy(transcriptionLocked = true)
+        assertTrue(LibraryState().transcriptionLocked(locked))
+        val refreshed = LibraryState().withTrackPage(TrackPage(files = listOf(locked)))
+        assertTrue(refreshed.transcriptionLocked(track))
+        val unlocked = refreshed.withTrackPage(TrackPage(files = listOf(track)))
+        assertFalse(unlocked.transcriptionLocked(locked))
+        val nextPage = unlocked.withTrackPage(TrackPage(files = listOf(Track("other", track.name))))
+        assertFalse(nextPage.transcriptionLocked(locked))
+        assertFalse(nextPage.transcriptionLocked(Track("other", track.name)))
+    }
+
     @Test fun `page refresh updates stale queued tracks without changing selection or pending status`() {
         val queued = track.copy(transcription = sent)
         val initial = LibraryState(library = Library(version = 7), selectedId = "playlist", search = "song", page = 2,

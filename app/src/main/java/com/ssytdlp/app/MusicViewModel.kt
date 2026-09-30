@@ -28,7 +28,8 @@ data class LibraryState(
     val loading: Boolean = false,
     val pendingTranscriptions: Map<String, Transcription> = emptyMap(),
     val transcriptions: Map<String, Transcription?> = emptyMap(),
-    val ratings: Map<String, Int> = emptyMap()
+    val ratings: Map<String, Int> = emptyMap(),
+    val transcriptionLocks: Map<String, Boolean> = emptyMap()
 ) {
     fun withLibrary(result: Library): LibraryState = copy(
         library = result, selectedId = selectedId?.takeIf { id -> result.entries.any { it.id == id } })
@@ -39,9 +40,12 @@ data class LibraryState(
 
     fun rating(track: Track): Int = ratings[track.key] ?: track.rating
 
+    fun transcriptionLocked(track: Track): Boolean = transcriptionLocks[track.key] ?: track.transcriptionLocked
+
     fun withTrackPage(result: TrackPage): LibraryState = copy(
         tracks = result, page = result.page,
         ratings = ratings + result.files.associate { it.key to it.rating },
+        transcriptionLocks = transcriptionLocks + result.files.associate { it.key to it.transcriptionLocked },
         transcriptions = transcriptions + result.files.associate { track ->
             track.key to (track.transcription ?: library.jobs.find { it.id == track.jobId }?.transcriptions?.get(track.name))
         })
@@ -86,6 +90,8 @@ class MusicViewModel @JvmOverloads constructor(application: Application, private
         private set
     var health by mutableStateOf<JsonObject?>(null)
         private set
+    val transcriptionAvailable: Boolean
+        get() = sessions.account.value?.user?.isShared == true || health.transcriptionActive
     val serverOrigin = app.serverConfig.origin
     private var trackRequest: CoroutineJob? = null
     private var operation: CoroutineJob? = null
@@ -108,6 +114,7 @@ class MusicViewModel @JvmOverloads constructor(application: Application, private
                     backup = null
                     health = null
                 } else {
+                    health = null
                     library = LibraryState(selectedId = sessions.playback.selectedLibrary(account))
                     if (connectPlayback) playback.connect()
                     runAction {
@@ -115,6 +122,7 @@ class MusicViewModel @JvmOverloads constructor(application: Application, private
                         preferences = ApiJson.decodeFromJsonElement(api.request("/api/preferences"))
                         loadLibrary()
                         refreshTracks()
+                        refreshHealth()
                     }
                 }
             }
@@ -208,7 +216,7 @@ class MusicViewModel @JvmOverloads constructor(application: Application, private
     }
 
     fun page(value: Int) { library = library.copy(page = value.coerceAtLeast(1)); refreshTracks() }
-    fun refresh() = launchAction { loadLibrary(); refreshTracks() }
+    fun refresh() = launchAction { loadLibrary(); refreshTracks(); refreshHealth() }
 
     fun refreshTracks(debounce: Boolean = false) {
         trackRequest?.cancel()
@@ -277,8 +285,21 @@ class MusicViewModel @JvmOverloads constructor(application: Application, private
             return@runAction
         }
         backup = api.request("/api/library/backup").jsonObject
-        health = api.request("/api/health").jsonObject
+        refreshHealth()
     } }
+
+    private suspend fun refreshHealth() {
+        val account = sessions.account.value ?: return
+        health = null
+        if (account.user.isShared) return
+        try {
+            val result = api.request("/api/health").jsonObject
+            if (sessions.account.value == account) health = result
+        } catch (error: Exception) {
+            if (error is CancellationException) throw error
+            // Missing or unreachable health data must not enable transcription.
+        }
+    }
 
     fun createJob(url: String, video: Boolean, metadataOnly: Boolean) = launchAction {
         try {
@@ -333,28 +354,60 @@ class MusicViewModel @JvmOverloads constructor(application: Application, private
         "jobId" to track.jobId, "name" to track.name, "playlistId" to track.playlistId, "target" to target.key, "after" to after))
 
     fun remove(track: Track) = mutate("/api/library/songs/remove", json(
-        "jobId" to track.jobId, "name" to track.name, "playlistId" to track.playlistId))
+        "jobId" to track.jobId, "name" to track.name, "playlistId" to track.playlistId)) { result ->
+        message(if ((result as? JsonObject)?.get("fileDeleted")?.jsonPrimitive?.booleanOrNull == true)
+            "Song deleted: ${track.displayTitle} after removing the last playlist link."
+        else "Removed ${track.displayTitle} from the playlist.")
+    }
 
-    private fun mutate(path: String, body: JsonObject) = launchAction {
-        try { api.request(path, "POST", JsonObject(body + ("version" to JsonPrimitive(library.library.version)))) }
+    private fun mutate(path: String, body: JsonObject, onSuccess: (JsonElement) -> Unit = {}) = launchAction {
+        val result = try { api.request(path, "POST", JsonObject(body + ("version" to JsonPrimitive(library.library.version)))) }
         catch (error: ApiException) {
             if (error.status == 409) { loadLibrary(); refreshTracks() }
             throw error
         }
+        onSuccess(result)
         loadLibrary()
         refreshTracks()
     }
 
-    fun saveMetadata(track: Track, value: SongMetadata) = launchAction {
-        api.request("/api/jobs/${encode(track.jobId)}/files/${encode(track.name)}/metadata", "PATCH", json(
-            "title" to value.title, "artist" to value.artist, "album" to value.album, "genre" to value.genre, "year" to value.year, "rating" to value.rating))
+    fun saveMetadata(track: Track, value: SongMetadata, transcriptionLocked: Boolean? = null) = launchAction {
+        val body = json("title" to value.title, "artist" to value.artist, "album" to value.album,
+            "genre" to value.genre, "year" to value.year, "rating" to value.rating)
+        patchMetadata(track, if (transcriptionLocked == null) body
+            else JsonObject(body + ("transcriptionLocked" to JsonPrimitive(transcriptionLocked))))
         library = library.copy(ratings = library.ratings + (track.key to value.rating))
         refreshTracks()
-        if (playback.state.value.track?.key == track.key) metadata = ApiJson.decodeFromJsonElement(api.request(songPath(track, "lyrics")))
         message("Song information saved.")
     }
 
+    private suspend fun patchMetadata(track: Track, body: JsonObject): SongMetadata {
+        val updated = ApiJson.decodeFromJsonElement<SongMetadata>(api.request(
+            "/api/jobs/${encode(track.jobId)}/files/${encode(track.name)}/metadata", "PATCH", body))
+        transcriptionGeneration++
+        trackRequest?.cancel()
+        library = library.copy(transcriptionLocks = library.transcriptionLocks + (track.key to updated.transcriptionLocked))
+        if (playback.state.value.track?.key == track.key) metadata = updated.copy(canEdit = metadata?.canEdit == true)
+        return updated
+    }
+
+    fun lockTranscription(track: Track, locked: Boolean) = launchAction {
+        patchMetadata(track, json("transcriptionLocked" to locked))
+        refreshTracks()
+        message(if (locked) "Transcription locked for ${track.displayTitle}." else "Transcription unlocked for ${track.displayTitle}.")
+    }
+
+    fun saveLyrics(track: Track, body: JsonObject, onSuccess: () -> Unit) = launchAction {
+        require(body.isNotEmpty() && body.keys.all { it == "sylt" || it == "uslt" }) { "No lyric changes to save." }
+        patchMetadata(track, body)
+        refreshTracks()
+        message("Lyrics saved.")
+        onSuccess()
+    }
+
     fun transcribe(track: Track, options: TranscriptionOptions) = launchAction {
+        require(!library.transcriptionLocked(track)) { "Transcription is locked for this song." }
+        require(transcriptionAvailable) { INACTIVE_TRANSCRIPTION_MESSAGE }
         val body = options.toRequestBody()
         val account = sessions.account.value
         transcriptionGeneration++
@@ -484,6 +537,12 @@ internal const val MAX_LYRICS_TEXT_SCALE = 2f
 
 internal fun normalizeLyricsTextScale(scale: Float): Float =
     if (scale.isFinite()) scale.coerceIn(MIN_LYRICS_TEXT_SCALE, MAX_LYRICS_TEXT_SCALE) else 1f
+
+internal const val INACTIVE_TRANSCRIPTION_MESSAGE =
+    "Transciption service is currently inactive. Refresh the app when transcription service is available"
+
+internal val JsonObject?.transcriptionActive: Boolean
+    get() = ((this?.get("transcription") as? JsonObject)?.get("status") as? JsonPrimitive)?.content == "active"
 
 internal suspend fun ServerApi.trackPage(selection: LibraryState): TrackPage {
     val query = listOfNotNull("page=${selection.page}", "pageSize=50", "search=${encode(selection.search)}",

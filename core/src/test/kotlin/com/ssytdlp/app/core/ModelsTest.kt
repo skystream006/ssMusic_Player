@@ -58,6 +58,25 @@ class ModelsTest {
         assertEquals(9L, page.version)
     }
 
+    @Test fun `track locks and lyric edit permissions decode with safe legacy defaults`() {
+        val page = ApiJson.decodeFromString<TrackPage>("""{"files":[
+            {"name":"locked.mp3","transcriptionLocked":true},
+            {"name":"unlocked.mp3","transcriptionLocked":false},
+            {"name":"legacy.mp3"}
+        ]}""")
+        assertTrue(page.files[0].transcriptionLocked)
+        assertFalse(page.files[1].transcriptionLocked)
+        assertFalse(page.files[2].transcriptionLocked)
+        val metadata = ApiJson.decodeFromString<SongMetadata>(
+            """{"transcriptionLocked":true,"canEdit":true,"sylt":[{"time":1.234,"text":"Line"}],"uslt":"Plain"}""")
+        assertTrue(metadata.transcriptionLocked)
+        assertTrue(metadata.canEdit)
+        assertEquals(1.234, metadata.sylt.single().time, 0.0)
+        assertEquals("Plain", metadata.uslt)
+        assertFalse(ApiJson.decodeFromString<SongMetadata>("{}").canEdit)
+        assertFalse(ApiJson.decodeFromString<SongMetadata>("{}").transcriptionLocked)
+    }
+
     @Test fun `track pages decode inline transcription details from compact library responses`() {
         val page = ApiJson.decodeFromString<TrackPage>("""{"files":[
             {"jobId":"source","name":"folder/song.mp3","transcription":{

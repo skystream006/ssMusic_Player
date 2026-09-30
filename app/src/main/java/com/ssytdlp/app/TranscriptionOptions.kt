@@ -37,7 +37,7 @@ data class TranscriptionOptions(
     val noVocals: Boolean = false,
     val vietLyricsFallback: Boolean = false,
     val addLyrics: Boolean = false,
-    val lyricsMode: String = "prompt",
+    val lyricsMode: String = "align",
     val lyrics: String = ""
 ) {
     val isValid: Boolean

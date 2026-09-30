@@ -54,7 +54,8 @@ data class Track(
     val album: String = "", val rating: Int = 0, val playlistId: String? = null,
     val playlistTitle: String = "", val streamUrl: String? = null, val downloadUrl: String? = null,
     val isPlayable: Boolean = true, val mediaType: String = "audio", val sizeBytes: Long = 0,
-    val noVocalsVersion: Track? = null, val transcription: Transcription? = null
+    val noVocalsVersion: Track? = null, val transcription: Transcription? = null,
+    val transcriptionLocked: Boolean = false
 ) {
     val key: String get() = ApiJson.encodeToString(listOf(jobId, name))
     val displayTitle: String get() = title.ifBlank { name.substringAfterLast('/').substringBeforeLast('.') }
@@ -74,7 +75,8 @@ data class LyricLine(val time: Double, val text: String)
 data class SongMetadata(
     val title: String = "", val artist: String = "", val album: String = "", val genre: String = "",
     val year: String = "", val rating: Int = 0, val artwork: String? = null,
-    val sylt: List<LyricLine> = emptyList(), val uslt: String = ""
+    val sylt: List<LyricLine> = emptyList(), val uslt: String = "",
+    val transcriptionLocked: Boolean = false, val canEdit: Boolean = false
 )
 
 @Serializable
