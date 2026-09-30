@@ -77,6 +77,66 @@ class NowPlayingScreenTest {
         compose.onNodeWithContentDescription("Close player").assertDoesNotExist()
     }
 
+    @Test fun sharedUsersCannotSeePlaylistTransferActionsEvenForTheirOwnSongs() {
+        val track = Track(jobId = "preview", name = "song.mp3", playlistId = "source")
+        val account = ReflectionHelpers.getField<MutableStateFlow<Account?>>(model.sessions, "mutableAccount")
+        val library = ReflectionHelpers.getField<MutableState<LibraryState>>(model, "library\$delegate")
+        compose.runOnIdle {
+            model.viewModelScope.cancel()
+            account.value = Account("https://music.example", User(id = "owner", role = "Shared"),
+                Session("test", "2099-01-01T00:00:00Z"))
+            library.value = LibraryState(library = Library(jobs = listOf(Job("preview", initiatedBy = account.value!!.user))))
+        }
+        compose.setContent { MusicTheme { TrackMenu(model, track, 0) { _, _ -> } } }
+        compose.onNodeWithContentDescription("Options for song").performClick()
+        listOf("Shared", "shared", "SHARED").forEach { role ->
+            compose.runOnIdle { account.value = account.value!!.copy(user = account.value!!.user.copy(role = role)) }
+            compose.onNodeWithText("Add to playlist").assertDoesNotExist()
+            compose.onNodeWithText("Move to playlist").assertDoesNotExist()
+            compose.onNodeWithText("Add to queue").assertIsDisplayed()
+            compose.onNodeWithText("Save file").assertIsDisplayed()
+        }
+    }
+
+    @Test fun nonSharedUsersKeepPlaylistTransferActionsOnlyForPlaylistTracks() {
+        val track = mutableStateOf(Track(jobId = "preview", name = "song.mp3", playlistId = "source"))
+        val account = ReflectionHelpers.getField<MutableStateFlow<Account?>>(model.sessions, "mutableAccount")
+        compose.runOnIdle {
+            model.viewModelScope.cancel()
+            account.value = Account("https://music.example", User(role = "user"), Session("test", "2099-01-01T00:00:00Z"))
+        }
+        compose.setContent { MusicTheme { TrackMenu(model, track.value, 0) { _, _ -> } } }
+        compose.onNodeWithContentDescription("Options for song").performClick()
+        listOf("user", "admin").forEach { role ->
+            compose.runOnIdle { account.value = account.value!!.copy(user = User(role = role)) }
+            compose.onNodeWithText("Add to playlist").assertIsDisplayed().assertIsEnabled()
+            compose.onNodeWithText("Move to playlist").assertIsDisplayed().assertIsEnabled()
+        }
+        compose.runOnIdle { track.value = track.value.copy(playlistId = null) }
+        compose.onNodeWithText("Add to playlist").assertDoesNotExist()
+        compose.onNodeWithText("Move to playlist").assertDoesNotExist()
+    }
+
+    @Test fun switchingToSharedRoleClosesAndClearsPlaylistTransferDialogs() {
+        val track = Track(jobId = "preview", name = "song.mp3", playlistId = "source")
+        val account = ReflectionHelpers.getField<MutableStateFlow<Account?>>(model.sessions, "mutableAccount")
+        compose.runOnIdle {
+            model.viewModelScope.cancel()
+            account.value = Account("https://music.example", User(role = "user"), Session("test", "2099-01-01T00:00:00Z"))
+        }
+        compose.setContent { MusicTheme { TrackMenu(model, track, 0) { _, _ -> } } }
+        listOf("Add to playlist", "Move to playlist").forEach { action ->
+            compose.onNodeWithContentDescription("Options for song").performClick()
+            compose.onNodeWithText(action).performClick()
+            compose.onNode(isDialog()).assertIsDisplayed()
+            compose.onNodeWithText(action).assertIsDisplayed()
+            compose.runOnIdle { account.value = account.value!!.copy(user = User(role = "Shared")) }
+            compose.onNode(isDialog()).assertDoesNotExist()
+            compose.runOnIdle { account.value = account.value!!.copy(user = User(role = "user")) }
+            compose.onNode(isDialog()).assertDoesNotExist()
+        }
+    }
+
     @Test fun lyricsViewOffersEditingForPermittedMp3EvenWhenTranscriptionIsLocked() {
         val track = Track(jobId = "preview", name = "song.mp3", transcriptionLocked = true)
         val metadata = ReflectionHelpers.getField<MutableState<SongMetadata?>>(model, "metadata\$delegate")
