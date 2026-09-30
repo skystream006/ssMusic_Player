@@ -71,11 +71,13 @@ import java.util.Locale
 
 @Composable
 fun PlayerDock(state: PlaybackState, model: MusicViewModel, expand: () -> Unit, requestNotifications: () -> Unit) {
-    MiniPlayer(state, model.metadata?.artwork, expand, { requestNotifications(); model.playback.toggle() }, model.playback::next)
+    MiniPlayer(state, model.metadata?.artwork, expand, { requestNotifications(); model.playback.toggle() },
+        model.playback::next, model.playback::seek)
 }
 
 @Composable
-fun MiniPlayer(state: PlaybackState, artwork: String?, expand: () -> Unit, toggle: () -> Unit, next: () -> Unit) {
+fun MiniPlayer(state: PlaybackState, artwork: String?, expand: () -> Unit, toggle: () -> Unit,
+    next: () -> Unit, onSeek: (Long) -> Unit) {
     val track = state.track ?: return
     Surface(color = MaterialTheme.colorScheme.surfaceContainerLow) {
         Column(Modifier.fillMaxWidth()) {
@@ -92,8 +94,14 @@ fun MiniPlayer(state: PlaybackState, artwork: String?, expand: () -> Unit, toggl
                 }
                 ToolButton(Icons.Rounded.SkipNext, "Next track", enabled = state.queue.size > 1, onClick = next)
             }
-            LinearProgressIndicator(progress = { if (state.duration > 0) (state.position.toFloat() / state.duration).coerceIn(0f, 1f) else 0f },
-                modifier = Modifier.fillMaxWidth().height(2.dp), trackColor = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.35f))
+            key(track.key) {
+                var seeking by remember(state.duration) { mutableStateOf<Float?>(null) }
+                Slider(value = seeking ?: state.position.toFloat().coerceIn(0f, state.duration.toFloat().coerceAtLeast(1f)),
+                    onValueChange = { seeking = it },
+                    onValueChangeFinished = { seeking?.let { onSeek(it.toLong()) }; seeking = null },
+                    valueRange = 0f..state.duration.toFloat().coerceAtLeast(1f), enabled = state.duration > 0,
+                    modifier = Modifier.fillMaxWidth().padding(horizontal = 12.dp).semantics { contentDescription = "Playback position" })
+            }
         }
     }
 }

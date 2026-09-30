@@ -174,7 +174,7 @@ class MusicUiTest {
             MusicTheme {
                 Column {
                     TrackRow(track, onClick = {})
-                    MiniPlayer(playback, null, {}, {}, {})
+                    MiniPlayer(playback, null, {}, {}, {}, {})
                     PlayerArtwork(playback, null)
                 }
             }
@@ -219,6 +219,68 @@ class MusicUiTest {
             assertTrue(it(0.5f))
         }
         compose.runOnIdle { assertNotNull(sought); assertEquals(0, skips) }
+    }
+
+    @Test fun libraryMiniPlayerSeeksByTouchAndAccessibilityWithoutTriggeringOtherControls() {
+        val seeks = mutableListOf<Long>()
+        var expanded = false
+        var toggled = false
+        var skipped = false
+        val playback = previewPlayback()
+        compose.setContent {
+            MusicTheme {
+                Scaffold(bottomBar = {
+                    Column {
+                        MiniPlayer(playback, null, { expanded = true }, { toggled = true },
+                            { skipped = true }, seeks::add)
+                        MusicNavigation(0) {}
+                    }
+                }) { padding ->
+                    Box(Modifier.padding(padding)) {
+                        LibraryContent(LibraryState(), playback, {}, {}, {}, {}) { _, _ -> }
+                    }
+                }
+            }
+        }
+        val slider = compose.onNodeWithContentDescription("Playback position").assertIsDisplayed()
+        slider.performTouchInput { swipe(center, Offset(width * 0.8f, centerY)) }
+        compose.runOnIdle {
+            assertEquals(1, seeks.size)
+            assertTrue(seeks.single() in 150_000..210_000)
+        }
+        slider.performSemanticsAction(SemanticsActions.SetProgress) { assertTrue(it(117_000f)) }
+        compose.runOnIdle {
+            assertEquals(117_000L, seeks.last())
+            assertFalse(expanded)
+            assertFalse(toggled)
+            assertFalse(skipped)
+        }
+        compose.onNodeWithText("Library").assertIsSelected()
+        compose.onNodeWithText("Blue hour").performClick()
+        compose.onNodeWithContentDescription("Pause").performClick()
+        compose.onNodeWithContentDescription("Next track").performClick()
+        compose.runOnIdle {
+            assertTrue(expanded)
+            assertTrue(toggled)
+            assertTrue(skipped)
+        }
+    }
+
+    @Test fun miniPlayerDisablesSeekingUntilDurationIsKnownAndHidesWhenEmpty() {
+        val state = mutableStateOf(previewPlayback().copy(duration = 0))
+        var sought = false
+        compose.setContent {
+            MusicTheme { MiniPlayer(state.value, null, {}, {}, {}, { sought = true }) }
+        }
+        compose.onNodeWithContentDescription("Playback position").assertIsNotEnabled()
+            .performTouchInput { swipeRight() }
+        compose.runOnIdle {
+            assertFalse(sought)
+            state.value = state.value.copy(duration = 234_000)
+        }
+        compose.onNodeWithContentDescription("Playback position").assertIsEnabled()
+        compose.runOnIdle { state.value = PlaybackState() }
+        compose.onNodeWithContentDescription("Playback position").assertDoesNotExist()
     }
 
     @Test fun singleSongQueueDoesNotSwipeNext() {
@@ -428,7 +490,7 @@ class MusicUiTest {
                 MusicTheme {
                     Scaffold(containerColor = MaterialTheme.colorScheme.background, topBar = { MusicTopBar("Alex", true, {}, {}) }, bottomBar = {
                         Column {
-                            MiniPlayer(playback, null, {}, {}, {})
+                            MiniPlayer(playback, null, {}, {}, {}, {})
                             MusicNavigation(0) {}
                         }
                     }) { padding ->
