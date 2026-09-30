@@ -360,7 +360,7 @@ fun TrackRow(track: Track, active: Boolean = false, enabled: Boolean = true, tra
                 Text(track.displayTitle, maxLines = 2, overflow = TextOverflow.Ellipsis, style = MaterialTheme.typography.titleSmall,
                     color = if (active) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurface)
                 Text(track.displayArtist, maxLines = 1, overflow = TextOverflow.Ellipsis, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                TranscriptionStatus(transcription)
+                TranscriptionStatus(transcription, iconOnly = compact)
             }
             Row(Modifier.clickable(role = Role.Button, onClickLabel = "Rate song", onClick = onRatingClick)
                 .sizeIn(minWidth = 48.dp, minHeight = 48.dp).padding(horizontal = 4.dp).clearAndSetSemantics {

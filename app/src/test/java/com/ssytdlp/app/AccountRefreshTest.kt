@@ -1,6 +1,5 @@
 package com.ssytdlp.app
 
-import android.app.Application
 import android.content.Context
 import androidx.activity.ComponentActivity
 import androidx.compose.ui.test.junit4.createAndroidComposeRule
@@ -33,21 +32,21 @@ import okhttp3.mockwebserver.MockWebServer
 import okhttp3.tls.HandshakeCertificates
 import okhttp3.tls.HeldCertificate
 import org.junit.After
+import org.junit.AfterClass
 import org.junit.Assert.*
 import org.junit.Before
+import org.junit.BeforeClass
 import org.junit.Rule
 import org.junit.Test
 import org.junit.runner.RunWith
 import org.robolectric.RobolectricTestRunner
 import org.robolectric.annotation.Config
 import org.robolectric.util.ReflectionHelpers
-import org.robolectric.util.ReflectionHelpers.ClassParameter
 
 @RunWith(RobolectricTestRunner::class)
-@Config(sdk = [34], application = Application::class)
+@Config(sdk = [34], application = MusicApplication::class)
 class AccountRefreshTest {
     @get:Rule val compose = createAndroidComposeRule<ComponentActivity>()
-    private val provider = object : Provider("AccountRefreshKeyStore", 1.0, "In-memory session test key") {}
     private val models = ViewModelStore()
     private lateinit var context: Context
     private lateinit var application: MusicApplication
@@ -59,15 +58,11 @@ class AccountRefreshTest {
         context = ApplicationProvider.getApplicationContext()
         context.getSharedPreferences("private_session", Context.MODE_PRIVATE).edit().clear().commit()
         context.getSharedPreferences("playback", Context.MODE_PRIVATE).edit().clear().commit()
-        provider.put("KeyStore.AndroidKeyStore", AccountRefreshKeyStore::class.java.name)
-        Security.addProvider(provider)
         val certificate = HeldCertificate.Builder().commonName("localhost").addSubjectAlternativeName("localhost").build()
         val serverTls = HandshakeCertificates.Builder().heldCertificate(certificate).build()
         val clientTls = HandshakeCertificates.Builder().addTrustedCertificate(certificate.certificate).build()
         server = MockWebServer().apply { useHttps(serverTls.sslSocketFactory(), false); start() }
-        application = MusicApplication()
-        ReflectionHelpers.callInstanceMethod<Unit>(application, "attach", ClassParameter.from(Context::class.java, context))
-        application.onCreate()
+        application = context as MusicApplication
         ReflectionHelpers.setField(application, "api", ServerApi({ sessions.account.value }, { sessions.clear(it) },
             OkHttpClient.Builder().sslSocketFactory(clientTls.sslSocketFactory(), clientTls.trustManager).build()))
         account = Account(server.url("/").toString().removeSuffix("/"), User("listener", "Listener"),
@@ -77,8 +72,20 @@ class AccountRefreshTest {
     @After fun teardown() {
         compose.runOnUiThread { models.clear() }
         server.shutdown()
-        Security.removeProvider(provider.name)
         context.getSharedPreferences("private_session", Context.MODE_PRIVATE).edit().clear().commit()
+    }
+
+    companion object {
+        private val provider = object : Provider("AccountRefreshKeyStore", 1.0, "In-memory session test key") {}
+
+        @JvmStatic @BeforeClass fun installKeyStore() {
+            provider.put("KeyStore.AndroidKeyStore", AccountRefreshKeyStore::class.java.name)
+            Security.addProvider(provider)
+        }
+
+        @JvmStatic @AfterClass fun removeKeyStore() {
+            Security.removeProvider(provider.name)
+        }
     }
 
     @Test fun startupConsumesCurrentUserWithoutRestartingLibraryInitialization() {

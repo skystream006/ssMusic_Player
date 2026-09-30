@@ -75,7 +75,7 @@ private fun transcriptionDate(value: String?): String {
 }
 
 @Composable
-internal fun TranscriptionStatus(transcription: Transcription?) {
+internal fun TranscriptionStatus(transcription: Transcription?, iconOnly: Boolean = false) {
     if (transcription == null) return
     val label = transcription.label
     val details = transcription.tooltip()
@@ -90,7 +90,7 @@ internal fun TranscriptionStatus(transcription: Transcription?) {
     val labelWidth = textMeasurer.measure(label, style, softWrap = false).size.width
     val density = LocalDensity.current
     BoxWithConstraints {
-        val showLabel = labelWidth + with(density) { 28.dp.toPx() } <= constraints.maxWidth
+        val showLabel = !iconOnly && labelWidth + with(density) { 28.dp.toPx() } <= constraints.maxWidth
         Row(Modifier.sizeIn(minWidth = 48.dp, minHeight = 48.dp)
             .clickable(role = Role.Button, onClickLabel = "Show transcription details") { showDetails = true }
             .semantics { contentDescription = "$label\n$details" }
