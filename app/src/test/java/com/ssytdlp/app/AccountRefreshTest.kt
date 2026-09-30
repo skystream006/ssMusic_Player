@@ -1,6 +1,7 @@
 package com.ssytdlp.app
 
 import android.content.Context
+import android.os.Looper
 import androidx.activity.ComponentActivity
 import androidx.compose.ui.test.junit4.createAndroidComposeRule
 import androidx.lifecycle.ViewModelStore
@@ -41,6 +42,7 @@ import org.junit.Rule
 import org.junit.Test
 import org.junit.runner.RunWith
 import org.robolectric.RobolectricTestRunner
+import org.robolectric.Shadows.shadowOf
 import org.robolectric.annotation.Config
 import org.robolectric.util.ReflectionHelpers
 
@@ -104,6 +106,7 @@ class AccountRefreshTest {
         server.enqueue(MockResponse().setBody("""{"files":[{"jobId":"job","name":"song.mp3"}]}"""))
         val model = createModel(collectSession = true, connectPlayback = false)
         compose.waitUntil(timeoutMillis = 30_000) {
+            shadowOf(Looper.getMainLooper()).idle()
             model.library.tracks.files.size == 1 || model.notice != null
         }
         assertEquals(1, model.library.tracks.files.size)
