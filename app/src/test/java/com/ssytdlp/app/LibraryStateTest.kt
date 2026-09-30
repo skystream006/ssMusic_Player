@@ -2,6 +2,7 @@ package com.ssytdlp.app
 
 import com.ssytdlp.app.core.Job
 import com.ssytdlp.app.core.Library
+import com.ssytdlp.app.core.LibraryEntry
 import com.ssytdlp.app.core.Track
 import com.ssytdlp.app.core.TrackPage
 import com.ssytdlp.app.core.Transcription
@@ -12,6 +13,20 @@ class LibraryStateTest {
     private val track = Track(jobId = "source", name = "folder/song.mp3")
     private val sent = Transcription(status = "sent")
     private val done = Transcription(status = "transcribed", lyricsIncluded = true)
+
+    @Test fun `restored playlist or folder remains selected after the library loads`() {
+        val library = Library(entries = listOf(LibraryEntry("playlist", "playlist"), LibraryEntry("folder", "folder")))
+        for (selectedId in listOf("playlist", "folder", null)) {
+            val restored = LibraryState(selectedId = selectedId).withLibrary(library)
+            assertEquals(selectedId, restored.selectedId)
+            assertEquals(library, restored.library)
+        }
+    }
+
+    @Test fun `deleted saved selection falls back to all music`() {
+        val restored = LibraryState(selectedId = "removed").withLibrary(Library())
+        assertNull(restored.selectedId)
+    }
 
     @Test fun `inline records take precedence over legacy job summaries`() {
         val state = LibraryState(library = Library(jobs = listOf(

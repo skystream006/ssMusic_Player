@@ -28,6 +28,9 @@ data class LibraryState(
     val pendingTranscriptions: Map<String, Transcription> = emptyMap(),
     val transcriptions: Map<String, Transcription?> = emptyMap()
 ) {
+    fun withLibrary(result: Library): LibraryState = copy(
+        library = result, selectedId = selectedId?.takeIf { id -> result.entries.any { it.id == id } })
+
     fun transcription(track: Track): Transcription? = pendingTranscriptions[track.key]
         ?: if (transcriptions.containsKey(track.key)) transcriptions[track.key]
         else track.transcription ?: library.jobs.find { it.id == track.jobId }?.transcriptions?.get(track.name)
@@ -215,7 +218,7 @@ class MusicViewModel(application: Application) : AndroidViewModel(application) {
         val account = sessions.account.value ?: return
         val result = ApiJson.decodeFromJsonElement<Library>(api.request("/api/library"))
         if (sessions.account.value != account) return
-        library = library.copy(library = result, selectedId = library.selectedId?.takeIf { id -> result.entries.any { it.id == id } })
+        library = library.withLibrary(result)
         sessions.playback.saveSelectedLibrary(account, library.selectedId)
     }
 
