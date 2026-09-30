@@ -3,6 +3,7 @@ package com.ssytdlp.app
 import android.app.Application
 import android.net.Uri
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
 import androidx.lifecycle.AndroidViewModel
@@ -60,6 +61,9 @@ class MusicViewModel(application: Application) : AndroidViewModel(application) {
         private set
     var edgeLightingStyle by mutableStateOf(EdgeLightingStyle.fromPreference(
         application.getSharedPreferences("settings", 0).getString("edge_lighting_style", null)))
+        private set
+    var lyricsTextScale by mutableFloatStateOf(normalizeLyricsTextScale(
+        application.getSharedPreferences("settings", 0).getFloat("lyrics_text_scale", 1f)))
         private set
     var metadata by mutableStateOf<SongMetadata?>(null)
         private set
@@ -361,6 +365,14 @@ class MusicViewModel(application: Application) : AndroidViewModel(application) {
         getApplication<Application>().getSharedPreferences("settings", 0).edit().putString("edge_lighting_style", style.name).apply()
     }
 
+    fun zoomLyrics(zoomChange: Float) {
+        if (!zoomChange.isFinite() || zoomChange <= 0f) return
+        val scale = (lyricsTextScale * zoomChange).coerceIn(MIN_LYRICS_TEXT_SCALE, MAX_LYRICS_TEXT_SCALE)
+        if (scale == lyricsTextScale) return
+        lyricsTextScale = scale
+        getApplication<Application>().getSharedPreferences("settings", 0).edit().putFloat("lyrics_text_scale", scale).apply()
+    }
+
     fun startBackup(format: String, destination: String) = launchAction {
         backup = api.request("/api/library/backup", "POST", json("format" to format, "destination" to destination)).jsonObject
         message("Backup started.")
@@ -435,6 +447,12 @@ class MusicViewModel(application: Application) : AndroidViewModel(application) {
 
     override fun onCleared() { playback.disconnect(); super.onCleared() }
 }
+
+internal const val MIN_LYRICS_TEXT_SCALE = 0.75f
+internal const val MAX_LYRICS_TEXT_SCALE = 2f
+
+internal fun normalizeLyricsTextScale(scale: Float): Float =
+    if (scale.isFinite()) scale.coerceIn(MIN_LYRICS_TEXT_SCALE, MAX_LYRICS_TEXT_SCALE) else 1f
 
 internal suspend fun ServerApi.trackPage(selection: LibraryState): TrackPage {
     val query = listOfNotNull("page=${selection.page}", "pageSize=50", "search=${encode(selection.search)}",

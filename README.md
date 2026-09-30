@@ -219,6 +219,8 @@ the album artwork follows your finger and settles back when the gesture ends.
 Lyrics and Queue gestures never skip songs. When both lyric sources are available,
 tap the selected **Lyrics** tab again to alternate between **SYLT** (synchronized)
 and **USLT** (plain) lyrics. Each new song starts with SYLT when available.
+Pinch in or out on either lyrics display to resize the text (75%–200%).
+The size is remembered on this device across songs, tab changes, and app restarts.
 The playback position slider still seeks within the current song.
 Organization remains shared with the web client; selecting **Server theme** also
 uses the web client's saved colors and light/dark preference. Advanced server

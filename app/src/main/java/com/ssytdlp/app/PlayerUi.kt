@@ -12,6 +12,8 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.detectHorizontalDragGestures
+import androidx.compose.foundation.gestures.rememberTransformableState
+import androidx.compose.foundation.gestures.transformable
 import androidx.compose.foundation.interaction.collectIsDraggedAsState
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
@@ -45,6 +47,7 @@ import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -247,13 +250,18 @@ fun PlayerTransport(state: PlaybackState, onSeek: (Long) -> Unit, previous: () -
 @Composable
 fun Lyrics(model: MusicViewModel, state: PlaybackState, modifier: Modifier, preferUslt: Boolean = false) {
     LyricsContent(model.metadata, state.position, state.track?.key, model.playback::seek, modifier,
-        model.metadataError, state.track?.mediaType == "video", preferUslt)
+        model.metadataError, state.track?.mediaType == "video", preferUslt, model.lyricsTextScale, model::zoomLyrics)
 }
 
 @Composable
 internal fun LyricsContent(lyrics: SongMetadata?, position: Long, trackKey: String?, onSeek: (Long) -> Unit,
-    modifier: Modifier = Modifier, error: String? = null, isVideo: Boolean = false, preferUslt: Boolean = false) {
+    modifier: Modifier = Modifier, error: String? = null, isVideo: Boolean = false, preferUslt: Boolean = false,
+    textScale: Float = 1f, onZoom: (Float) -> Unit = {}) {
+    val scale = normalizeLyricsTextScale(textScale)
     key(trackKey, lyrics?.sylt, lyrics?.uslt, preferUslt) {
+        val zoomState = rememberTransformableState { zoomChange, _, _ -> onZoom(zoomChange) }
+        val zoomModifier = modifier.transformable(zoomState, canPan = { false },
+            enabled = lyrics?.sylt?.isNotEmpty() == true || !lyrics?.uslt.isNullOrBlank())
         if (lyrics?.sylt?.isNotEmpty() == true && !(preferUslt && !lyrics.uslt.isNullOrBlank())) {
             val active = lyrics.sylt.indexOfLast { it.time * 1000 <= position }
             val listState = rememberLazyListState()
@@ -305,10 +313,11 @@ internal fun LyricsContent(lyrics: SongMetadata?, position: Long, trackKey: Stri
                     seekTarget = null
                 }
             }
-            LaunchedEffect(target, following, manualScroll, dragging, tap) {
-                if (following && !manualScroll && !dragging && target >= 0) listState.animateScrollToItem(target)
+            LaunchedEffect(target, following, manualScroll, dragging, tap, zoomState.isTransformInProgress) {
+                if (following && !manualScroll && !dragging && !zoomState.isTransformInProgress && target >= 0)
+                    listState.animateScrollToItem(target)
             }
-            LazyColumn(modifier.fillMaxWidth().nestedScroll(scrollConnection), state = listState,
+            LazyColumn(zoomModifier.fillMaxWidth().nestedScroll(scrollConnection), state = listState,
                 contentPadding = PaddingValues(horizontal = 28.dp, vertical = 24.dp)) {
                 itemsIndexed(lyrics.sylt) { index, line ->
                     Row(modifier = Modifier.fillMaxWidth().padding(vertical = 12.dp),
@@ -323,17 +332,21 @@ internal fun LyricsContent(lyrics: SongMetadata?, position: Long, trackKey: Stri
                             following = true
                             tap++
                         },
-                            style = if (index == active) MaterialTheme.typography.titleLarge else MaterialTheme.typography.titleMedium,
+                            style = (if (index == active) MaterialTheme.typography.titleLarge else MaterialTheme.typography.titleMedium)
+                                .scaledLyrics(scale),
                             color = if (index == active) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant)
                     }
                 }
             }
-        } else Column(modifier.fillMaxWidth().verticalScroll(rememberScrollState()).padding(28.dp)) {
+        } else Column(zoomModifier.fillMaxWidth().verticalScroll(rememberScrollState()).padding(28.dp)) {
             Text(lyrics?.uslt?.ifBlank { null } ?: error ?: if (lyrics == null && !isVideo) "Loading lyrics..." else "No lyrics available",
-                style = MaterialTheme.typography.bodyLarge)
+                style = MaterialTheme.typography.bodyLarge.scaledLyrics(if (lyrics?.uslt.isNullOrBlank()) 1f else scale))
         }
     }
 }
+
+private fun TextStyle.scaledLyrics(scale: Float): TextStyle =
+    copy(fontSize = fontSize * scale, lineHeight = lineHeight * scale)
 
 internal fun formatLyricTimestamp(time: Double): String {
     val totalSeconds = time.toLong().coerceAtLeast(0)
