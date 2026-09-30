@@ -28,6 +28,9 @@ data class LibraryState(
     val pendingTranscriptions: Map<String, Transcription> = emptyMap(),
     val transcriptions: Map<String, Transcription?> = emptyMap()
 ) {
+    fun withLibrary(result: Library): LibraryState = copy(
+        library = result, selectedId = selectedId?.takeIf { id -> result.entries.any { it.id == id } })
+
     fun transcription(track: Track): Transcription? = pendingTranscriptions[track.key]
         ?: if (transcriptions.containsKey(track.key)) transcriptions[track.key]
         else track.transcription ?: library.jobs.find { it.id == track.jobId }?.transcriptions?.get(track.name)
@@ -48,7 +51,7 @@ class MusicViewModel(application: Application) : AndroidViewModel(application) {
     val sessions = app.sessions
     val api = app.api
     val playback = PlaybackConnection(application, api, viewModelScope)
-    var library by mutableStateOf(LibraryState())
+    var library by mutableStateOf(LibraryState(selectedId = sessions.account.value?.let(sessions.playback::selectedLibrary)))
         private set
     var jobs by mutableStateOf<List<Job>>(emptyList())
         private set
@@ -94,6 +97,7 @@ class MusicViewModel(application: Application) : AndroidViewModel(application) {
                     backup = null
                     health = null
                 } else {
+                    library = LibraryState(selectedId = sessions.playback.selectedLibrary(account))
                     playback.connect()
                     runAction {
                         api.request("/api/auth/me")
@@ -183,6 +187,7 @@ class MusicViewModel(application: Application) : AndroidViewModel(application) {
 
     fun selectLibrary(entryId: String?) {
         library = library.copy(selectedId = entryId, page = 1, search = "", tracks = TrackPage())
+        sessions.account.value?.let { sessions.playback.saveSelectedLibrary(it, entryId) }
         refreshTracks()
     }
 
@@ -210,8 +215,11 @@ class MusicViewModel(application: Application) : AndroidViewModel(application) {
     }
 
     private suspend fun loadLibrary() {
+        val account = sessions.account.value ?: return
         val result = ApiJson.decodeFromJsonElement<Library>(api.request("/api/library"))
-        library = library.copy(library = result, selectedId = library.selectedId?.takeIf { id -> result.entries.any { it.id == id } })
+        if (sessions.account.value != account) return
+        library = library.withLibrary(result)
+        sessions.playback.saveSelectedLibrary(account, library.selectedId)
     }
 
     suspend fun pollJobs() { runAction { jobs = ApiJson.decodeFromJsonElement(api.request("/api/jobs")) } }

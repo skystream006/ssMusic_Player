@@ -24,6 +24,7 @@ class SessionStore(context: Context) {
         runCatching { ApiJson.decodeFromString<Account>(it) }.getOrNull()
     }?.takeIf { runCatching { Instant.parse(it.session.expiresAt).isAfter(Instant.now()) }.getOrDefault(false) })
     val account = mutableAccount.asStateFlow()
+    val playback = PlaybackStore(context).apply { setAccount(mutableAccount.value) }
 
     var pending: PendingLogin?
         @Synchronized get() = read("pending")?.let { runCatching { ApiJson.decodeFromString<PendingLogin>(it) }.getOrNull() }
@@ -32,6 +33,7 @@ class SessionStore(context: Context) {
     @Synchronized fun save(account: Account) {
         write("account", ApiJson.encodeToString(account))
         pending = null
+        playback.setAccount(account)
         mutableAccount.value = account
     }
 
@@ -39,6 +41,7 @@ class SessionStore(context: Context) {
         if (expectedToken != null && mutableAccount.value?.session?.token != expectedToken) return
         write("account", null)
         pending = null
+        playback.setAccount(null)
         mutableAccount.value = null
     }
 

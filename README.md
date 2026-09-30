@@ -209,6 +209,13 @@ deletes it for all users. Both require confirmation.
 
 Playback queues initially contain the displayed page; **Add to queue** can add
 tracks from other pages. Browsing another page or tab does not replace playback.
+The selected playlist or folder, queue order, current song and playback position,
+shuffle, and repeat are saved on this device. Reopening after the app has stopped
+restores the queue paused; press Play to continue from the saved timestamp.
+Position is checkpointed every second while playing and on seeks, pauses, queue
+changes, and service shutdown. Reopening while background playback continues does
+not interrupt it. Sign-out, session expiry, or switching accounts/servers clears
+the saved state; a removed playlist falls back to All Music.
 Use the bottom navigation to switch between **Library** and the dedicated
 **Now Playing** page; tapping the mini-player also opens **Now Playing**.
 Open **Settings** from the upper-right gear, to the right of **Refresh**, and
@@ -226,7 +233,7 @@ administration and passkey enrollment use the existing browser settings UI;
 they may require a separate browser passkey login.
 
 There is no offline library/cache, whole-device audio scan, casting, Android Auto
-library browser, playback resumption after process death, or automatic background
+library browser, automatic playback after process death, or automatic background
 upload/download retry. Saved files and export ZIPs go to the document location
 the user chooses, not an app-managed offline library. Media uses device-supported
 Media3 codecs. Imports and file saves should stay in the foreground; rotation
