@@ -457,11 +457,12 @@ fun AlbumArtwork(artwork: String?, modifier: Modifier = Modifier) {
 fun TrackMenu(model: MusicViewModel, track: Track, index: Int, download: (String, String) -> Unit) {
     var open by remember { mutableStateOf(false) }
     var edit by remember { mutableStateOf(false) }
-    var transfer by remember { mutableStateOf<String?>(null) }
     var remove by remember { mutableStateOf(false) }
     var transcribe by remember { mutableStateOf(false) }
     val account by model.sessions.account.collectAsStateWithLifecycle()
     val user = account?.user
+    val canTransfer = user?.isShared == false && track.playlistId != null
+    var transfer by remember(canTransfer) { mutableStateOf<String?>(null) }
     val canModify = user != null && !user.isShared &&
         model.library.library.jobs.find { it.id == track.jobId }?.canModify(user) == true
     Box {
@@ -469,7 +470,7 @@ fun TrackMenu(model: MusicViewModel, track: Track, index: Int, download: (String
         DropdownMenu(open, { open = false }) {
             DropdownMenuItem(text = { Text("Add to queue") }, leadingIcon = { Icon(Icons.AutoMirrored.Rounded.PlaylistAdd, null) }, onClick = { open = false; model.playback.enqueue(track) })
             DropdownMenuItem(text = { Text("Save file") }, leadingIcon = { Icon(Icons.Rounded.Download, null) }, onClick = { open = false; download(track.downloadUrl ?: songPath(track, "download"), track.name) })
-            if (track.playlistId != null) {
+            if (canTransfer) {
                 DropdownMenuItem(text = { Text("Add to playlist") }, leadingIcon = { Icon(Icons.Rounded.LibraryAdd, null) }, onClick = { open = false; transfer = "link" })
                 DropdownMenuItem(text = { Text("Move to playlist") }, leadingIcon = { Icon(Icons.AutoMirrored.Rounded.DriveFileMove, null) }, onClick = { open = false; transfer = "move" })
             }
@@ -490,7 +491,7 @@ fun TrackMenu(model: MusicViewModel, track: Track, index: Int, download: (String
     if (edit) MetadataDialog(model, track) { edit = false }
     if (transcribe) TranscribeDialog(model, track) { transcribe = false }
     if (remove) ConfirmDialog("Remove this song?", "This removes its playlist membership. If no other links remain, the server deletes the media file. This cannot be undone.", { remove = false }) { model.remove(track); remove = false }
-    if (transfer != null) DestinationDialog(if (transfer == "link") "Add to playlist" else "Move to playlist",
+    if (canTransfer && transfer != null) DestinationDialog(if (transfer == "link") "Add to playlist" else "Move to playlist",
         model.library.library.playlists.filter { it.id != track.playlistId }.map { it.id to it.playlistTitle }, { transfer = null }) {
         if (it != null) model.transfer(track, it, transfer == "link")
         transfer = null
