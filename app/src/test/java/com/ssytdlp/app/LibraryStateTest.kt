@@ -28,6 +28,17 @@ class LibraryStateTest {
         assertNull(restored.selectedId)
     }
 
+    @Test fun `ratings refresh queued snapshots and retain cleared ratings across pages`() {
+        val queued = track.copy(rating = 4)
+        assertEquals(4, LibraryState().rating(queued))
+        val refreshed = LibraryState().withTrackPage(TrackPage(files = listOf(track.copy(rating = 2))))
+        assertEquals(2, refreshed.rating(queued))
+        val cleared = refreshed.withTrackPage(TrackPage(files = listOf(track.copy(rating = 0))))
+        val otherPage = cleared.withTrackPage(TrackPage(files = listOf(Track("other", track.name, rating = 5))))
+        assertEquals(0, otherPage.rating(queued))
+        assertEquals(5, otherPage.rating(Track("other", track.name)))
+    }
+
     @Test fun `inline records take precedence over legacy job summaries`() {
         val state = LibraryState(library = Library(jobs = listOf(
             Job(id = track.jobId, transcriptions = mapOf(track.name to sent)))))

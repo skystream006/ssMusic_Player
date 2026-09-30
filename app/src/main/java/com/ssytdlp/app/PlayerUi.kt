@@ -71,11 +71,13 @@ import java.util.Locale
 
 @Composable
 fun PlayerDock(state: PlaybackState, model: MusicViewModel, expand: () -> Unit, requestNotifications: () -> Unit) {
-    MiniPlayer(state, model.metadata?.artwork, expand, { requestNotifications(); model.playback.toggle() }, model.playback::next)
+    MiniPlayer(state, model.metadata?.artwork, expand, { requestNotifications(); model.playback.toggle() },
+        model.playback::next, model.playback::seek)
 }
 
 @Composable
-fun MiniPlayer(state: PlaybackState, artwork: String?, expand: () -> Unit, toggle: () -> Unit, next: () -> Unit) {
+fun MiniPlayer(state: PlaybackState, artwork: String?, expand: () -> Unit, toggle: () -> Unit,
+    next: () -> Unit, onSeek: (Long) -> Unit) {
     val track = state.track ?: return
     Surface(color = MaterialTheme.colorScheme.surfaceContainerLow) {
         Column(Modifier.fillMaxWidth()) {
@@ -92,8 +94,14 @@ fun MiniPlayer(state: PlaybackState, artwork: String?, expand: () -> Unit, toggl
                 }
                 ToolButton(Icons.Rounded.SkipNext, "Next track", enabled = state.queue.size > 1, onClick = next)
             }
-            LinearProgressIndicator(progress = { if (state.duration > 0) (state.position.toFloat() / state.duration).coerceIn(0f, 1f) else 0f },
-                modifier = Modifier.fillMaxWidth().height(2.dp), trackColor = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.35f))
+            key(track.key) {
+                var seeking by remember(state.duration) { mutableStateOf<Float?>(null) }
+                Slider(value = seeking ?: state.position.toFloat().coerceIn(0f, state.duration.toFloat().coerceAtLeast(1f)),
+                    onValueChange = { seeking = it },
+                    onValueChangeFinished = { seeking?.let { onSeek(it.toLong()) }; seeking = null },
+                    valueRange = 0f..state.duration.toFloat().coerceAtLeast(1f), enabled = state.duration > 0,
+                    modifier = Modifier.fillMaxWidth().padding(horizontal = 12.dp).semantics { contentDescription = "Playback position" })
+            }
         }
     }
 }
@@ -102,6 +110,7 @@ fun MiniPlayer(state: PlaybackState, artwork: String?, expand: () -> Unit, toggl
 @Composable
 fun NowPlayingScreen(model: MusicViewModel, state: PlaybackState) {
     var tab by rememberSaveable { mutableIntStateOf(0) }
+    var ratingTrack by remember { mutableStateOf<Track?>(null) }
     var preferUslt by rememberSaveable(state.track?.key) { mutableStateOf(false) }
     var artworkDrag by remember(state.track?.key, tab) { mutableFloatStateOf(0f) }
     val artworkOffset by key(state.track?.key, tab) {
@@ -148,10 +157,12 @@ fun NowPlayingScreen(model: MusicViewModel, state: PlaybackState) {
                 1 -> Lyrics(model, state, Modifier.weight(1f), showUslt)
                 else -> LazyColumn(Modifier.weight(1f)) {
                     itemsIndexed(state.queue, key = { index, item -> "${item.key}:$index" }) { index, queued ->
-                       TrackRow(queued, active = index == state.index, transcription = model.library.transcription(queued),
-                           onClick = { model.playback.select(index) }) {
-                           ToolButton(Icons.Rounded.Close, "Remove from queue") { model.playback.remove(index) }
-                       }
+                        TrackRow(queued.copy(rating = model.library.rating(queued)), active = index == state.index,
+                            transcription = model.library.transcription(queued),
+                            onRatingClick = { ratingTrack = queued },
+                            onClick = { model.playback.select(index) }) {
+                            ToolButton(Icons.Rounded.Close, "Remove from queue") { model.playback.remove(index) }
+                        }
                     }
                 }
             }
@@ -159,6 +170,7 @@ fun NowPlayingScreen(model: MusicViewModel, state: PlaybackState) {
                 model.playback::next, model.playback::shuffle, model.playback::repeat)
         }
     }
+    ratingTrack?.let { track -> MetadataDialog(model, track, ratingOnly = true) { ratingTrack = null } }
 }
 
 @Composable
@@ -457,33 +469,49 @@ fun TrackMenu(model: MusicViewModel, track: Track, index: Int, download: (String
 }
 
 @Composable
-fun MetadataDialog(model: MusicViewModel, track: Track, dismiss: () -> Unit) {
-    var value by remember { mutableStateOf<SongMetadata?>(null) }
-    var error by remember { mutableStateOf<String?>(null) }
+fun MetadataDialog(model: MusicViewModel, track: Track, ratingOnly: Boolean = false, dismiss: () -> Unit) {
+    var value by remember(track.key) { mutableStateOf<SongMetadata?>(null) }
+    var error by remember(track.key) { mutableStateOf<String?>(null) }
+    val account by model.sessions.account.collectAsStateWithLifecycle()
+    val canEdit = track.name.endsWith(".mp3", true) && account?.user?.let { user ->
+        model.library.library.jobs.find { it.id == track.jobId }?.canModify(user)
+    } == true
     LaunchedEffect(track.key) {
         try { value = ApiJson.decodeFromJsonElement(model.api.request(songPath(track, "lyrics"))) }
         catch (failure: Exception) { if (failure is kotlinx.coroutines.CancellationException) throw failure; error = failure.message }
     }
-    AlertDialog(onDismissRequest = dismiss, title = { Text("Song information") }, text = {
+    MetadataDialog(value, { value = it }, error = error, busy = model.busy, ratingOnly = ratingOnly,
+        canEdit = canEdit, dismiss = dismiss) { song -> model.saveMetadata(track, song); dismiss() }
+}
+
+@Composable
+fun MetadataDialog(value: SongMetadata?, onValueChange: (SongMetadata) -> Unit, error: String? = null,
+    busy: Boolean = false, ratingOnly: Boolean = false, canEdit: Boolean = true,
+    dismiss: () -> Unit, save: (SongMetadata) -> Unit) {
+    AlertDialog(onDismissRequest = dismiss, title = { Text(if (ratingOnly) "Rate song" else "Song information") }, text = {
         Column(Modifier.verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+            if (!canEdit) Text("Rating changes require permission to edit an MP3 file.")
             if (value == null) Text(error ?: "Loading...")
             value?.let { song ->
-                OutlinedTextField(song.title, { value = song.copy(title = it.take(500)) }, label = { Text("Title") })
-                OutlinedTextField(song.artist, { value = song.copy(artist = it.take(500)) }, label = { Text("Artist") })
-                OutlinedTextField(song.album, { value = song.copy(album = it.take(500)) }, label = { Text("Album") })
-                OutlinedTextField(song.genre, { value = song.copy(genre = it.take(500)) }, label = { Text("Genre") })
-                OutlinedTextField(song.year, { value = song.copy(year = it.take(4)) }, label = { Text("Year") })
+                if (!ratingOnly) {
+                    OutlinedTextField(song.title, { onValueChange(song.copy(title = it.take(500))) }, label = { Text("Title") })
+                    OutlinedTextField(song.artist, { onValueChange(song.copy(artist = it.take(500))) }, label = { Text("Artist") })
+                    OutlinedTextField(song.album, { onValueChange(song.copy(album = it.take(500))) }, label = { Text("Album") })
+                    OutlinedTextField(song.genre, { onValueChange(song.copy(genre = it.take(500))) }, label = { Text("Genre") })
+                    OutlinedTextField(song.year, { onValueChange(song.copy(year = it.take(4))) }, label = { Text("Year") })
+                }
                 Text("Rating: ${song.rating} / 5")
                 Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceEvenly) {
                     (1..5).forEach { rating ->
-                        IconToggleButton(checked = song.rating >= rating, onCheckedChange = { value = song.copy(rating = if (song.rating == rating) 0 else rating) }, modifier = Modifier.size(44.dp)) {
+                        IconToggleButton(checked = song.rating >= rating, enabled = canEdit && !busy,
+                            onCheckedChange = { onValueChange(song.copy(rating = if (song.rating == rating) 0 else rating)) }, modifier = Modifier.size(44.dp)) {
                             Icon(if (song.rating >= rating) Icons.Rounded.Star else Icons.Rounded.StarBorder, "$rating stars")
                         }
                     }
                 }
             }
         }
-    }, confirmButton = { TextButton(onClick = { value?.let { model.saveMetadata(track, it); dismiss() } }, enabled = value != null && !model.busy) { Text("Save") } },
+    }, confirmButton = { TextButton(onClick = { value?.let(save) }, enabled = value != null && canEdit && !busy) { Text("Save") } },
         dismissButton = { TextButton(onClick = dismiss) { Text("Cancel") } })
 }
 
