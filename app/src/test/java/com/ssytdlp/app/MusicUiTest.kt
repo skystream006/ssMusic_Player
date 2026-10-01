@@ -219,6 +219,25 @@ class MusicUiTest {
         compose.onNodeWithText("All Music").assertIsDisplayed()
     }
 
+    @Test
+    @Config(qualifiers = "w780dp-h360dp")
+    fun librarySearchRespectsSideSystemBarInsetsInLandscape() {
+        val state = mutableStateOf(LibraryState(search = "Quiet"))
+        compose.setContent {
+            MusicTheme {
+                LibraryTopBar(state.value, PlaybackState(), true, {},
+                    onSearch = { state.value = state.value.copy(search = it) }, {}, {}, {},
+                    windowInsets = WindowInsets(left = 32.dp, top = 24.dp, right = 48.dp, bottom = 0.dp))
+            }
+        }
+        val clear = compose.onNodeWithContentDescription("Clear search").assertIsDisplayed()
+        val clearBounds = clear.getUnclippedBoundsInRoot()
+        assertTrue(clearBounds.right <= 780.dp - 48.dp - 16.dp)
+        compose.onNodeWithContentDescription("Settings").assertIsDisplayed()
+        clear.performClick()
+        compose.runOnIdle { assertEquals("", state.value.search) }
+    }
+
     @Test fun navigationShowsLibraryAndNowPlayingWithoutJobsOrSettings() {
         var selected = -1
         compose.setContent { MusicTheme { MusicNavigation(0) { selected = it } } }

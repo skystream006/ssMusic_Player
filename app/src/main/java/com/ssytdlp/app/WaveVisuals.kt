@@ -94,11 +94,12 @@ fun MusicNavigation(selected: Int, onSelect: (Int) -> Unit) {
 @Composable
 fun LibraryTopBar(state: LibraryState, playback: PlaybackState, refreshEnabled: Boolean,
     onBrowse: () -> Unit, onSearch: (String) -> Unit, onPlay: (Int) -> Unit,
-    onRefresh: () -> Unit, onSettings: () -> Unit) {
+    onRefresh: () -> Unit, onSettings: () -> Unit, windowInsets: WindowInsets = TopAppBarDefaults.windowInsets) {
     val selected = state.library.entries.find { it.id == state.selectedId }
     val title = selected?.let { entry -> state.library.playlists.find { it.id == entry.id }?.playlistTitle?.ifBlank { null } ?: entry.name } ?: "All Music"
     Column {
-        TopAppBar(colors = TopAppBarDefaults.topAppBarColors(containerColor = MaterialTheme.colorScheme.background),
+        TopAppBar(windowInsets = windowInsets,
+            colors = TopAppBarDefaults.topAppBarColors(containerColor = MaterialTheme.colorScheme.background),
             title = {
                 Row(Modifier.fillMaxWidth().heightIn(min = 48.dp).clickable(role = Role.Button, onClick = onBrowse),
                     verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(4.dp)) {
@@ -117,7 +118,8 @@ fun LibraryTopBar(state: LibraryState, playback: PlaybackState, refreshEnabled: 
                 ToolButton(Icons.Rounded.Refresh, "Refresh", enabled = refreshEnabled, onClick = onRefresh)
                 ToolButton(Icons.Rounded.Settings, "Settings", onClick = onSettings)
             })
-        OutlinedTextField(state.search, onSearch, Modifier.fillMaxWidth().padding(start = 16.dp, end = 16.dp, bottom = 8.dp),
+        OutlinedTextField(state.search, onSearch, Modifier.fillMaxWidth()
+            .windowInsetsPadding(windowInsets.only(WindowInsetsSides.Horizontal)).padding(start = 16.dp, end = 16.dp, bottom = 8.dp),
             placeholder = { Text("Search your music", style = MaterialTheme.typography.bodyMedium) }, singleLine = true,
             shape = RoundedCornerShape(8.dp), colors = OutlinedTextFieldDefaults.colors(
                 unfocusedContainerColor = MaterialTheme.colorScheme.surfaceContainerLow,
