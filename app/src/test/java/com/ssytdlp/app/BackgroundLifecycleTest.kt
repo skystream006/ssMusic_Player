@@ -5,8 +5,12 @@ import android.os.Looper
 import androidx.test.core.app.ApplicationProvider
 import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.ViewModelStore
+import java.security.Provider
+import java.security.Security
 import okhttp3.OkHttpClient
+import org.junit.AfterClass
 import org.junit.Assert.*
+import org.junit.BeforeClass
 import org.junit.Test
 import org.junit.runner.RunWith
 import org.robolectric.Robolectric
@@ -20,6 +24,19 @@ import org.robolectric.util.ReflectionHelpers
 @Config(sdk = [34], application = MusicApplication::class)
 @LooperMode(LooperMode.Mode.PAUSED)
 class BackgroundLifecycleTest {
+    companion object {
+        private val provider = object : Provider("BackgroundTestKeyStore", 1.0, "Test keystore") {}
+
+        @JvmStatic @BeforeClass fun installKeyStore() {
+            provider.put("KeyStore.AndroidKeyStore", Security.getProvider("SUN").getService("KeyStore", "JKS").className)
+            Security.addProvider(provider)
+        }
+
+        @JvmStatic @AfterClass fun removeKeyStore() {
+            Security.removeProvider(provider.name)
+        }
+    }
+
     @Test fun `automatic update check remains deferred during background startup`() {
         val app = ApplicationProvider.getApplicationContext<MusicApplication>()
         val store = ViewModelStore()

@@ -389,7 +389,7 @@ fun TrackRow(track: Track, active: Boolean = false, enabled: Boolean = true, tra
 @Composable
 fun ToolButton(icon: ImageVector, label: String, enabled: Boolean = true, onClick: () -> Unit) {
     TooltipBox(positionProvider = TooltipDefaults.rememberPlainTooltipPositionProvider(), tooltip = { PlainTooltip { Text(label) } }, state = rememberTooltipState()) {
-        IconButton(onClick = onClick, enabled = enabled) { Icon(icon, label) }
+        IconButton(onClick = onClick, enabled = enabled, modifier = Modifier.size(48.dp)) { Icon(icon, label) }
     }
 }
 

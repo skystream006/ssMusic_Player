@@ -87,9 +87,9 @@ class NowPlayingScreenTest {
             MusicTheme { TranscribeDialog({}, { submitted = it }) }
         }
         compose.onNodeWithText("Generate NoVocals Only").assertIsOff()
-        compose.onNodeWithText("Add lyrics").performScrollTo().performClick()
+        compose.onNodeWithText("Add lyrics").performClick()
         compose.onNodeWithText("Transcribe").assertIsNotEnabled()
-        compose.onNodeWithText("Generate NoVocals Only").performScrollTo().performClick()
+        compose.onNodeWithText("Generate NoVocals Only").performClick()
         restoration.emulateSavedInstanceStateRestore()
         compose.onNodeWithText("Generate NoVocals Only").assertIsOn()
         assertOrdinaryTranscriptionOptionsHidden()
@@ -98,9 +98,9 @@ class NowPlayingScreenTest {
             assertEquals("""{"NoVocalsOnly":true}""", submitted!!.toRequestBody().toString())
         }
         compose.onNodeWithText("Generate NoVocals Only").performClick().assertIsOff()
-        compose.onNodeWithText("Add lyrics").performScrollTo().assertIsOn()
+        compose.onNodeWithText("Add lyrics").assertIsOn()
         compose.onNodeWithText("Transcribe").assertIsNotEnabled()
-        compose.onNode(hasSetTextAction()).performScrollTo().performTextInput("Restored draft")
+        compose.onNode(hasSetTextAction()).performTextReplacement("Restored draft")
         compose.onNodeWithText("Transcribe").assertIsEnabled()
     }
 

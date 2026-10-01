@@ -98,9 +98,11 @@ class ServerApiTest {
             "/api/jobs/source/files/folder%2Fsong.mp3/transcribe", "POST", options.toRequestBody()))
         val request = server.takeRequest(2, TimeUnit.SECONDS)!!
         assertEquals("POST", request.method)
-        assertEquals("/api/jobs/source/files/folder%2Fsong.mp3/transcribe", request.path)
+        assertEquals(listOf("api", "jobs", "source", "files", "folder/song.mp3", "transcribe"),
+            request.requestUrl!!.pathSegments)
         assertEquals("******", request.getHeader("Authorization"))
-        assertEquals("""{"NoVocalsOnly":true}""", request.body.readUtf8())
+        assertEquals(ApiJson.parseToJsonElement("""{"NoVocalsOnly":true}"""),
+            ApiJson.parseToJsonElement(request.body.readUtf8()))
         val record = result.transcriptions.getValue("folder/song.mp3")
         assertEquals(true, record.options!!.noVocalsOnly)
         assertEquals("No-vocals version generated", record.label)
