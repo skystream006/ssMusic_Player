@@ -239,6 +239,8 @@ not interrupt it. Sign-out, session expiry, or switching accounts/servers clears
 the saved state; a removed playlist falls back to All Music.
 Use the bottom navigation to switch between **Library** and the dedicated
 **Now Playing** page; tapping the mini-player also opens **Now Playing**.
+The Library top bar contains the playlist/folder selector, search field, and
+**Play this page** button; there is no library banner, leaving more room for tracks.
 Open **Settings** from the upper-right gear, to the right of **Refresh**, and
 select **Jobs** there to add downloads or manage server jobs.
 In **Now Playing**, the Player, Lyrics, and Queue tabs retain all playback controls.

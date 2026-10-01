@@ -120,6 +120,7 @@ fun MusicApp(model: MusicViewModel, requestNotifications: () -> Unit) {
     val snackbar = remember { SnackbarHostState() }
     var screen by rememberSaveable { mutableIntStateOf(0) }
     var settingsReturnScreen by rememberSaveable { mutableIntStateOf(0) }
+    var libraryBrowser by rememberSaveable(screen) { mutableStateOf(false) }
     val lifecycle = LocalLifecycleOwner.current.lifecycle
     LaunchedEffect(account?.user?.isShared, screen) {
         if (account?.user?.isShared == true && screen == 3) screen = 2
@@ -148,15 +149,25 @@ fun MusicApp(model: MusicViewModel, requestNotifications: () -> Unit) {
         snackbar.showSnackbar(message)
         if (model.notice == message) model.message(null)
     }
+    val openSettings: () -> Unit = {
+        if (screen < 2) settingsReturnScreen = screen
+        screen = 2
+    }
+    val playLibrary: (Int) -> Unit = { index ->
+        requestNotifications()
+        model.playback.play(model.library.tracks.files, index)
+    }
     MusicTheme(model.preferences, waveAppearance = model.waveAppearance) {
         SystemBarAppearance()
         Box(Modifier.fillMaxSize()) {
             Scaffold(containerColor = MaterialTheme.colorScheme.background, snackbarHost = { SnackbarHost(snackbar) }, topBar = {
-                if (account != null) MusicTopBar(account!!.user.name, !model.busy, model::refresh,
-                    onSettings = {
-                        if (screen < 2) settingsReturnScreen = screen
-                        screen = 2
-                    }, onBack = if (screen != 0) back else null)
+                if (account != null) {
+                    if (screen == 0) LibraryTopBar(model.library, playback, !model.busy,
+                        onBrowse = { libraryBrowser = true }, onSearch = model::search, onPlay = playLibrary,
+                        onRefresh = model::refresh, onSettings = openSettings)
+                    else MusicTopBar(account!!.user.name, !model.busy, model::refresh,
+                        onSettings = openSettings, onBack = back)
+                }
             }, bottomBar = {
                 if (account != null) Column {
                     if (playback.track != null && screen != 1) PlayerDock(playback, model, { screen = 1 }, requestNotifications)
@@ -169,7 +180,10 @@ fun MusicApp(model: MusicViewModel, requestNotifications: () -> Unit) {
                     else -> Column(Modifier.padding(padding).fillMaxSize()) {
                         if (model.busy) LinearProgressIndicator(Modifier.fillMaxWidth())
                         when (screen) {
-                            0 -> LibraryScreen(model, playback, requestNotifications, download)
+                            0 -> {
+                                LibraryScreen(model, playback, playLibrary, download)
+                                if (libraryBrowser) LibraryBrowser(model) { libraryBrowser = false }
+                            }
                             1 -> NowPlayingScreen(model, playback)
                             2 -> SettingsScreen(model, download, onJobs = { screen = 3 })
                             3 -> if (account?.user?.isShared != true) JobsScreen(model, requestNotifications, download)
@@ -230,35 +244,18 @@ private fun AppSettingsSheet(onDismiss: () -> Unit) {
 }
 
 @Composable
-fun LibraryScreen(model: MusicViewModel, playback: PlaybackState, requestNotifications: () -> Unit, download: (String, String) -> Unit) {
-    var browser by rememberSaveable { mutableStateOf(false) }
+fun LibraryScreen(model: MusicViewModel, playback: PlaybackState, onPlay: (Int) -> Unit, download: (String, String) -> Unit) {
     var ratingTrack by remember { mutableStateOf<Track?>(null) }
-    LibraryContent(model.library, playback, onBrowse = { browser = true }, onPlay = { index ->
-        requestNotifications()
-        model.playback.play(model.library.tracks.files, index)
-    }, onSearch = model::search, onPage = model::page, onRating = { ratingTrack = it }) { track, index -> TrackMenu(model, track, index, download) }
-    if (browser) LibraryBrowser(model) { browser = false }
+    LibraryContent(model.library, playback, onPlay = onPlay, onPage = model::page,
+        onRating = { ratingTrack = it }) { track, index -> TrackMenu(model, track, index, download) }
     ratingTrack?.let { track -> MetadataDialog(model, track, ratingOnly = true) { ratingTrack = null } }
 }
 
 @Composable
-fun LibraryContent(state: LibraryState, playback: PlaybackState, onBrowse: () -> Unit, onPlay: (Int) -> Unit,
-    onSearch: (String) -> Unit, onPage: (Int) -> Unit, onRating: (Track) -> Unit = {},
+fun LibraryContent(state: LibraryState, playback: PlaybackState, onPlay: (Int) -> Unit,
+    onPage: (Int) -> Unit, onRating: (Track) -> Unit = {},
     trackActions: @Composable (Track, Int) -> Unit) {
-    val selected = state.library.entries.find { it.id == state.selectedId }
-    val title = selected?.let { entry -> state.library.playlists.find { it.id == entry.id }?.playlistTitle?.ifBlank { null } ?: entry.name } ?: "All Music"
     Column(Modifier.fillMaxSize()) {
-        LibraryHeading(title, state.tracks.total, selected?.type == "folder", onBrowse,
-            playEnabled = state.tracks.files.isNotEmpty() && playback.connected && !state.loading, onPlay = { onPlay(0) })
-        OutlinedTextField(state.search, onSearch, Modifier.fillMaxWidth().padding(horizontal = 20.dp, vertical = 12.dp),
-            placeholder = { Text("Search your music", style = MaterialTheme.typography.bodyMedium) }, singleLine = true,
-            shape = RoundedCornerShape(8.dp), colors = OutlinedTextFieldDefaults.colors(
-                unfocusedContainerColor = MaterialTheme.colorScheme.surfaceContainerLow,
-                focusedContainerColor = MaterialTheme.colorScheme.surfaceContainerLow,
-                unfocusedBorderColor = MaterialTheme.colorScheme.outlineVariant),
-            leadingIcon = { Icon(Icons.Rounded.Search, null) }, trailingIcon = {
-                if (state.search.isNotEmpty()) ToolButton(Icons.Rounded.Close, "Clear search") { onSearch("") }
-            })
         Row(Modifier.fillMaxWidth().padding(horizontal = 24.dp, vertical = 8.dp), horizontalArrangement = Arrangement.SpaceBetween) {
             Text(if (state.search.isEmpty()) "TRACKS" else "SEARCH RESULTS", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
             Text("${state.page} / ${state.tracks.totalPages}", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)

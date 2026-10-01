@@ -25,6 +25,7 @@ import androidx.compose.ui.graphics.luminance
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.res.painterResource
+import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.core.view.WindowCompat
@@ -91,24 +92,40 @@ fun MusicNavigation(selected: Int, onSelect: (Int) -> Unit) {
 }
 
 @Composable
-fun LibraryHeading(title: String, count: Int, folder: Boolean, onBrowse: () -> Unit, playEnabled: Boolean, onPlay: () -> Unit) {
-    Box(Modifier.fillMaxWidth()) {
-        WaveBackdrop(Modifier.matchParentSize(), opacity = 0.7f)
-        Row(Modifier.fillMaxWidth().heightIn(min = 152.dp).padding(horizontal = 24.dp, vertical = 24.dp), verticalAlignment = Alignment.CenterVertically) {
-            Column(Modifier.weight(1f).padding(end = 12.dp)) {
-                Row(Modifier.clickable(onClick = onBrowse).heightIn(min = 48.dp), verticalAlignment = Alignment.CenterVertically) {
-                    Icon(if (folder) Icons.Rounded.FolderOpen else Icons.Rounded.LibraryMusic, null, Modifier.size(16.dp), tint = MaterialTheme.colorScheme.primary)
-                    Text("LIBRARY", Modifier.padding(start = 8.dp, end = 4.dp), style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.primary)
-                    Icon(Icons.Rounded.ExpandMore, "Browse library", Modifier.size(18.dp), tint = MaterialTheme.colorScheme.primary)
+fun LibraryTopBar(state: LibraryState, playback: PlaybackState, refreshEnabled: Boolean,
+    onBrowse: () -> Unit, onSearch: (String) -> Unit, onPlay: (Int) -> Unit,
+    onRefresh: () -> Unit, onSettings: () -> Unit) {
+    val selected = state.library.entries.find { it.id == state.selectedId }
+    val title = selected?.let { entry -> state.library.playlists.find { it.id == entry.id }?.playlistTitle?.ifBlank { null } ?: entry.name } ?: "All Music"
+    Column {
+        TopAppBar(colors = TopAppBarDefaults.topAppBarColors(containerColor = MaterialTheme.colorScheme.background),
+            title = {
+                Row(Modifier.fillMaxWidth().heightIn(min = 48.dp).clickable(role = Role.Button, onClick = onBrowse),
+                    verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                    Column(Modifier.weight(1f)) {
+                        Text(title, style = MaterialTheme.typography.titleMedium, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                        Text("${state.tracks.total} tracks", style = MaterialTheme.typography.labelSmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                    }
+                    Icon(Icons.Rounded.ExpandMore, "Browse library", Modifier.size(20.dp), tint = MaterialTheme.colorScheme.primary)
                 }
-                Text(title, style = MaterialTheme.typography.headlineMedium, maxLines = 2, overflow = TextOverflow.Ellipsis)
-                Text("$count tracks", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    modifier = Modifier.padding(top = 8.dp))
-            }
-            FilledIconButton(onClick = onPlay, enabled = playEnabled, modifier = Modifier.size(56.dp), shape = CircleShape) {
-                Icon(Icons.Rounded.PlayArrow, "Play this page", Modifier.size(30.dp))
-            }
-        }
+            }, actions = {
+                FilledIconButton(onClick = { onPlay(0) },
+                    enabled = state.tracks.files.isNotEmpty() && playback.connected && !state.loading, shape = CircleShape) {
+                    Icon(Icons.Rounded.PlayArrow, "Play this page")
+                }
+                ToolButton(Icons.Rounded.Refresh, "Refresh", enabled = refreshEnabled, onClick = onRefresh)
+                ToolButton(Icons.Rounded.Settings, "Settings", onClick = onSettings)
+            })
+        OutlinedTextField(state.search, onSearch, Modifier.fillMaxWidth().padding(start = 16.dp, end = 16.dp, bottom = 8.dp),
+            placeholder = { Text("Search your music", style = MaterialTheme.typography.bodyMedium) }, singleLine = true,
+            shape = RoundedCornerShape(8.dp), colors = OutlinedTextFieldDefaults.colors(
+                unfocusedContainerColor = MaterialTheme.colorScheme.surfaceContainerLow,
+                focusedContainerColor = MaterialTheme.colorScheme.surfaceContainerLow,
+                unfocusedBorderColor = MaterialTheme.colorScheme.outlineVariant),
+            leadingIcon = { Icon(Icons.Rounded.Search, null) }, trailingIcon = {
+                if (state.search.isNotEmpty()) ToolButton(Icons.Rounded.Close, "Clear search") { onSearch("") }
+            })
     }
 }
 

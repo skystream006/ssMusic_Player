@@ -238,7 +238,7 @@ class MusicUiTest {
                     }
                 }) { padding ->
                     Box(Modifier.padding(padding)) {
-                        LibraryContent(LibraryState(), playback, {}, {}, {}, {}) { _, _ -> }
+                        LibraryContent(LibraryState(), playback, {}, {}) { _, _ -> }
                     }
                 }
             }
@@ -386,7 +386,7 @@ class MusicUiTest {
         var rated: Track? = null
         compose.setContent {
             MusicTheme {
-                LibraryContent(library, PlaybackState(connected = true), {}, { selected = it }, {}, {},
+                LibraryContent(library, PlaybackState(connected = true), { selected = it }, {},
                     onRating = { rated = it }) { song, _ ->
                     ToolButton(Icons.Rounded.MoreVert, "Options for ${song.displayTitle}") { menu = true }
                 }
@@ -595,14 +595,16 @@ class MusicUiTest {
         compose.setContent {
             CompositionLocalProvider(LocalDensity provides Density(LocalDensity.current.density, fontScale)) {
                 MusicTheme {
-                    Scaffold(containerColor = MaterialTheme.colorScheme.background, topBar = { MusicTopBar("Alex", true, {}, {}) }, bottomBar = {
+                    Scaffold(containerColor = MaterialTheme.colorScheme.background, topBar = {
+                        LibraryTopBar(library, playback, true, {}, {}, {}, {}, {})
+                    }, bottomBar = {
                         Column {
                             MiniPlayer(playback, null, {}, {}, {}, {})
                             MusicNavigation(0) {}
                         }
                     }) { padding ->
                         Box(Modifier.padding(padding)) {
-                            LibraryContent(library, playback, {}, {}, {}, {}) { track, _ ->
+                            LibraryContent(library, playback, {}, {}) { track, _ ->
                                 ToolButton(Icons.Rounded.MoreVert, "Options for ${track.displayTitle}") {}
                             }
                         }
