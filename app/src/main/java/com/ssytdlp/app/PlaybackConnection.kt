@@ -11,11 +11,9 @@ import androidx.media3.session.SessionToken
 import com.ssytdlp.app.core.Track
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Job
-import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.StateFlow
-import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.launch
 
 data class PlaybackState(
@@ -75,7 +73,6 @@ class PlaybackConnection(
                         }
                     }
                 }
-
             } catch (error: Exception) {
                 DebugLog.event(DebugEvent.PLAYBACK_FAILURE, error = error)
                 future = null
@@ -128,19 +125,5 @@ class PlaybackConnection(
             player.currentMediaItemIndex, player.isPlaying, player.playbackState == Player.STATE_BUFFERING,
             player.currentPosition.coerceAtLeast(0), player.duration.coerceAtLeast(0), player.shuffleModeEnabled,
             player.repeatMode, if (player.playerError != null) mutableState.value.error else null)
-    }
-}
-
-internal suspend fun pollPlaybackPosition(
-    uiResumed: StateFlow<Boolean>,
-    intervalMillis: Long = 300,
-    update: () -> Unit
-) {
-    uiResumed.collectLatest { resumed ->
-        if (!resumed) return@collectLatest
-        while (true) {
-            update()
-            delay(intervalMillis)
-        }
     }
 }

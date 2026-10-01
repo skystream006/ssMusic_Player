@@ -7,6 +7,8 @@ import com.ssytdlp.app.core.ServerResource
 import java.io.IOException
 import java.time.Instant
 import java.util.concurrent.TimeUnit
+import kotlinx.coroutines.currentCoroutineContext
+import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.suspendCancellableCoroutine
 import kotlinx.serialization.json.JsonElement
 import kotlinx.serialization.json.JsonNull
@@ -97,13 +99,13 @@ class ServerApi(
         if (uiActivity == null || isBackgroundPlaybackRequest(method, request.url.encodedPath)) return execute()
         if (method in listOf("GET", "HEAD")) return uiActivity.readWhileResumed { execute() }
         // A mutation may have reached the server already. Never replay it on a lifecycle transition.
-        uiActivity.awaitResumed()
-        return execute()
+        return mutationWhileResumed { execute() }
     }
 
-    suspend fun exchange(origin: String, body: JsonElement): JsonElement {
-        uiActivity?.awaitResumed()
-        return executeJson(transport.newCall(
+    suspend fun exchange(origin: String, body: JsonElement): JsonElement = mutationWhileResumed(
+        "Sign-in stopped when the app went into the background. The server may have completed it; start a new sign-in."
+    ) {
+        executeJson(transport.newCall(
             Request.Builder().url("${AuthProtocol.normalizeOrigin(origin)}/api/auth/app/token")
                 .post(body.toString().toRequestBody(JSON)).build()
         ))
@@ -111,12 +113,26 @@ class ServerApi(
 
     suspend fun upload(body: RequestBody): JsonElement {
         val owner = currentAccount() ?: throw ApiException(401, "Sign in with your passkey.")
-        uiActivity?.awaitResumed()
-        requireOwner(owner)
-        return executeJson(authenticatedClient.newBuilder().readTimeout(30, TimeUnit.MINUTES).build().newCall(
-            Request.Builder().url(ServerResource.resolve(owner.origin, "/api/jobs/import"))
-                .tag(RequestOwner::class.java, RequestOwner(owner)).post(body).build()
-        )).also { requireOwner(owner) }
+        return mutationWhileResumed {
+            requireOwner(owner)
+            executeJson(authenticatedClient.newBuilder().readTimeout(30, TimeUnit.MINUTES).build().newCall(
+                Request.Builder().url(ServerResource.resolve(owner.origin, "/api/jobs/import"))
+                    .tag(RequestOwner::class.java, RequestOwner(owner)).post(body).build()
+            )).also { requireOwner(owner) }
+        }
+    }
+
+    private suspend fun <T> mutationWhileResumed(
+        interruptedMessage: String = "Request stopped when the app went into the background. Server changes may have completed; refresh before retrying.",
+        block: suspend () -> T
+    ): T {
+        if (uiActivity == null) return block()
+        try {
+            return uiActivity.onceWhileResumed(block)
+        } catch (error: UiActivityGate.UiPaused) {
+            currentCoroutineContext().ensureActive()
+            throw IOException(interruptedMessage, error)
+        }
     }
 
     suspend fun download(path: String, write: (java.io.InputStream) -> Unit) {

@@ -469,7 +469,10 @@ class MusicUiTest {
     @Test
     @Config(qualifiers = "w320dp-h640dp")
     fun miniPlayerPreviousAndRepeatFitSmallPhonesAndKeepIndependentActions() {
-        val state = mutableStateOf(previewPlayback().copy(repeat = Player.REPEAT_MODE_OFF))
+        val titleText = "A long song title that still has space beside its artwork"
+        val state = mutableStateOf(previewPlayback().let {
+            it.copy(track = it.track!!.copy(title = titleText), repeat = Player.REPEAT_MODE_OFF)
+        })
         var previous = 0
         var expanded = 0
         var toggled = 0
@@ -480,7 +483,7 @@ class MusicUiTest {
                     repeat = { state.value = state.value.copy(repeat = (state.value.repeat + 1) % 3) })
             }
         }
-        val title = compose.onNodeWithText("Blue hour").assertIsDisplayed().getUnclippedBoundsInRoot()
+        val title = compose.onNodeWithText(titleText).assertIsDisplayed().getUnclippedBoundsInRoot()
         assertTrue("Mini-player must leave readable space for song text", title.width >= 100.dp)
         listOf("Previous track", "Pause", "Next track", "Repeat: off").forEach { label ->
             val bounds = compose.onNodeWithContentDescription(label).assertIsDisplayed().getUnclippedBoundsInRoot()

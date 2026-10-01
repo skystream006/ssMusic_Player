@@ -54,5 +54,5 @@ class UiActivityGate {
         }
     }
 
-    private class UiPaused : CancellationException("UI paused")
+    internal class UiPaused : CancellationException("UI paused")
 }

@@ -434,7 +434,10 @@ class AccountRefreshTest {
         val track = Track("job", "song.mp3", transcriptionLocked = true)
         val path = "/api/jobs/${encode(track.jobId)}/files/${encode(track.name)}/transcribe"
         val model = startModel(track) { request ->
-            if (request.requestUrl!!.encodedPath == path) MockResponse().setBody("""{"id":"job"}""") else null
+            when (request.requestUrl!!.encodedPath) {
+                path, "/api/jobs/job" -> MockResponse().setBody("""{"id":"job"}""")
+                else -> null
+            }
         }
         drainRequests()
 

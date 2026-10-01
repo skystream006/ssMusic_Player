@@ -246,8 +246,9 @@ the saved state; a removed playlist falls back to All Music.
 
 When no app activity is resumed (including screen lock), library, job, health,
 settings, and update checks stop. Non-playback reads are canceled and deferred
-until the app resumes; new mutations wait for the foreground, while already-sent
-mutations are not replayed. Song streams and song information remain available
+until the app resumes; new mutations wait for the foreground. In-flight mutations
+and imports are canceled on backgrounding, never replayed, and report that server
+changes may already have completed; refresh before retrying. Song streams and song information remain available
 for background playback. UI position polling, edge animation, and PCM metering
 stop in the background; metering also stays off when edge lighting is disabled.
 These changes reduce background network traffic, CPU work, and storage writes

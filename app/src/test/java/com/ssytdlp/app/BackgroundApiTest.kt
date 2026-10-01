@@ -5,9 +5,12 @@ import com.ssytdlp.app.core.Session
 import com.ssytdlp.app.core.User
 import java.io.IOException
 import java.util.concurrent.TimeUnit
+import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.CoroutineStart
 import kotlinx.coroutines.async
+import kotlinx.coroutines.cancelAndJoin
 import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.withTimeout
@@ -16,6 +19,7 @@ import okhttp3.Call
 import okhttp3.EventListener
 import okhttp3.OkHttpClient
 import okhttp3.Request
+import okhttp3.RequestBody.Companion.toRequestBody
 import okhttp3.Response
 import okhttp3.mockwebserver.MockResponse
 import okhttp3.mockwebserver.MockWebServer
@@ -41,7 +45,7 @@ class BackgroundApiTest {
         val serverTls = HandshakeCertificates.Builder().heldCertificate(certificate).build()
         val clientTls = HandshakeCertificates.Builder().addTrustedCertificate(certificate.certificate).build()
         server = MockWebServer().apply { useHttps(serverTls.sslSocketFactory(), false); start() }
-        account = Account(server.url("/").toString().removeSuffix("/"), User("listener", "Listener"),
+        account = Account(server.url("/").newBuilder().host("localhost").build().toString().removeSuffix("/"), User("listener", "Listener"),
             Session("T".repeat(43), "2100-01-01T00:00:00Z"))
         val client = OkHttpClient.Builder().sslSocketFactory(clientTls.sslSocketFactory(), clientTls.trustManager)
             .eventListener(object : EventListener() {
@@ -113,14 +117,65 @@ class BackgroundApiTest {
         withTimeout(5_000) { poll.join() }
     }
 
-    @Test fun `mutation waits for foreground and is never replayed after it starts`() = runBlocking {
-        server.enqueue(MockResponse().setResponseCode(204).setHeadersDelay(250, TimeUnit.MILLISECONDS))
-        val mutation = async(Dispatchers.IO, start = CoroutineStart.UNDISPATCHED) { api.request("/api/jobs", "POST") }
+    @Test fun `mutations defer then cancel on pause without replaying uncertain server changes`() = runBlocking {
+        listOf("POST", "PATCH").forEachIndexed { index, method ->
+            gate.activityPaused(activity)
+            server.enqueue(MockResponse().setSocketPolicy(SocketPolicy.NO_RESPONSE))
+            val mutation = async(Dispatchers.IO, start = CoroutineStart.UNDISPATCHED) {
+                runCatching { api.request("/api/jobs", method) }
+            }
+            assertNull(server.takeRequest(150, TimeUnit.MILLISECONDS))
+            gate.activityResumed(activity)
+            assertEquals(method, server.takeRequest(5, TimeUnit.SECONDS)!!.method)
+            gate.activityPaused(activity)
+            withTimeout(5_000) { failures.receive() }
+            val error = withTimeout(5_000) { mutation.await() }.exceptionOrNull()
+            assertTrue(error is IOException)
+            assertTrue(error!!.message!!.contains("may have completed"))
+            assertTrue(error.message!!.contains("refresh before retrying"))
+            gate.activityResumed(activity)
+            assertNull(server.takeRequest(150, TimeUnit.MILLISECONDS))
+            assertEquals(index + 1, server.requestCount)
+        }
+    }
+
+    @Test fun `import upload cancels on pause and is not resubmitted on resume`() = runBlocking {
+        server.enqueue(MockResponse().setSocketPolicy(SocketPolicy.NO_RESPONSE))
+        val upload = async(Dispatchers.IO, start = CoroutineStart.UNDISPATCHED) {
+            runCatching { api.upload(ByteArray(64 * 1024).toRequestBody()) }
+        }
         assertNull(server.takeRequest(150, TimeUnit.MILLISECONDS))
         gate.activityResumed(activity)
-        assertEquals("POST", server.takeRequest(5, TimeUnit.SECONDS)!!.method)
+        val request = server.takeRequest(5, TimeUnit.SECONDS)!!
+        assertEquals("/api/jobs/import", request.path)
+        assertEquals("POST", request.method)
         gate.activityPaused(activity)
-        assertEquals(JsonNull, withTimeout(5_000) { mutation.await() })
+        withTimeout(5_000) { failures.receive() }
+        val error = withTimeout(5_000) { upload.await() }.exceptionOrNull()
+        assertTrue(error is IOException)
+        assertTrue(error!!.message!!.contains("refresh before retrying"))
+        gate.activityResumed(activity)
+        assertNull(server.takeRequest(150, TimeUnit.MILLISECONDS))
+        assertEquals(1, server.requestCount)
+    }
+
+    @Test fun `caller cancellation stays cancellation instead of becoming a lifecycle error`() = runBlocking {
+        gate.activityResumed(activity)
+        server.enqueue(MockResponse().setSocketPolicy(SocketPolicy.NO_RESPONSE))
+        val failure = CompletableDeferred<Throwable?>()
+        val mutation = async(Dispatchers.IO) {
+            try {
+                api.request("/api/jobs", "POST")
+            } catch (error: Throwable) {
+                failure.complete(error)
+                throw error
+            }
+        }
+        assertNotNull(server.takeRequest(5, TimeUnit.SECONDS))
+        mutation.cancelAndJoin()
+        withTimeout(5_000) { failures.receive() }
+        assertTrue(withTimeout(5_000) { failure.await() } is CancellationException)
+        gate.activityPaused(activity)
         gate.activityResumed(activity)
         assertNull(server.takeRequest(150, TimeUnit.MILLISECONDS))
         assertEquals(1, server.requestCount)
@@ -146,6 +201,21 @@ class BackgroundApiTest {
         assertNull(request.getHeader("Authorization"))
         gate.activityPaused(activity)
         gate.activityResumed(activity)
+        assertEquals(1, server.requestCount)
+    }
+
+    @Test fun `paused login exchange cancels without replaying its single use code`() = runBlocking {
+        gate.activityResumed(activity)
+        server.enqueue(MockResponse().setSocketPolicy(SocketPolicy.NO_RESPONSE))
+        val exchange = async(Dispatchers.IO) { runCatching { api.exchange(account.origin, JsonNull) } }
+        assertEquals("/api/auth/app/token", server.takeRequest(5, TimeUnit.SECONDS)!!.path)
+        gate.activityPaused(activity)
+        withTimeout(5_000) { failures.receive() }
+        val error = withTimeout(5_000) { exchange.await() }.exceptionOrNull()
+        assertTrue(error is IOException)
+        assertTrue(error!!.message!!.contains("start a new sign-in"))
+        gate.activityResumed(activity)
+        assertNull(server.takeRequest(150, TimeUnit.MILLISECONDS))
         assertEquals(1, server.requestCount)
     }
 }
