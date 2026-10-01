@@ -5,7 +5,6 @@ import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.rounded.Check
 import androidx.compose.material.icons.rounded.Close
 import androidx.compose.material.icons.rounded.ErrorOutline
 import androidx.compose.material.icons.rounded.HelpOutline
@@ -106,15 +105,14 @@ internal fun TranscriptionStatus(transcription: Transcription?, iconOnly: Boolea
             .clickable(role = Role.Button, onClickLabel = "Show transcription details") { showDetails = true }
             .semantics { contentDescription = "$label\n$details" }
             .padding(vertical = 4.dp), verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+            horizontalArrangement = Arrangement.spacedBy(4.dp, Alignment.CenterHorizontally)) {
             Icon(when (transcription.status) {
                 "sent" -> Icons.Rounded.Refresh
                 "failed" -> Icons.Rounded.ErrorOutline
                 "interrupted" -> Icons.Rounded.Schedule
                 "transcribed" -> when {
                     transcription.options?.noVocalsOnly == true -> Icons.Rounded.MicOff
-                    transcription.lyricsIncluded -> Icons.Rounded.Subtitles
-                    else -> Icons.Rounded.Check
+                    else -> Icons.Rounded.Subtitles
                 }
                 else -> Icons.Rounded.HelpOutline
             }, null, Modifier.size(24.dp), tint = color)

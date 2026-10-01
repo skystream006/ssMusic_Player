@@ -207,21 +207,22 @@ the service as Active. Hover or long-press the disabled action for the explanati
 use the app's Refresh button after the service becomes available. Shared accounts
 remain read-only and do not query the health endpoint.
 
-The lock button at the top right of **Transcribe Song** hides all transcription
-options; confirm **Lock transcription** to save without sending a transcription
-request. Locked songs retain **Transcribe lyrics**, but offer only
-**Generate NoVocals Only**, preserving the transcription lock. Use the lock/unlock button in
-**Edit song / rating**, then **Save**, to change the lock. Locking does not prevent
-manual lyric editing.
+The lock/unlock button at the top right of **Transcribe Song** hides all transcription
+options when changing the lock; confirm **Lock transcription** or **Unlock transcription**
+to save without sending a transcription request. Locked songs retain **Transcribe lyrics**
+and offer **Generate NoVocals Only**, preserving the lock unless you explicitly unlock.
+You can also change the lock in **Edit song / rating**, then **Save**. Locking does not
+prevent manual lyric editing.
 
 While viewing lyrics, permitted MP3 editors can choose **Edit lyrics** to edit
 both SYLT timestamps/text and USLT text, including clearing either format.
 Saving updates the displayed lyrics; canceling leaves them unchanged.
 
-Library and queue tracks always show transcription status: request sent, AI
-transcription, Lyrics included, failed, interrupted, not transcribed (no record),
-or unknown (an unrecognized server status). When the label cannot fit, a status
-icon remains visible. Tap the label or icon for request/finish times, saved language and options, and any error;
+Library and queue tracks show an icon-only transcription status to the left of
+the rating: request sent, AI transcription, Lyrics included, failed, interrupted,
+or unknown (an unrecognized server status). Tracks without a transcription record
+show no status. AI transcription and Lyrics included share the subtitles icon.
+Tap the icon for the status label, request/finish times, saved language and options, and any error;
 tap X or outside the popup to close it. Supplied lyrics are never shown in the
 popup. Status is read from each server track and refreshes every 10 seconds
 while Library or Now Playing is visible, including queued songs from other pages,
@@ -299,7 +300,8 @@ expands alphabetized, horizontal choices that wrap on smaller screens:
 **Circulating** (a smooth two-highlight gradient completing a lap every 12 seconds),
 **Circulating Waveform** (the circulating highlights along an audio waveform border),
 **Oscillation** (audio-reactive ripples), and **Vibration** (a rapidly pulsing
-border, not phone vibration). The switch and selected style
+border, not phone vibration). **Circulating Waveform** is the default style;
+previously saved style choices are preserved. The switch and selected style
 are remembered on this device, including when lighting is turned off.
 
 While music is playing, the selected effect follows the app and Now Playing page

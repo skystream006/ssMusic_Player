@@ -272,6 +272,33 @@ class AccountRefreshTest {
         assertEquals(unlocked, model.metadata)
     }
 
+    @Test fun unlockingTranscriptionPatchesOnlyTheLockEvenWhenServiceIsInactive() {
+        val track = Track("job", "song.mp3", transcriptionLocked = true)
+        val listed = AtomicReference(track)
+        val path = "/api/jobs/job/files/song.mp3/metadata"
+        val model = startModel(track) { request ->
+            when (request.requestUrl!!.encodedPath) {
+                path -> {
+                    listed.set(track.copy(transcriptionLocked = false))
+                    metadataResponse(SongMetadata(transcriptionLocked = false))
+                }
+                "/api/library/tracks" -> MockResponse().setBody(ApiJson.encodeToString(
+                    TrackPage(files = listOf(listed.get()))))
+                "/api/health" -> MockResponse().setBody("""{"transcription":{"status":"inactive"}}""")
+                else -> null
+            }
+        }
+        assertTrue(model.library.transcriptionLocked(track))
+        assertFalse(model.transcriptionAvailable)
+        drainRequests()
+        perform(model) { model.lockTranscription(track, false) }
+        val requests = drainRequests()
+        assertPatch(requests.single { it.path == path }, path, """{"transcriptionLocked":false}""")
+        assertFalse(requests.any { it.path!!.endsWith("/transcribe") })
+        assertFalse(model.library.transcriptionLocked(track))
+        assertEquals("Transcription unlocked for song.", model.notice)
+    }
+
     @Test fun savingLyricsPatchesOnlySuppliedFieldsAndRetainsPlaybackPermission() {
         val track = Track("job", "song.mp3")
         val original = SongMetadata(title = "Song", sylt = listOf(LyricLine(1.0, "Old timed")),

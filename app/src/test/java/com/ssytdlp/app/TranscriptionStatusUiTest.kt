@@ -21,6 +21,7 @@ import com.ssytdlp.app.core.Track
 import com.ssytdlp.app.core.TrackPage
 import com.ssytdlp.app.core.Transcription
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertTrue
 import org.junit.Rule
 import org.junit.Test
 import org.junit.runner.RunWith
@@ -34,12 +35,12 @@ import org.robolectric.annotation.GraphicsMode
 class TranscriptionStatusUiTest {
     @get:Rule val compose = createAndroidComposeRule<ComponentActivity>()
 
-    @Test fun aiTranscribedSubtitleOpensDetailsWithoutPlayingSong() {
-        checkSubtitleAndDetails(lyricsIncluded = false, label = "AI Transcribed")
+    @Test fun aiTranscribedIconOpensDetailsWithoutPlayingSong() {
+        checkIconAndDetails(lyricsIncluded = false, label = "AI Transcribed")
     }
 
-    @Test fun lyricsIncludedSubtitleOpensDetailsWithoutPlayingSong() {
-        checkSubtitleAndDetails(lyricsIncluded = true, label = "Lyrics Included")
+    @Test fun lyricsIncludedIconOpensDetailsWithoutPlayingSong() {
+        checkIconAndDetails(lyricsIncluded = true, label = "Lyrics Included")
     }
 
     @Test fun noVocalsOnlyStatusOpensInstrumentalDetailsWithoutClaimingTranscribedLyrics() {
@@ -90,7 +91,7 @@ class TranscriptionStatusUiTest {
         compose.onNodeWithContentDescription("Not transcribed", substring = true).assertDoesNotExist()
         statuses.forEach { (transcription, label) ->
             compose.runOnIdle { record.value = transcription }
-            compose.onNodeWithText(label).assertIsDisplayed()
+            assertIconLeftOfRating(label)
         }
     }
 
@@ -109,7 +110,7 @@ class TranscriptionStatusUiTest {
                 state.value = state.value.withTrackPage(
                     TrackPage(files = listOf(track.copy(transcription = transcription)), total = 1))
             }
-            compose.onNodeWithText(label).assertIsDisplayed()
+            assertIconLeftOfRating(label)
         }
     }
 
@@ -118,11 +119,12 @@ class TranscriptionStatusUiTest {
         val width = mutableStateOf(160.dp)
         var playCount = 0
         var menuCount = 0
+        var ratingCount = 0
         compose.setContent {
             MusicTheme(waveAppearance = false) {
                 Box(Modifier.width(width.value)) {
                     TrackRow(Track(name = "song.mp3", title = "A long song title", artist = "A long artist name"),
-                        transcription = record.value, onClick = { playCount++ }) {
+                        transcription = record.value, onRatingClick = { ratingCount++ }, onClick = { playCount++ }) {
                         ToolButton(Icons.Rounded.MoreVert, "Song actions") { menuCount++ }
                     }
                 }
@@ -131,7 +133,7 @@ class TranscriptionStatusUiTest {
         compose.onNodeWithContentDescription("Not transcribed", substring = true).assertDoesNotExist()
         statuses.forEach { (transcription, label) ->
             compose.runOnIdle { record.value = transcription }
-            compose.onNodeWithText(label).assertDoesNotExist()
+            assertIconLeftOfRating(label)
             compose.onNodeWithContentDescription(label, substring = true).assertIsDisplayed().performClick()
             compose.onNode(isDialog()).assertIsDisplayed()
             compose.onNodeWithText(label).assertIsDisplayed()
@@ -140,13 +142,16 @@ class TranscriptionStatusUiTest {
         compose.runOnIdle {
             assertEquals(0, playCount)
             assertEquals(0, menuCount)
+            assertEquals(0, ratingCount)
         }
+        compose.onNodeWithContentDescription("Rating: 0 out of 5").performClick()
         compose.onNodeWithContentDescription("Song actions").performClick()
         compose.runOnIdle { width.value = 220.dp }
         compose.onNodeWithText("A long song title").performClick()
         compose.runOnIdle {
             assertEquals(1, playCount)
             assertEquals(1, menuCount)
+            assertEquals(1, ratingCount)
         }
     }
 
@@ -185,7 +190,17 @@ class TranscriptionStatusUiTest {
         Transcription() to "Transcription status unknown"
     )
 
-    private fun checkSubtitleAndDetails(lyricsIncluded: Boolean, label: String) {
+    private fun assertIconLeftOfRating(label: String) {
+        compose.onNodeWithText(label).assertDoesNotExist()
+        val status = compose.onNodeWithContentDescription(label, substring = true)
+            .assertIsDisplayed().getUnclippedBoundsInRoot()
+        val rating = compose.onNodeWithContentDescription("Rating: 0 out of 5")
+            .assertIsDisplayed().getUnclippedBoundsInRoot()
+        assertTrue(status.right <= rating.left)
+        assertEquals((rating.top + rating.bottom) / 2, (status.top + status.bottom) / 2)
+    }
+
+    private fun checkIconAndDetails(lyricsIncluded: Boolean, label: String) {
         var playCount = 0
         val transcription = Transcription(
             status = "transcribed",
@@ -202,7 +217,8 @@ class TranscriptionStatusUiTest {
                 TrackRow(Track(name = "song.mp3"), transcription = transcription, onClick = { playCount++ })
             }
         }
-        compose.onNodeWithText(label).assertIsDisplayed().performClick()
+        assertIconLeftOfRating(label)
+        compose.onNodeWithContentDescription(label, substring = true).performClick()
         compose.onNode(isDialog()).assertIsDisplayed()
         compose.onNodeWithText(transcription.tooltip()).assertIsDisplayed()
         compose.onNodeWithText("Requested:", substring = true).assertIsDisplayed()

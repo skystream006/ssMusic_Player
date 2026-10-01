@@ -616,14 +616,14 @@ fun MetadataDialog(value: SongMetadata?, onValueChange: (SongMetadata) -> Unit, 
 @Composable
 fun TranscribeDialog(model: MusicViewModel, track: Track, dismiss: () -> Unit) {
     TranscribeDialog(dismiss, { options -> model.transcribe(track, options); dismiss() }, model.busy,
-        available = model.transcriptionAvailable, lock = { model.lockTranscription(track, true); dismiss() },
+        available = model.transcriptionAvailable, lock = { model.lockTranscription(track, it); dismiss() },
         transcriptionLocked = model.library.transcriptionLocked(track))
 }
 
 @Composable
 fun TranscribeDialog(dismiss: () -> Unit, submit: (TranscriptionOptions) -> Unit, busy: Boolean = false,
-    available: Boolean = true, lock: () -> Unit = {}, transcriptionLocked: Boolean = false) {
-    var lockRequested by rememberSaveable(transcriptionLocked) { mutableStateOf(false) }
+    available: Boolean = true, lock: (Boolean) -> Unit = {}, transcriptionLocked: Boolean = false) {
+    var lockRequested by rememberSaveable(transcriptionLocked) { mutableStateOf(transcriptionLocked) }
     var noVocalsOnly by rememberSaveable { mutableStateOf(false) }
     var language by rememberSaveable { mutableStateOf("") }
     var multilingual by rememberSaveable { mutableStateOf(false) }
@@ -632,18 +632,18 @@ fun TranscribeDialog(dismiss: () -> Unit, submit: (TranscriptionOptions) -> Unit
     var addLyrics by rememberSaveable { mutableStateOf(false) }
     var lyricsMode by rememberSaveable { mutableStateOf("align") }
     var lyrics by rememberSaveable { mutableStateOf("") }
-    val locking = lockRequested && !transcriptionLocked
+    val lockChanged = lockRequested != transcriptionLocked
     val generateOnly = transcriptionLocked || noVocalsOnly
     val options = TranscriptionOptions(language, multilingual, instrumental, vietLyricsFallback, addLyrics, lyricsMode, lyrics,
         noVocalsOnly = generateOnly)
     AlertDialog(onDismissRequest = { if (!busy) dismiss() }, title = {
         Row(verticalAlignment = Alignment.CenterVertically) {
             Text("Transcribe Song", Modifier.weight(1f))
-            if (transcriptionLocked) Icon(Icons.Rounded.Lock, "Transcription locked")
-            else TranscriptionLockButton(lockRequested, !busy) { lockRequested = it }
+            TranscriptionLockButton(lockRequested, !busy) { lockRequested = it }
         }
     }, text = {
-        if (locking) Text("Submit to lock transcription for this song. You can unlock it in Edit song.")
+        if (lockChanged) Text(if (lockRequested) "Confirm to lock transcription for this song without sending a transcription request."
+            else "Confirm to unlock transcription for this song without sending a transcription request.")
         else Column(Modifier.verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(10.dp)) {
             if (!available) Text(INACTIVE_TRANSCRIPTION_MESSAGE)
             if (transcriptionLocked) Text("Transcription is locked. Only a no-vocals version can be generated; lyrics and the lock will not change.")
@@ -682,9 +682,11 @@ fun TranscribeDialog(dismiss: () -> Unit, submit: (TranscriptionOptions) -> Unit
             }
         }
     }, confirmButton = {
-        TextButton(onClick = { if (locking) lock() else submit(options) },
-            enabled = !busy && (locking || (available && options.isValid))) {
-            Text(if (locking) "Lock transcription" else if (generateOnly) "Generate" else "Transcribe")
+        TextButton(onClick = { if (lockChanged) lock(lockRequested) else submit(options) },
+            enabled = !busy && (lockChanged || (available && options.isValid))) {
+            Text(if (lockChanged) {
+                if (lockRequested) "Lock transcription" else "Unlock transcription"
+            } else if (generateOnly) "Generate" else "Transcribe")
         }
     },
         dismissButton = { TextButton(onClick = dismiss, enabled = !busy) { Text("Cancel") } })
