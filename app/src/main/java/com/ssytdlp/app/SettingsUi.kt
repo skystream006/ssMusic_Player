@@ -72,18 +72,19 @@ fun SettingsScreen(model: MusicViewModel, download: (String, String) -> Unit, on
             }
         }
         if (!model.waveAppearance) {
+        val theme = model.preferences.effectiveTheme
         FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-            listOf("light" to 0xFF376D60, "midnight" to 0xFF5F7FF0, "royal-purple" to 0xFF7139C6,
+            listOf("midnight" to 0xFF5F7FF0, "royal-purple" to 0xFF7139C6,
                 "gold" to 0xFFA77A0A, "green" to 0xFF227452, "pink" to 0xFFBF3D78, "black" to 0xFF202124).forEach { (id, color) ->
-                Box(Modifier.size(48.dp).semantics { contentDescription = "$id theme"; selected = model.preferences.theme == id }
+                Box(Modifier.size(48.dp).semantics { contentDescription = "$id theme"; selected = theme == id }
                     .clickable(enabled = !model.busy) { model.setTheme(theme = id) }.padding(6.dp)
-                    .border(if (model.preferences.theme == id) 3.dp else 0.dp, MaterialTheme.colorScheme.onSurface, CircleShape)
+                    .border(if (theme == id) 3.dp else 0.dp, MaterialTheme.colorScheme.onSurface, CircleShape)
                     .padding(5.dp).background(Color(color), CircleShape))
             }
         }
         Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
             Text("Dark appearance", Modifier.weight(1f))
-            Switch(model.preferences.mode == "dark" || (model.preferences.mode == null && model.preferences.theme in listOf("midnight", "black")),
+            Switch(model.preferences.mode == "dark" || (model.preferences.mode == null && theme in listOf("midnight", "black")),
                 { model.setTheme(mode = if (it) "dark" else "light") }, enabled = !model.busy)
         }
         }

@@ -431,8 +431,9 @@ class MusicViewModel @JvmOverloads constructor(application: Application, private
         }
     }
 
-    fun setTheme(theme: String = preferences.theme, mode: String = preferences.mode ?: "light") = launchAction {
-        preferences = ApiJson.decodeFromJsonElement(api.request("/api/preferences", "PUT", json("theme" to theme, "mode" to mode)))
+    fun setTheme(theme: String = preferences.effectiveTheme, mode: String = preferences.mode ?: "light") = launchAction {
+        val effectiveTheme = Preferences(theme = theme).effectiveTheme
+        preferences = ApiJson.decodeFromJsonElement(api.request("/api/preferences", "PUT", json("theme" to effectiveTheme, "mode" to mode)))
     }
 
     fun chooseWaveAppearance(enabled: Boolean) {

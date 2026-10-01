@@ -5,6 +5,29 @@ import org.junit.Assert.*
 import org.junit.Test
 
 class ModelsTest {
+    @Test fun `preferences default to Green and resolve legacy Porcelain without changing mode`() {
+        assertEquals("green", Preferences().theme)
+        assertEquals("green", ApiJson.decodeFromString<Preferences>("{}").effectiveTheme)
+        listOf(null, "light", "dark").forEach { mode ->
+            val preferences = ApiJson.decodeFromString<Preferences>(
+                ApiJson.encodeToString(Preferences(theme = "light", mode = mode)))
+            assertEquals("green", preferences.effectiveTheme)
+            assertEquals(mode, preferences.mode)
+        }
+        assertEquals("""{"theme":"green","mode":null}""", ApiJson.encodeToString(Preferences()))
+    }
+
+    @Test fun `remaining server themes and modes are preserved`() {
+        listOf("midnight", "royal-purple", "gold", "green", "pink", "black").forEach { theme ->
+            listOf(null, "light", "dark").forEach { mode ->
+                val preferences = ApiJson.decodeFromString<Preferences>(
+                    ApiJson.encodeToString(Preferences(theme, mode)))
+                assertEquals(theme, preferences.effectiveTheme)
+                assertEquals(mode, preferences.mode)
+            }
+        }
+    }
+
     @Test fun `login and current user responses retain shared account details`() {
         val user = """{"id":"listener","name":"Listener","role":"shared","status":"approved","sharedUserIds":["owner"],"createdAt":"2026-09-30"}"""
         val login = ApiJson.decodeFromString<LoginResponse>(
