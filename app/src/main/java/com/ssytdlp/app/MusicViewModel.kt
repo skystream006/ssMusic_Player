@@ -68,7 +68,7 @@ class MusicViewModel @JvmOverloads constructor(application: Application, private
         private set
     var waveAppearance by mutableStateOf(application.getSharedPreferences("settings", 0).getBoolean("wave_appearance", true))
         private set
-    var edgeLightingEnabled by mutableStateOf(application.getSharedPreferences("settings", 0).getBoolean("edge_lighting", false))
+    var edgeLightingEnabled by mutableStateOf(application.getSharedPreferences("settings", 0).getBoolean("edge_lighting", true))
         private set
     var edgeLightingStyle by mutableStateOf(EdgeLightingStyle.fromPreference(
         application.getSharedPreferences("settings", 0).getString("edge_lighting_style", null)))

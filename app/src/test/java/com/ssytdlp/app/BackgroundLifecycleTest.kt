@@ -50,10 +50,10 @@ class BackgroundLifecycleTest {
         } finally { store.clear() }
     }
 
-    @Test fun `application startup and merely started activity do not enable UI work`() {
+    @Test fun `default lighting stays off until an activity is resumed`() {
         val app = ApplicationProvider.getApplicationContext<MusicApplication>()
         val settings = app.getSharedPreferences("settings", 0)
-        settings.edit().putBoolean("edge_lighting", true).commit()
+        settings.edit().remove("edge_lighting").commit()
         shadowOf(Looper.getMainLooper()).idle()
         assertFalse(app.uiActivity.resumed.value)
         assertFalse(app.audioLevels.enabled)
