@@ -81,9 +81,10 @@ fun MiniPlayer(state: PlaybackState, artwork: String?, expand: () -> Unit, toggl
     val track = state.track ?: return
     Surface(color = MaterialTheme.colorScheme.surfaceContainerLow) {
         BoxWithConstraints(Modifier.fillMaxWidth()) {
+            val compact = maxWidth < 440.dp
             Column {
                 HorizontalDivider(color = MaterialTheme.colorScheme.primary.copy(alpha = 0.2f))
-                if (maxWidth < 440.dp) {
+                if (compact) {
                     MiniPlayerTrack(track, artwork, expand, Modifier.fillMaxWidth().padding(end = 8.dp))
                     Row(Modifier.fillMaxWidth().padding(horizontal = 8.dp), horizontalArrangement = Arrangement.End) {
                         MiniPlayerControls(state, previous, toggle, next, repeat)
