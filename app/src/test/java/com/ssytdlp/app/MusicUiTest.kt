@@ -4,6 +4,7 @@ import android.Manifest
 import android.app.Application
 import android.content.pm.PackageManager
 import android.graphics.Bitmap
+import android.view.ViewGroup
 import androidx.activity.ComponentActivity
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.background
@@ -17,6 +18,7 @@ import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.snapshots.Snapshot
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
@@ -26,6 +28,7 @@ import androidx.compose.ui.semantics.SemanticsActions
 import androidx.compose.ui.semantics.SemanticsProperties
 import androidx.compose.ui.test.*
 import androidx.compose.ui.test.junit4.createAndroidComposeRule
+import androidx.compose.ui.text.TextLayoutResult
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.Density
 import androidx.test.core.app.ApplicationProvider
@@ -39,6 +42,7 @@ import com.ssytdlp.app.core.LibraryEntry
 import com.ssytdlp.app.core.LibraryPlaylist
 import com.ssytdlp.app.core.SongMetadata
 import java.io.File
+import kotlin.math.roundToInt
 import org.junit.Assert.*
 import org.junit.Rule
 import org.junit.Test
@@ -75,6 +79,50 @@ class MusicUiTest {
             }
         }
         compose.runOnIdle { assertEquals(Color(0xFFF6F8F6), colors.background) }
+    }
+
+    @Test fun serverBlackPaletteMatchesCharcoalAndGoldInBothModes() {
+        val preferences = mutableStateOf(Preferences(theme = "black"))
+        lateinit var colors: ColorScheme
+        compose.setContent {
+            MusicTheme(preferences.value, waveAppearance = false) { colors = MaterialTheme.colorScheme }
+        }
+        fun assertPalette(dark: Boolean) {
+            compose.runOnIdle {
+                val accent = if (dark) Color(0xFFF5D442) else Color(0xFF806000)
+                val ink = if (dark) Color(0xFFF0F0EE) else Color(0xFF202124)
+                assertEquals(accent, colors.primary)
+                assertEquals(accent, colors.secondary)
+                assertEquals(accent, colors.tertiary)
+                assertEquals(accent, colors.surfaceTint)
+                assertEquals(if (dark) Color(0xFF141414) else Color.White, colors.onPrimary)
+                assertEquals(if (dark) Color(0xFF0E0E0E) else Color(0xFFF5F5F5), colors.background)
+                assertEquals(if (dark) Color(0xFF181818) else Color.White, colors.surface)
+                assertEquals(if (dark) Color(0xFF141414) else Color(0xFFFAFAFA), colors.surfaceContainerLow)
+                assertEquals(if (dark) Color(0xFF262626) else Color(0xFFEAEAEA), colors.surfaceContainerHigh)
+                assertEquals(ink, colors.onBackground)
+                assertEquals(ink, colors.onSurface)
+                assertEquals(if (dark) Color(0xFFADADAD) else Color(0xFF686868), colors.onSurfaceVariant)
+                assertEquals(if (dark) Color(0xFF373737) else Color(0xFFD8D8D8), colors.outlineVariant)
+                assertEquals(if (dark) Color(0xFFFF9AAB) else Color(0xFFB03250), colors.error)
+            }
+        }
+        assertPalette(dark = true)
+        compose.runOnIdle { preferences.value = preferences.value.copy(mode = "light") }
+        assertPalette(dark = false)
+        compose.runOnIdle { preferences.value = preferences.value.copy(mode = "dark") }
+        assertPalette(dark = true)
+    }
+
+    @Test fun blackServerPreferencesDoNotOverrideBlueWaveAppearance() {
+        lateinit var colors: ColorScheme
+        compose.setContent {
+            MusicTheme(Preferences(theme = "black", mode = "light")) { colors = MaterialTheme.colorScheme }
+        }
+        compose.runOnIdle {
+            assertEquals(Color(0xFF030508), colors.background)
+            assertEquals(Color(0xFF68DEFF), colors.primary)
+        }
     }
 
     @Test fun loginWaveArtworkAndPasskeyControlsRenderOnPhone() {
@@ -468,7 +516,7 @@ class MusicUiTest {
 
     @Test
     @Config(qualifiers = "w320dp-h640dp")
-    fun miniPlayerPreviousAndRepeatFitSmallPhonesAndKeepIndependentActions() {
+    fun miniPlayerControlsStayBesideSongInformationOnSmallPhonesAndKeepIndependentActions() {
         val titleText = "A long song title that still has space beside its artwork"
         val state = mutableStateOf(previewPlayback().let {
             it.copy(track = it.track!!.copy(title = titleText), repeat = Player.REPEAT_MODE_OFF)
@@ -484,11 +532,17 @@ class MusicUiTest {
             }
         }
         val title = compose.onNodeWithText(titleText).assertIsDisplayed().getUnclippedBoundsInRoot()
-        assertTrue("Mini-player must leave readable space for song text", title.right - title.left >= 100.dp)
+        assertTrue("Mini-player must leave space for scrolling song text", title.right - title.left >= 48.dp)
+        var previousRight = title.right
+        val pause = compose.onNodeWithContentDescription("Pause").getUnclippedBoundsInRoot()
         listOf("Previous track", "Pause", "Next track", "Repeat: off").forEach { label ->
             val bounds = compose.onNodeWithContentDescription(label).assertIsDisplayed().getUnclippedBoundsInRoot()
             assertTrue(bounds.right - bounds.left >= 48.dp && bounds.bottom - bounds.top >= 48.dp)
             assertTrue(bounds.left >= 0.dp && bounds.right <= 320.dp)
+            assertTrue("Controls must not overlap the song information or each other", bounds.left >= previousRight)
+            assertTrue("Controls must stay beside the song information", bounds.top < title.bottom && bounds.bottom > title.top)
+            assertEquals(pause.top, bounds.top)
+            previousRight = bounds.right
         }
         compose.onNodeWithContentDescription("Previous track").performClick()
         compose.onNodeWithContentDescription("Repeat: off").assertIsOff().performClick()
@@ -496,6 +550,60 @@ class MusicUiTest {
         compose.onNodeWithContentDescription("Repeat: all").assertIsOn().performClick()
         compose.onNodeWithContentDescription("Repeat: off").assertIsOff()
         compose.runOnIdle { assertEquals(1, previous); assertEquals(0, toggled); assertEquals(0, expanded) }
+    }
+
+    @Test
+    @Config(qualifiers = "w320dp-h780dp")
+    fun miniPlayerScrollsLongTitleAndArtistWithLargeTextWithoutMovingControls() {
+        val track = Track("job", "long.mp3", title = "A long song title that needs to scroll on a cover screen",
+            artist = "An artist name that also needs enough room to be read")
+        val state = mutableStateOf(PlaybackState(track = track, queue = listOf(track)))
+        var expanded = 0
+        compose.mainClock.autoAdvance = false
+        compose.setContent {
+            CompositionLocalProvider(LocalDensity provides Density(LocalDensity.current.density, 1.5f)) {
+                MusicTheme { MiniPlayer(state.value, null, { expanded++ }, {}, {}, {}) }
+            }
+        }
+        compose.mainClock.advanceTimeByFrame()
+        val playBounds = compose.onNodeWithContentDescription("Play").assertIsDisplayed().getUnclippedBoundsInRoot()
+        compose.onNodeWithContentDescription("Next track").assertIsNotEnabled()
+        val informationBounds = compose.onNodeWithText(track.displayTitle).fetchSemanticsNode().boundsInRoot
+        val labels = listOf(track.displayTitle, track.displayArtist)
+        labels.forEach { text ->
+            val node = compose.onNodeWithText(text, useUnmergedTree = true).assertIsDisplayed()
+            val layouts = mutableListOf<TextLayoutResult>()
+            node.performSemanticsAction(SemanticsActions.GetTextLayoutResult) { it(layouts) }
+            assertEquals(1, layouts.single().lineCount)
+            assertFalse(layouts.single().isLineEllipsized(0))
+            assertTrue("Marquee must measure the complete text", layouts.single().size.width > informationBounds.width)
+        }
+        fun captureText(text: String): Bitmap {
+            val viewport = compose.onNodeWithText(text).fetchSemanticsNode().boundsInRoot
+            val textBounds = compose.onNodeWithText(text, useUnmergedTree = true).fetchSemanticsNode().boundsInRoot
+            return compose.runOnIdle {
+                val view = compose.activity.findViewById<ViewGroup>(android.R.id.content).getChildAt(0)
+                Bitmap.createBitmap(view.drawToBitmap(), viewport.left.roundToInt(), textBounds.top.roundToInt(),
+                    viewport.width.roundToInt(), textBounds.height.roundToInt())
+            }
+        }
+        val before = labels.map(::captureText)
+        compose.mainClock.advanceTimeBy(3_000)
+        labels.forEachIndexed { index, text ->
+            assertFalse("Overflowing song information must scroll", before[index].sameAs(captureText(text)))
+        }
+        assertEquals(playBounds, compose.onNodeWithContentDescription("Play").getUnclippedBoundsInRoot())
+        compose.onNodeWithText(track.displayTitle).performClick()
+        compose.runOnIdle {
+            assertEquals(1, expanded)
+            state.value = state.value.copy(track = track.copy(name = "short.mp3", title = "Hi", artist = "Me"))
+            Snapshot.sendApplyNotifications()
+        }
+        compose.mainClock.advanceTimeByFrame()
+        compose.onNodeWithText(track.displayTitle).assertDoesNotExist()
+        val shortTitle = captureText("Hi")
+        compose.mainClock.advanceTimeBy(3_000)
+        assertTrue("Text that fits must remain still", shortTitle.sameAs(captureText("Hi")))
     }
 
     @Test fun miniPlayerKeepsDraggedPositionWhilePlaybackUpdatesAndSeeksOnRelease() {
@@ -551,7 +659,13 @@ class MusicUiTest {
     fun libraryTopBarRendersOnTablet() {
         showLibraryPreview()
         compose.onNodeWithContentDescription("Browse library").assertIsDisplayed()
-        compose.onNodeWithContentDescription("Pause").assertIsDisplayed()
+        val pause = compose.onNodeWithContentDescription("Pause").assertIsDisplayed().getUnclippedBoundsInRoot()
+        val artwork = compose.onNodeWithContentDescription("Album artwork unavailable").assertIsDisplayed().getUnclippedBoundsInRoot()
+        assertTrue(artwork.right <= pause.left)
+        assertTrue(artwork.top < pause.bottom && artwork.bottom > pause.top)
+        val repeat = compose.onNodeWithContentDescription("Repeat: off").assertIsDisplayed().getUnclippedBoundsInRoot()
+        assertEquals(pause.top, repeat.top)
+        assertTrue(repeat.right <= 800.dp)
         savePreview("library-tablet")
     }
 

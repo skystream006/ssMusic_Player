@@ -28,6 +28,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.lerp
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.semantics.clearAndSetSemantics
@@ -58,7 +59,6 @@ fun MusicTheme(preferences: Preferences = Preferences(), waveAppearance: Boolean
         "gold" -> Color(0xFF8C6600)
         "green" -> Color(0xFF227452)
         "pink" -> Color(0xFFBF3D78)
-        "black" -> Color(0xFF276449)
         else -> Color(0xFF376D60)
     }
     val dark = preferences.mode == "dark" || (preferences.mode == null && preferences.theme in listOf("midnight", "black"))
@@ -76,7 +76,8 @@ fun MusicTheme(preferences: Preferences = Preferences(), waveAppearance: Boolean
         surfaceContainerHighest = Color(0xFF202D3E),
         surfaceVariant = Color(0xFF1A2636), onSurfaceVariant = Color(0xFFA5B6CC),
         outline = Color(0xFF55667D), outlineVariant = Color(0xFF253347)
-    ) else if (dark) darkColorScheme(primary = accent.copy(alpha = 1f), secondary = Color(0xFFF3B6AA),
+    ) else if (preferences.theme == "black") serverBlackColorScheme(dark)
+    else if (dark) darkColorScheme(primary = accent.copy(alpha = 1f), secondary = Color(0xFFF3B6AA),
         background = Color(0xFF141817), surface = Color(0xFF191E1C), onPrimary = Color.White)
     else lightColorScheme(primary = accent, secondary = Color(0xFF9F4C3B), background = Color(0xFFF6F8F6), surface = Color(0xFFF6F8F6))
     fun bundledFont(resource: Int) = FontFamily(
@@ -108,6 +109,39 @@ fun MusicTheme(preferences: Preferences = Preferences(), waveAppearance: Boolean
                 medium = RoundedCornerShape(8.dp), large = RoundedCornerShape(8.dp), extraLarge = RoundedCornerShape(8.dp)),
             content = content)
     }
+}
+
+private fun serverBlackColorScheme(dark: Boolean): ColorScheme {
+    val accent = if (dark) Color(0xFFF5D442) else Color(0xFF806000)
+    val paper = if (dark) Color(0xFF0E0E0E) else Color(0xFFF5F5F5)
+    val surface = if (dark) Color(0xFF181818) else Color.White
+    val raised = if (dark) Color(0xFF262626) else Color(0xFFEAEAEA)
+    val field = if (dark) Color(0xFF141414) else Color(0xFFFAFAFA)
+    val ink = if (dark) Color(0xFFF0F0EE) else Color(0xFF202124)
+    val muted = if (dark) Color(0xFFADADAD) else Color(0xFF686868)
+    val line = if (dark) Color(0xFF373737) else Color(0xFFD8D8D8)
+    val onAccent = if (dark) Color(0xFF141414) else Color.White
+    val danger = if (dark) Color(0xFFFF9AAB) else Color(0xFFB03250)
+    val selection = lerp(surface, accent, 0.12f)
+    return (if (dark) darkColorScheme() else lightColorScheme()).copy(
+        primary = accent, onPrimary = onAccent,
+        primaryContainer = selection, onPrimaryContainer = accent, inversePrimary = if (dark) Color(0xFF806000) else Color(0xFFF5D442),
+        secondary = accent, onSecondary = onAccent,
+        secondaryContainer = selection, onSecondaryContainer = accent,
+        tertiary = accent, onTertiary = onAccent,
+        tertiaryContainer = selection, onTertiaryContainer = accent,
+        background = paper, onBackground = ink,
+        surface = surface, onSurface = ink, surfaceTint = accent,
+        surfaceDim = if (dark) paper else raised, surfaceBright = if (dark) raised else surface,
+        surfaceContainerLowest = paper, surfaceContainerLow = field,
+        surfaceContainer = surface, surfaceContainerHigh = raised, surfaceContainerHighest = raised,
+        surfaceVariant = raised, onSurfaceVariant = muted,
+        inverseSurface = if (dark) Color(0xFFF5F5F5) else Color(0xFF181818),
+        inverseOnSurface = if (dark) Color(0xFF202124) else Color(0xFFF0F0EE),
+        outline = line, outlineVariant = line,
+        error = danger, onError = onAccent,
+        errorContainer = lerp(surface, danger, 0.09f), onErrorContainer = danger
+    )
 }
 
 @Composable

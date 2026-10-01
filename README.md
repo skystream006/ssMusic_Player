@@ -187,6 +187,8 @@ it does not prove an installed app's identity. Authorize only sign-ins you start
 | Settings | Updates at the top, Blue Wave appearance, edge-lighting toggle, optional server-synced theme and light/dark mode, account expiry, server media count, collapsible device/debugging sections, browser account/admin access |
 
 Drag the bottom mini-player's progress slider to seek without leaving Library.
+Artwork, song information, and playback controls stay on one row even on narrow
+foldable cover screens; long titles and artist names scroll automatically.
 Its previous, play/pause, next, and repeat controls work without opening Now Playing;
 repeat cycles through off, one song, and the entire queue.
 Track ratings remain visible even at zero; tap the star beside a track's menu
@@ -293,6 +295,8 @@ surfaces, cyan controls, original blue-ribbon bitmap artwork, Space Grotesk head
 and Manrope body text. Real album covers remain unchanged. **Settings > Appearance**
 can switch back to **Server theme** without overwriting the web client's preferences.
 The choice is stored on this device. Authentication still uses the primary server.
+The server's **Black** theme uses neutral charcoal surfaces with yellow accents in
+dark mode, and gray/white surfaces with darker gold accents in light mode.
 
 **Settings > Appearance > Edge lighting** is disabled by default. Enabling it
 expands alphabetized, horizontal choices that wrap on smaller screens:
