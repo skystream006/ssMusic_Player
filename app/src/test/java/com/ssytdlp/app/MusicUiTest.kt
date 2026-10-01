@@ -220,7 +220,7 @@ class MusicUiTest {
             MusicTheme { LibraryTopBar(state.value, true, {}, {}, {}, {}) }
         }
         val selector = compose.onNodeWithContentDescription("Browse library").getUnclippedBoundsInRoot()
-        assertTrue("Short playlist selectors must wrap their contents", selector.width < 180.dp)
+        assertTrue("Short playlist selectors must wrap their contents", selector.right - selector.left < 180.dp)
         val title = compose.onNodeWithText("All Music", useUnmergedTree = true).getUnclippedBoundsInRoot()
         val arrow = compose.onNodeWithContentDescription("Browse library", useUnmergedTree = true)
             .getUnclippedBoundsInRoot()
@@ -484,10 +484,10 @@ class MusicUiTest {
             }
         }
         val title = compose.onNodeWithText(titleText).assertIsDisplayed().getUnclippedBoundsInRoot()
-        assertTrue("Mini-player must leave readable space for song text", title.width >= 100.dp)
+        assertTrue("Mini-player must leave readable space for song text", title.right - title.left >= 100.dp)
         listOf("Previous track", "Pause", "Next track", "Repeat: off").forEach { label ->
             val bounds = compose.onNodeWithContentDescription(label).assertIsDisplayed().getUnclippedBoundsInRoot()
-            assertTrue(bounds.width >= 48.dp && bounds.height >= 48.dp)
+            assertTrue(bounds.right - bounds.left >= 48.dp && bounds.bottom - bounds.top >= 48.dp)
             assertTrue(bounds.left >= 0.dp && bounds.right <= 320.dp)
         }
         compose.onNodeWithContentDescription("Previous track").performClick()
