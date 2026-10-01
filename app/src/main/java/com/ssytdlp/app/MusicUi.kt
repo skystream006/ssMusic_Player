@@ -53,15 +53,15 @@ val LocalWaveAppearance = staticCompositionLocalOf { true }
 
 @Composable
 fun MusicTheme(preferences: Preferences = Preferences(), waveAppearance: Boolean = true, content: @Composable () -> Unit) {
-    val accent = when (preferences.theme) {
+    val theme = preferences.effectiveTheme
+    val accent = when (theme) {
         "midnight" -> Color(0xFF5F7FF0)
         "royal-purple" -> Color(0xFF7139C6)
         "gold" -> Color(0xFF8C6600)
-        "green" -> Color(0xFF227452)
         "pink" -> Color(0xFFBF3D78)
-        else -> Color(0xFF376D60)
+        else -> Color(0xFF227452)
     }
-    val dark = preferences.mode == "dark" || (preferences.mode == null && preferences.theme in listOf("midnight", "black"))
+    val dark = preferences.mode == "dark" || (preferences.mode == null && theme in listOf("midnight", "black"))
     val colors = if (waveAppearance) darkColorScheme(
         primary = Color(0xFF68DEFF), onPrimary = Color(0xFF00212D),
         primaryContainer = Color(0xFF1049A2), onPrimaryContainer = Color(0xFFF0F6FF),
@@ -76,7 +76,7 @@ fun MusicTheme(preferences: Preferences = Preferences(), waveAppearance: Boolean
         surfaceContainerHighest = Color(0xFF202D3E),
         surfaceVariant = Color(0xFF1A2636), onSurfaceVariant = Color(0xFFA5B6CC),
         outline = Color(0xFF55667D), outlineVariant = Color(0xFF253347)
-    ) else if (preferences.theme == "black") serverBlackColorScheme(dark)
+    ) else if (theme == "black") serverBlackColorScheme(dark)
     else if (dark) darkColorScheme(primary = accent.copy(alpha = 1f), secondary = Color(0xFFF3B6AA),
         background = Color(0xFF141817), surface = Color(0xFF191E1C), onPrimary = Color.White)
     else lightColorScheme(primary = accent, secondary = Color(0xFF9F4C3B), background = Color(0xFFF6F8F6), surface = Color(0xFFF6F8F6))

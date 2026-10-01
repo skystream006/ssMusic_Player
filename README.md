@@ -295,6 +295,10 @@ surfaces, cyan controls, original blue-ribbon bitmap artwork, Space Grotesk head
 and Manrope body text. Real album covers remain unchanged. **Settings > Appearance**
 can switch back to **Server theme** without overwriting the web client's preferences.
 The choice is stored on this device. Authentication still uses the primary server.
+Server theme choices are Midnight blue, Royal purple, Gold, Green, Pink, and Black.
+Porcelain is no longer available; saved Porcelain selections use Green in the app
+without changing light/dark mode. The server preference is updated only when you
+change the theme or mode.
 The server's **Black** theme uses neutral charcoal surfaces with yellow accents in
 dark mode, and gray/white surfaces with darker gold accents in light mode.
 

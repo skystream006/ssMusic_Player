@@ -74,11 +74,34 @@ class MusicUiTest {
     @Test fun serverAppearanceStillHonorsSavedLightMode() {
         lateinit var colors: ColorScheme
         compose.setContent {
-            MusicTheme(Preferences(theme = "light", mode = "light"), waveAppearance = false) {
+            MusicTheme(Preferences(theme = "green", mode = "light"), waveAppearance = false) {
                 colors = MaterialTheme.colorScheme
             }
         }
         compose.runOnIdle { assertEquals(Color(0xFFF6F8F6), colors.background) }
+    }
+
+    @Test fun legacyPorcelainUsesGreenPaletteWithoutChangingMode() {
+        val preferences = mutableStateOf(Preferences(theme = "light"))
+        lateinit var legacy: ColorScheme
+        lateinit var green: ColorScheme
+        compose.setContent {
+            MusicTheme(preferences.value, waveAppearance = false) { legacy = MaterialTheme.colorScheme }
+            MusicTheme(preferences.value.copy(theme = "green"), waveAppearance = false) { green = MaterialTheme.colorScheme }
+        }
+        listOf(null, "light", "dark").forEach { mode ->
+            compose.runOnIdle { preferences.value = preferences.value.copy(mode = mode) }
+            compose.runOnIdle {
+                assertEquals(green.primary, legacy.primary)
+                assertEquals(green.secondary, legacy.secondary)
+                assertEquals(green.background, legacy.background)
+                assertEquals(green.onBackground, legacy.onBackground)
+                assertEquals(green.surface, legacy.surface)
+                assertEquals(green.onSurface, legacy.onSurface)
+                assertEquals(Color(0xFF227452), legacy.primary)
+                assertEquals(if (mode == "dark") Color(0xFF141817) else Color(0xFFF6F8F6), legacy.background)
+            }
+        }
     }
 
     @Test fun serverBlackPaletteMatchesCharcoalAndGoldInBothModes() {

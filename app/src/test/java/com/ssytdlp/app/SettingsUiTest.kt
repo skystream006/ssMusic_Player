@@ -10,6 +10,7 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.width
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.runtime.CompositionLocalProvider
+import androidx.compose.runtime.MutableState
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalDensity
@@ -28,6 +29,7 @@ import androidx.lifecycle.viewModelScope
 import androidx.test.core.app.ApplicationProvider
 import com.ssytdlp.app.core.Account
 import com.ssytdlp.app.core.ApiJson
+import com.ssytdlp.app.core.Preferences
 import com.ssytdlp.app.core.Session
 import com.ssytdlp.app.core.User
 import com.ssytdlp.app.core.UserResponse
@@ -168,6 +170,34 @@ class SettingsUiTest {
             compose.onNodeWithText("Cancel").performClick()
         } finally {
             compose.runOnUiThread { models.clear() }
+        }
+    }
+
+    @Test
+    @Config(qualifiers = "w800dp-h1600dp")
+    fun serverThemeChoicesExcludePorcelainAndSelectGreenForLegacyPreferences() {
+        withSettingsModel { model ->
+            compose.runOnUiThread {
+                owner.lifecycle.currentState = Lifecycle.State.CREATED
+                model.chooseWaveAppearance(false)
+                ReflectionHelpers.getField<MutableState<Preferences>>(model, "preferences\$delegate").value =
+                    Preferences(theme = "light", mode = "light")
+            }
+            compose.setContent {
+                CompositionLocalProvider(LocalLifecycleOwner provides owner) {
+                    MusicTheme { SettingsScreen(model, { _, _ -> }) {} }
+                }
+            }
+            compose.onNodeWithContentDescription("light theme").assertDoesNotExist()
+            listOf("midnight", "royal-purple", "gold", "green", "pink", "black").forEach { theme ->
+                compose.onNodeWithContentDescription("$theme theme").assertIsDisplayed().assertHasClickAction()
+            }
+            compose.onNodeWithContentDescription("green theme").assertIsSelected()
+            compose.onNodeWithText("Dark appearance").assertIsDisplayed()
+            compose.onNodeWithText("Blue Wave").performClick().assertIsSelected()
+            compose.onNodeWithContentDescription("green theme").assertDoesNotExist()
+            compose.onNodeWithText("Server theme").performClick().assertIsSelected()
+            compose.onNodeWithContentDescription("green theme").assertIsSelected()
         }
     }
 

@@ -110,7 +110,9 @@ data class SavedTranscriptionOptions(
 )
 
 @Serializable
-data class Preferences(val theme: String = "light", val mode: String? = null)
+data class Preferences(val theme: String = "green", val mode: String? = null) {
+    val effectiveTheme: String get() = if (theme == "light") "green" else theme
+}
 
 object ServerResource {
     fun resolve(origin: String, path: String): String {

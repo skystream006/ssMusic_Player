@@ -10,6 +10,7 @@ import androidx.test.core.app.ApplicationProvider
 import com.ssytdlp.app.core.Account
 import com.ssytdlp.app.core.ApiJson
 import com.ssytdlp.app.core.LyricLine
+import com.ssytdlp.app.core.Preferences
 import com.ssytdlp.app.core.Session
 import com.ssytdlp.app.core.SongMetadata
 import com.ssytdlp.app.core.Track
@@ -159,6 +160,35 @@ class AccountRefreshTest {
         assertEquals(account.user, sessions.account.value!!.user)
         assertEquals(listOf("/api/auth/me", "/api/library/backup", "/api/health"), List(3) { takePath() })
         assertEquals(7, server.requestCount)
+    }
+
+    @Test fun legacyPorcelainIsOnlyReplacedOnExplicitThemeOrModeChanges() {
+        val saved = AtomicReference(Preferences(theme = "light", mode = "dark"))
+        val model = startModel { request ->
+            if (request.requestUrl!!.encodedPath == "/api/preferences") {
+                if (request.method == "PUT") saved.set(ApiJson.decodeFromString(request.body.clone().readUtf8()))
+                MockResponse().setBody(ApiJson.encodeToString(saved.get()))
+            } else null
+        }
+        assertEquals("green", model.preferences.effectiveTheme)
+        assertEquals("dark", model.preferences.mode)
+        assertTrue(drainRequests().all { it.method == "GET" })
+        assertEquals("light", saved.get().theme)
+
+        perform(model) { model.setTheme(mode = "light") }
+        val update = drainRequests().single()
+        assertEquals("PUT", update.method)
+        assertEquals("/api/preferences", update.path)
+        assertEquals(ApiJson.parseToJsonElement("""{"theme":"green","mode":"light"}"""),
+            ApiJson.parseToJsonElement(update.body.readUtf8()))
+        assertEquals(Preferences("green", "light"), model.preferences)
+
+        perform(model) { model.setTheme(theme = "light", mode = "dark") }
+        assertEquals(Preferences("green", "dark"), saved.get())
+        drainRequests()
+        perform(model) { model.setTheme(theme = "pink") }
+        assertEquals(Preferences("pink", "dark"), model.preferences)
+        assertNull(model.notice)
     }
 
     @Test fun userRefreshPreservesSessionAndPlaybackAndSurvivesReload() {
