@@ -9,6 +9,7 @@ import androidx.compose.animation.core.snap
 import androidx.compose.animation.core.spring
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
+import androidx.compose.foundation.basicMarquee
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.awaitEachGesture
@@ -84,13 +85,10 @@ fun MiniPlayer(state: PlaybackState, artwork: String?, expand: () -> Unit, toggl
             val compact = maxWidth < 440.dp
             Column {
                 HorizontalDivider(color = MaterialTheme.colorScheme.primary.copy(alpha = 0.2f))
-                if (compact) {
-                    MiniPlayerTrack(track, artwork, expand, Modifier.fillMaxWidth().padding(end = 8.dp))
-                    Row(Modifier.fillMaxWidth().padding(horizontal = 8.dp), horizontalArrangement = Arrangement.End) {
-                        MiniPlayerControls(state, previous, toggle, next, repeat)
+                Row(Modifier.fillMaxWidth().padding(end = 8.dp), verticalAlignment = Alignment.CenterVertically) {
+                    key(track.key) {
+                        MiniPlayerTrack(track, artwork, expand, Modifier.weight(1f), compact)
                     }
-                } else Row(Modifier.fillMaxWidth().padding(end = 8.dp), verticalAlignment = Alignment.CenterVertically) {
-                    MiniPlayerTrack(track, artwork, expand, Modifier.weight(1f))
                     MiniPlayerControls(state, previous, toggle, next, repeat)
                 }
                 key(track.key) {
@@ -107,12 +105,16 @@ fun MiniPlayer(state: PlaybackState, artwork: String?, expand: () -> Unit, toggl
 }
 
 @Composable
-private fun MiniPlayerTrack(track: Track, artwork: String?, expand: () -> Unit, modifier: Modifier) {
-    Row(modifier.heightIn(min = 76.dp).padding(start = 20.dp), verticalAlignment = Alignment.CenterVertically) {
-        AlbumArtwork(artwork, Modifier.size(48.dp).clickable(onClick = expand))
-        Column(Modifier.weight(1f).clickable(onClick = expand).padding(horizontal = 12.dp, vertical = 10.dp)) {
-            Text(track.displayTitle, maxLines = 1, overflow = TextOverflow.Ellipsis, style = MaterialTheme.typography.titleSmall)
-            Text(track.displayArtist, maxLines = 1, overflow = TextOverflow.Ellipsis, style = MaterialTheme.typography.bodySmall,
+private fun MiniPlayerTrack(track: Track, artwork: String?, expand: () -> Unit, modifier: Modifier, compact: Boolean) {
+    Row(modifier.heightIn(min = 76.dp).padding(start = if (compact) 8.dp else 20.dp),
+        verticalAlignment = Alignment.CenterVertically) {
+        AlbumArtwork(artwork, Modifier.size(if (compact) 40.dp else 48.dp).clickable(onClick = expand))
+        Column(Modifier.weight(1f).clickable(onClick = expand)
+            .padding(horizontal = if (compact) 8.dp else 12.dp, vertical = 10.dp)) {
+            Text(track.displayTitle, modifier = Modifier.fillMaxWidth().basicMarquee(iterations = Int.MAX_VALUE),
+                maxLines = 1, softWrap = false, overflow = TextOverflow.Clip, style = MaterialTheme.typography.titleSmall)
+            Text(track.displayArtist, modifier = Modifier.fillMaxWidth().basicMarquee(iterations = Int.MAX_VALUE),
+                maxLines = 1, softWrap = false, overflow = TextOverflow.Clip, style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant)
         }
     }
