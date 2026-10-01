@@ -568,22 +568,23 @@ class MusicUiTest {
         compose.mainClock.advanceTimeByFrame()
         val playBounds = compose.onNodeWithContentDescription("Play").assertIsDisplayed().getUnclippedBoundsInRoot()
         compose.onNodeWithContentDescription("Next track").assertIsNotEnabled()
+        val informationBounds = compose.onNodeWithText(track.displayTitle).fetchSemanticsNode().boundsInRoot
         val labels = listOf(track.displayTitle, track.displayArtist)
         labels.forEach { text ->
             val node = compose.onNodeWithText(text, useUnmergedTree = true).assertIsDisplayed()
-            val bounds = node.fetchSemanticsNode().boundsInRoot
             val layouts = mutableListOf<TextLayoutResult>()
             node.performSemanticsAction(SemanticsActions.GetTextLayoutResult) { it(layouts) }
             assertEquals(1, layouts.single().lineCount)
             assertFalse(layouts.single().isLineEllipsized(0))
-            assertTrue("Marquee must measure the complete text", layouts.single().size.width > bounds.width)
+            assertTrue("Marquee must measure the complete text", layouts.single().size.width > informationBounds.width)
         }
         fun captureText(text: String): Bitmap {
-            val bounds = compose.onNodeWithText(text, useUnmergedTree = true).fetchSemanticsNode().boundsInRoot
+            val viewport = compose.onNodeWithText(text).fetchSemanticsNode().boundsInRoot
+            val textBounds = compose.onNodeWithText(text, useUnmergedTree = true).fetchSemanticsNode().boundsInRoot
             return compose.runOnIdle {
                 val view = compose.activity.findViewById<ViewGroup>(android.R.id.content).getChildAt(0)
-                Bitmap.createBitmap(view.drawToBitmap(), bounds.left.roundToInt(), bounds.top.roundToInt(),
-                    bounds.width.roundToInt(), bounds.height.roundToInt())
+                Bitmap.createBitmap(view.drawToBitmap(), viewport.left.roundToInt(), textBounds.top.roundToInt(),
+                    viewport.width.roundToInt(), textBounds.height.roundToInt())
             }
         }
         val before = labels.map(::captureText)
@@ -658,7 +659,13 @@ class MusicUiTest {
     fun libraryTopBarRendersOnTablet() {
         showLibraryPreview()
         compose.onNodeWithContentDescription("Browse library").assertIsDisplayed()
-        compose.onNodeWithContentDescription("Pause").assertIsDisplayed()
+        val pause = compose.onNodeWithContentDescription("Pause").assertIsDisplayed().getUnclippedBoundsInRoot()
+        val artwork = compose.onNodeWithContentDescription("Album artwork unavailable").assertIsDisplayed().getUnclippedBoundsInRoot()
+        assertTrue(artwork.right <= pause.left)
+        assertTrue(artwork.top < pause.bottom && artwork.bottom > pause.top)
+        val repeat = compose.onNodeWithContentDescription("Repeat: off").assertIsDisplayed().getUnclippedBoundsInRoot()
+        assertEquals(pause.top, repeat.top)
+        assertTrue(repeat.right <= 800.dp)
         savePreview("library-tablet")
     }
 
