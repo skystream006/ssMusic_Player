@@ -80,15 +80,13 @@ class NowPlayingScreenTest {
         compose.onNodeWithContentDescription("Close player").assertDoesNotExist()
     }
 
-    @Test fun noVocalsOnlyHidesOtherOptionsAndRestoresTheirDraftWhenUnchecked() {
+    @Test fun noVocalsOnlyHidesOtherOptionsAndRestoresItsSelection() {
         var submitted: TranscriptionOptions? = null
         val restoration = StateRestorationTester(compose)
         restoration.setContent {
             MusicTheme { TranscribeDialog({}, { submitted = it }) }
         }
         compose.onNodeWithText("Generate NoVocals Only").assertIsOff()
-        compose.onNodeWithText("Add lyrics").performClick()
-        compose.onNodeWithText("Transcribe").assertIsNotEnabled()
         compose.onNodeWithText("Generate NoVocals Only").performClick()
         restoration.emulateSavedInstanceStateRestore()
         compose.onNodeWithText("Generate NoVocals Only").assertIsOn()
@@ -98,10 +96,7 @@ class NowPlayingScreenTest {
             assertEquals("""{"NoVocalsOnly":true}""", submitted!!.toRequestBody().toString())
         }
         compose.onNodeWithText("Generate NoVocals Only").performClick().assertIsOff()
-        compose.onNodeWithText("Add lyrics").assertIsOn()
-        compose.onNodeWithText("Transcribe").assertIsNotEnabled()
-        compose.onNode(hasSetTextAction()).performTextReplacement("Restored draft")
-        compose.onNodeWithText("Transcribe").assertIsEnabled()
+        assertOrdinaryTranscriptionOptionsVisible()
     }
 
     @Test fun lockedTranscriptionDialogOnlyAllowsInstrumentalGenerationAndHonorsAvailability() {
@@ -220,6 +215,14 @@ class NowPlayingScreenTest {
         listOf("Auto-detect", "Multilingual", "Create no-vocals version [Karaoke version]",
             "Viet Lyrics Fallback", "Add lyrics", "Lyrics mode", "Transcribe").forEach {
             compose.onNodeWithText(it).assertDoesNotExist()
+        }
+        compose.onNode(hasSetTextAction()).assertDoesNotExist()
+    }
+
+    private fun assertOrdinaryTranscriptionOptionsVisible() {
+        listOf("Auto-detect", "Multilingual", "Create no-vocals version [Karaoke version]",
+            "Viet Lyrics Fallback", "Add lyrics", "Transcribe").forEach {
+            compose.onNodeWithText(it).assertIsDisplayed()
         }
         compose.onNode(hasSetTextAction()).assertDoesNotExist()
     }
