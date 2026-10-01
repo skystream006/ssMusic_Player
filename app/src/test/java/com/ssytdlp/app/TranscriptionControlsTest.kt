@@ -34,7 +34,10 @@ class TranscriptionControlsTest {
             ClassParameter.from(Float::class.javaPrimitiveType, scale))
     }
 
-    @Before fun disableAnimations() = setDurationScale(0f)
+    @Before fun disableAnimations() {
+        compose.mainClock.autoAdvance = false
+        setDurationScale(0f)
+    }
     @After fun enableAnimations() = setDurationScale(1f)
 
     @Test fun onlyActiveHealthEnablesTranscription() {
