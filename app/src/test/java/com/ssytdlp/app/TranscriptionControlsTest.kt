@@ -51,9 +51,7 @@ class TranscriptionControlsTest {
         assertEquals("align", TranscriptionOptions(addLyrics = true, lyrics = "Line").toRequestBody()["lyrics_mode"]?.jsonPrimitive?.content)
         compose.setContent { MusicTheme { TranscribeDialog({}, {}) } }
         compose.onNodeWithText("Add lyrics").performScrollTo()
-        compose.mainClock.autoAdvance = false
         compose.onNodeWithText("Add lyrics").performClick()
-        compose.mainClock.advanceTimeBy(1_000)
         compose.onNodeWithText("Align").assertExists()
     }
 
@@ -62,13 +60,10 @@ class TranscriptionControlsTest {
         var locked = 0
         compose.setContent { MusicTheme { TranscribeDialog({}, { transcribed++ }, lock = { locked++ }) } }
         compose.onNodeWithText("Add lyrics").performScrollTo()
-        compose.mainClock.autoAdvance = false
         compose.onNodeWithText("Add lyrics").performClick()
-        compose.mainClock.advanceTimeBy(1_000)
         compose.onNodeWithText("Align").assertExists()
         compose.onNodeWithText("Transcribe").assertIsNotEnabled()
         compose.onNodeWithContentDescription("Lock transcription").performClick()
-        compose.mainClock.advanceTimeBy(1_000)
         listOf("Add lyrics", "Auto-detect", "Multilingual", "Viet Lyrics Fallback", "Align").forEach {
             compose.onNodeWithText(it).assertDoesNotExist()
         }
@@ -133,13 +128,10 @@ class TranscriptionControlsTest {
         compose.activity.setContent {
             MusicTheme { MetadataDialog(value.value, { value.value = it }, dismiss = {}, save = { saved = it }) }
         }
-        compose.mainClock.autoAdvance = false
         compose.onNodeWithContentDescription("Unlock transcription").performClick()
-        compose.mainClock.advanceTimeBy(1_000)
         compose.onNodeWithText("Save").performClick()
         compose.runOnIdle { assertEquals(original.copy(transcriptionLocked = false), saved) }
         compose.onNodeWithContentDescription("Lock transcription").performClick()
-        compose.mainClock.advanceTimeBy(1_000)
         compose.onNodeWithText("Save").performClick()
         compose.runOnIdle { assertEquals(original, saved) }
     }
