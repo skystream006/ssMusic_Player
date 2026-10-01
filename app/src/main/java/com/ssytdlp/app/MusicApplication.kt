@@ -57,7 +57,7 @@ class MusicApplication : Application() {
 
     private fun updateMeter() {
         audioLevels.enabled = uiActivity.resumed.value &&
-            getSharedPreferences("settings", MODE_PRIVATE).getBoolean("edge_lighting", false)
+            getSharedPreferences("settings", MODE_PRIVATE).getBoolean("edge_lighting", true)
     }
 }
 

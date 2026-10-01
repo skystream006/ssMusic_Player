@@ -251,7 +251,7 @@ class SettingsUiTest {
         }
     }
 
-    @Test fun edgeLightingPreferenceDefaultsOffAndPersistsAcrossViewModels() {
+    @Test fun edgeLightingPreferenceDefaultsOnAndPersistsAcrossViewModels() {
         val context = ApplicationProvider.getApplicationContext<Application>()
         val preferences = context.getSharedPreferences("settings", Context.MODE_PRIVATE)
         preferences.edit().remove("edge_lighting").remove("edge_lighting_style").commit()
@@ -269,7 +269,7 @@ class SettingsUiTest {
                 initial = MusicViewModel(application)
                 models.put("initial", initial)
             }
-            assertFalse(initial.edgeLightingEnabled)
+            assertTrue(initial.edgeLightingEnabled)
             assertEquals(EdgeLightingStyle.CIRCULATING_WAVEFORM, initial.edgeLightingStyle)
             compose.setContent {
                 MaterialTheme {
@@ -277,7 +277,7 @@ class SettingsUiTest {
                         initial::chooseEdgeLightingStyle, initial::chooseEdgeLighting)
                 }
             }
-            compose.onNodeWithContentDescription("Edge lighting").assertIsOff().performClick()
+            compose.onNodeWithContentDescription("Edge lighting").assertIsOn()
             compose.onNodeWithText("Circulating Waveform").assertIsSelected()
             compose.onNodeWithText("Vibration").performClick()
             assertEquals(EdgeLightingStyle.VIBRATION, initial.edgeLightingStyle)

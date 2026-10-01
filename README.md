@@ -298,7 +298,8 @@ The choice is stored on this device. Authentication still uses the primary serve
 The server's **Black** theme uses neutral charcoal surfaces with yellow accents in
 dark mode, and gray/white surfaces with darker gold accents in light mode.
 
-**Settings > Appearance > Edge lighting** is disabled by default. Enabling it
+**Settings > Appearance > Edge lighting** is enabled by default unless previously
+turned off; saved preferences are preserved. When enabled, it
 expands alphabetized, horizontal choices that wrap on smaller screens:
 **Audio waveform** (a border shaped by decoded PCM audio samples),
 **Circulating** (a smooth two-highlight gradient completing a lap every 12 seconds),
