@@ -146,7 +146,7 @@ class TranscriptionStatusUiTest {
         }
         compose.onNodeWithContentDescription("Rating: 0 out of 5").performClick()
         compose.onNodeWithContentDescription("Song actions").performClick()
-        compose.runOnIdle { width.value = 220.dp }
+        compose.runOnIdle { width.value = 360.dp }
         compose.onNodeWithText("A long song title").performClick()
         compose.runOnIdle {
             assertEquals(1, playCount)
