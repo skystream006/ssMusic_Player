@@ -121,12 +121,13 @@ private fun MiniPlayerTrack(track: Track, artwork: String?, expand: () -> Unit, 
 @Composable
 private fun MiniPlayerControls(state: PlaybackState, previous: () -> Unit, toggle: () -> Unit,
     next: () -> Unit, repeat: () -> Unit) {
-    ToolButton(Icons.Rounded.SkipPrevious, "Previous track", onClick = previous)
+    ToolButton(Icons.Rounded.SkipPrevious, "Previous track", modifier = Modifier.size(48.dp), onClick = previous)
     FilledIconButton(onClick = toggle, modifier = Modifier.size(48.dp), shape = CircleShape) {
         Icon(if (state.playing) Icons.Rounded.Pause else Icons.Rounded.PlayArrow,
             if (state.playing) "Pause" else "Play", Modifier.size(22.dp))
     }
-    ToolButton(Icons.Rounded.SkipNext, "Next track", enabled = state.queue.size > 1, onClick = next)
+    ToolButton(Icons.Rounded.SkipNext, "Next track", enabled = state.queue.size > 1, modifier = Modifier.size(48.dp),
+        onClick = next)
     RepeatButton(state.repeat, repeat)
 }
 
