@@ -15,6 +15,6 @@ enum class EdgeLightingStyle(val label: String) {
 
     companion object {
         fun fromPreference(value: String?): EdgeLightingStyle =
-            entries.firstOrNull { it.name == value } ?: OSCILLATION
+            entries.firstOrNull { it.name == value } ?: CIRCULATING_WAVEFORM
     }
 }

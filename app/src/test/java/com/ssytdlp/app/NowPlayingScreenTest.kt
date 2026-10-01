@@ -110,8 +110,7 @@ class NowPlayingScreenTest {
                     transcriptionLocked = true, lock = { lockCount++ })
             }
         }
-        compose.onNodeWithContentDescription("Transcription locked").assertIsDisplayed()
-        compose.onNodeWithContentDescription("Unlock transcription").assertDoesNotExist()
+        compose.onNodeWithContentDescription("Unlock transcription").assertIsDisplayed().assertIsOn()
         compose.onNodeWithContentDescription("Lock transcription").assertDoesNotExist()
         compose.onNodeWithText("Generate NoVocals Only").assertIsOn().assertIsNotEnabled()
         assertOrdinaryTranscriptionOptionsHidden()
@@ -124,24 +123,82 @@ class NowPlayingScreenTest {
         compose.onNodeWithText("Generate").assertIsNotEnabled()
         compose.onNodeWithText(INACTIVE_TRANSCRIPTION_MESSAGE).assertIsDisplayed()
         compose.runOnIdle { available.value = true; busy.value = true }
+        compose.onNodeWithContentDescription("Unlock transcription").assertIsNotEnabled()
         compose.onNodeWithText("Generate").assertIsNotEnabled()
         compose.onNodeWithText("Cancel").assertIsNotEnabled()
     }
 
     @Test fun unlockedSongKeepsSeparateLockActionWithoutSubmittingTranscription() {
         var submissions = 0
-        var locks = 0
+        val locks = mutableListOf<Boolean>()
         compose.setContent {
-            MusicTheme { TranscribeDialog({}, { submissions++ }, available = false, lock = { locks++ }) }
+            MusicTheme { TranscribeDialog({}, { submissions++ }, available = false, lock = { locks.add(it) }) }
         }
         compose.onNodeWithText("Generate NoVocals Only").performClick()
         compose.onNodeWithContentDescription("Lock transcription").performClick()
         compose.onNodeWithText("Generate NoVocals Only").assertDoesNotExist()
         compose.onNodeWithText("Lock transcription").assertIsEnabled().performClick()
-        compose.runOnIdle { assertEquals(1, locks); assertEquals(0, submissions) }
+        compose.runOnIdle { assertEquals(listOf(true), locks); assertEquals(0, submissions) }
     }
 
-    @Test fun lockedSongMenuKeepsTranscriptionButOnlyOpensNoVocalsDialogForPermittedUsers() {
+    @Test fun lockedSongCanConfirmUnlockWithoutTranscribingAndRestorePendingChange() {
+        val busy = mutableStateOf(false)
+        val locked = mutableStateOf(true)
+        val locks = mutableListOf<Boolean>()
+        var submissions = 0
+        val restoration = StateRestorationTester(compose)
+        restoration.setContent {
+            MusicTheme {
+                TranscribeDialog({}, { submissions++ }, busy = busy.value, available = false,
+                    transcriptionLocked = locked.value, lock = { locks.add(it); locked.value = it })
+            }
+        }
+        compose.onNodeWithContentDescription("Unlock transcription").performClick()
+        compose.onNodeWithText("Generate NoVocals Only").assertDoesNotExist()
+        assertOrdinaryTranscriptionOptionsHidden()
+        compose.onNodeWithText("Unlock transcription").assertIsEnabled()
+        restoration.emulateSavedInstanceStateRestore()
+        compose.onNodeWithContentDescription("Lock transcription").assertIsOff()
+        compose.onNodeWithText("Unlock transcription").assertIsEnabled()
+        compose.runOnIdle { assertEquals(emptyList<Boolean>(), locks); assertEquals(0, submissions); busy.value = true }
+        compose.onNodeWithContentDescription("Lock transcription").assertIsNotEnabled()
+        compose.onNodeWithText("Unlock transcription").assertIsNotEnabled()
+        compose.onNodeWithText("Cancel").assertIsNotEnabled()
+        compose.runOnIdle { busy.value = false }
+        compose.onNodeWithText("Unlock transcription").performClick()
+        compose.runOnIdle { assertEquals(listOf(false), locks); assertEquals(0, submissions) }
+        compose.onNodeWithContentDescription("Lock transcription").assertIsOff()
+        compose.onNodeWithText("Generate NoVocals Only").assertIsOff().assertIsEnabled()
+        compose.onNodeWithText("Auto-detect").assertIsDisplayed()
+        compose.onNodeWithText("Transcribe").assertIsNotEnabled()
+    }
+
+    @Test fun undoingOrCancellingUnlockDoesNotChangeLockOrSubmitTranscription() {
+        var submissions = 0
+        var lockChanges = 0
+        var dismissals = 0
+        compose.setContent {
+            MusicTheme {
+                TranscribeDialog({ dismissals++ }, { submissions++ }, transcriptionLocked = true,
+                    lock = { lockChanges++ })
+            }
+        }
+        compose.onNodeWithContentDescription("Unlock transcription").performClick()
+        compose.onNodeWithText("Unlock transcription").assertIsDisplayed()
+        compose.onNodeWithContentDescription("Lock transcription").performClick()
+        compose.onNodeWithContentDescription("Unlock transcription").assertIsOn()
+        compose.onNodeWithText("Generate NoVocals Only").assertIsOn().assertIsNotEnabled()
+        compose.onNodeWithText("Generate").assertIsEnabled()
+        compose.onNodeWithContentDescription("Unlock transcription").performClick()
+        compose.onNodeWithText("Cancel").performClick()
+        compose.runOnIdle {
+            assertEquals(1, dismissals)
+            assertEquals(0, submissions)
+            assertEquals(0, lockChanges)
+        }
+    }
+
+    @Test fun lockedSongMenuOpensNoVocalsAndUnlockDialogOnlyForPermittedUsers() {
         val track = Track(jobId = "preview", name = "song.mp3", transcriptionLocked = true)
         val account = ReflectionHelpers.getField<MutableStateFlow<Account?>>(model.sessions, "mutableAccount")
         val library = ReflectionHelpers.getField<MutableState<LibraryState>>(model, "library\$delegate")
@@ -161,7 +218,7 @@ class NowPlayingScreenTest {
         compose.onNodeWithText("Generate NoVocals Only").assertIsOn().assertIsNotEnabled()
         compose.onNodeWithText("Generate").assertIsEnabled()
         assertOrdinaryTranscriptionOptionsHidden()
-        compose.onNodeWithContentDescription("Unlock transcription").assertDoesNotExist()
+        compose.onNodeWithContentDescription("Unlock transcription").assertIsDisplayed().assertIsEnabled()
         compose.runOnIdle { account.value = account.value!!.copy(user = User(id = "owner", role = "shared")) }
         compose.onNode(isDialog()).assertDoesNotExist()
         compose.onNodeWithContentDescription("Options for song").performClick()
@@ -484,13 +541,20 @@ class NowPlayingScreenTest {
         }
         compose.setContent { MusicTheme { NowPlayingScreen(model, PlaybackState(track = track, queue = listOf(track))) } }
         compose.onNodeWithText("Queue").performClick()
-        compose.onNodeWithText("Lyrics Included").assertIsDisplayed().performClick()
+        compose.onNodeWithText("Lyrics Included").assertDoesNotExist()
+        val status = compose.onNodeWithContentDescription("Lyrics Included", substring = true)
+            .assertIsDisplayed().getUnclippedBoundsInRoot()
+        val rating = compose.onNodeWithContentDescription("Rating: 0 out of 5").getUnclippedBoundsInRoot()
+        assertTrue(status.right <= rating.left)
+        assertEquals((rating.top + rating.bottom) / 2, (status.top + status.bottom) / 2)
+        compose.onNodeWithContentDescription("Lyrics Included", substring = true).performClick()
         compose.onNode(isDialog()).assertIsDisplayed()
         compose.onNodeWithContentDescription("Close transcription details").performClick()
         compose.runOnIdle {
             library.value = library.value.copy(pendingTranscriptions = mapOf(track.key to Transcription(status = "sent")))
         }
         compose.onNodeWithContentDescription("Transcription request sent", substring = true).assertIsDisplayed()
+        compose.onNodeWithText("Transcription request sent").assertDoesNotExist()
     }
 
     @Test fun playerTabShowsTranscriptionStatusButHidesNotTranscribed() {
@@ -519,13 +583,15 @@ class NowPlayingScreenTest {
             library.value = library.value.withTrackPage(TrackPage(files = listOf(
                 track.copy(transcription = Transcription(status = "transcribed", lyricsIncluded = true)))))
         }
-        compose.onNodeWithText("Lyrics Included").assertIsDisplayed()
+        compose.onNodeWithText("Lyrics Included").assertDoesNotExist()
+        compose.onNodeWithContentDescription("Lyrics Included", substring = true).assertIsDisplayed()
         compose.runOnIdle {
             library.value = library.value.withTrackPage(TrackPage(files = listOf(Track("other", "another.mp3"))))
                 .withTranscriptions(Job(id = "source", transcriptions = mapOf(
                     track.name to Transcription(status = "failed"))), listOf(track))
         }
-        compose.onNodeWithText("Transcription failed").assertIsDisplayed()
+        compose.onNodeWithText("Transcription failed").assertDoesNotExist()
+        compose.onNodeWithContentDescription("Transcription failed", substring = true).assertIsDisplayed()
     }
 
     @Test fun lyricsTabTracksDisplayedSourceWithoutChangingSelection() {

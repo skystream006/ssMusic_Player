@@ -157,7 +157,7 @@ internal fun JobsSetting(onJobs: () -> Unit) {
 @Composable
 internal fun EdgeLightingSetting(
     enabled: Boolean,
-    style: EdgeLightingStyle = EdgeLightingStyle.OSCILLATION,
+    style: EdgeLightingStyle = EdgeLightingStyle.CIRCULATING_WAVEFORM,
     onStyleChange: (EdgeLightingStyle) -> Unit = {},
     onEnabledChange: (Boolean) -> Unit
 ) {

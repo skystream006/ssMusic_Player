@@ -64,7 +64,7 @@ private data class EdgeFrame(
 @Composable
 internal fun PlaybackEdgeLighting(
     playing: Boolean, modifier: Modifier = Modifier, enabled: Boolean = false,
-    style: EdgeLightingStyle = EdgeLightingStyle.OSCILLATION
+    style: EdgeLightingStyle = EdgeLightingStyle.CIRCULATING_WAVEFORM
 ) {
     val meter = (LocalContext.current.applicationContext as? MusicApplication)?.audioLevels
     EdgeLighting(playing, { meter?.level() ?: 0f }, modifier, enabled, style,
@@ -74,7 +74,7 @@ internal fun PlaybackEdgeLighting(
 @Composable
 internal fun EdgeLighting(
     playing: Boolean, audioLevel: () -> Float, modifier: Modifier = Modifier, enabled: Boolean = false,
-    style: EdgeLightingStyle = EdgeLightingStyle.OSCILLATION,
+    style: EdgeLightingStyle = EdgeLightingStyle.CIRCULATING_WAVEFORM,
     audioWaveform: () -> FloatArray = { floatArrayOf() }
 ) {
     val lifecycleState by LocalLifecycleOwner.current.lifecycle.currentStateAsState()

@@ -112,8 +112,8 @@ class EdgeLightingTest {
             assertEquals(style, EdgeLightingStyle.fromPreference(style.name))
         }
         assertEquals("Circulating Waveform", EdgeLightingStyle.CIRCULATING_WAVEFORM.label)
-        assertEquals(EdgeLightingStyle.OSCILLATION, EdgeLightingStyle.fromPreference(null))
-        assertEquals(EdgeLightingStyle.OSCILLATION, EdgeLightingStyle.fromPreference("unknown-style"))
+        assertEquals(EdgeLightingStyle.CIRCULATING_WAVEFORM, EdgeLightingStyle.fromPreference(null))
+        assertEquals(EdgeLightingStyle.CIRCULATING_WAVEFORM, EdgeLightingStyle.fromPreference("unknown-style"))
     }
 
     @Test fun lightingDefaultsOffWithoutReadingAudio() {

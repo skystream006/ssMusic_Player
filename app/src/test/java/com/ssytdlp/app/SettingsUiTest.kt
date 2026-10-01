@@ -70,6 +70,7 @@ class SettingsUiTest {
         compose.setContent {
             MaterialTheme { EdgeLightingSetting(enabled.value) { enabled.value = it } }
         }
+        compose.onNodeWithText("Circulating Waveform").assertIsSelected()
         compose.onNodeWithContentDescription("Edge lighting").assertIsOn().performClick()
         compose.runOnIdle { assertFalse(enabled.value) }
         compose.onNodeWithContentDescription("Edge lighting").assertIsOff().performClick()
@@ -269,7 +270,7 @@ class SettingsUiTest {
                 models.put("initial", initial)
             }
             assertFalse(initial.edgeLightingEnabled)
-            assertEquals(EdgeLightingStyle.OSCILLATION, initial.edgeLightingStyle)
+            assertEquals(EdgeLightingStyle.CIRCULATING_WAVEFORM, initial.edgeLightingStyle)
             compose.setContent {
                 MaterialTheme {
                     EdgeLightingSetting(initial.edgeLightingEnabled, initial.edgeLightingStyle,
@@ -277,6 +278,7 @@ class SettingsUiTest {
                 }
             }
             compose.onNodeWithContentDescription("Edge lighting").assertIsOff().performClick()
+            compose.onNodeWithText("Circulating Waveform").assertIsSelected()
             compose.onNodeWithText("Vibration").performClick()
             assertEquals(EdgeLightingStyle.VIBRATION, initial.edgeLightingStyle)
             compose.onNodeWithText("Circulating Waveform").performClick().assertIsSelected()
@@ -301,7 +303,7 @@ class SettingsUiTest {
                 preferences.edit().putString("edge_lighting_style", "unknown-style").commit()
                 val unknownStyle = MusicViewModel(application)
                 models.put("unknownStyle", unknownStyle)
-                assertEquals(EdgeLightingStyle.OSCILLATION, unknownStyle.edgeLightingStyle)
+                assertEquals(EdgeLightingStyle.CIRCULATING_WAVEFORM, unknownStyle.edgeLightingStyle)
             }
         } finally {
             compose.runOnUiThread { models.clear() }
