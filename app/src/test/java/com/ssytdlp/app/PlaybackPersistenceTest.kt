@@ -162,6 +162,21 @@ class PlaybackPersistenceTest {
         assertNull(store.playback(account))
     }
 
+    @Test fun `pause and shutdown save position without waiting for the coarse checkpoint`() {
+        assertTrue(PLAYBACK_CHECKPOINT_INTERVAL_MS >= 30_000L)
+        attach()
+        player.setMediaItems(listOf(first.toMediaItem(api)), 0, 15_000)
+        player.playWhenReady = true
+        flushEvents()
+        player.seekTo(17_500)
+        player.pause()
+        flushEvents()
+        assertEquals(17_500L, store.playback(account)!!.position)
+        persistence!!.close()
+        persistence = null
+        assertEquals(17_500L, PlaybackStore(context).apply { setAccount(account) }.playback(account)!!.position)
+    }
+
     private fun attach() {
         persistence = PlaybackPersistence(player, store, account) { it.toMediaItem(api) }
     }

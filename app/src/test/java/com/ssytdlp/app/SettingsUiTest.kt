@@ -100,14 +100,14 @@ class SettingsUiTest {
         compose.onNodeWithContentDescription("Edge lighting").performClick()
         EdgeLightingStyle.entries.forEach { compose.onNodeWithText(it.label).assertDoesNotExist() }
         compose.onNodeWithContentDescription("Edge lighting").performClick()
-        compose.onNodeWithText("Audio waveform").assertIsSelected()
+        compose.onNodeWithText("Circulating Waveform").assertIsSelected()
     }
 
     @Test
     @Config(qualifiers = "w800dp-h1100dp")
     fun edgeLightingChoicesAreHorizontalAndAlphabetized() {
         compose.setContent { MaterialTheme { EdgeLightingSetting(true) {} } }
-        val choices = listOf("Audio waveform", "Circulating", "Oscillation", "Vibration").map {
+        val choices = listOf("Audio waveform", "Circulating", "Circulating Waveform", "Oscillation", "Vibration").map {
             compose.onNodeWithText(it).assertIsDisplayed().getUnclippedBoundsInRoot()
         }
         choices.zipWithNext().forEach { (first, second) ->
@@ -125,7 +125,7 @@ class SettingsUiTest {
                 MaterialTheme { EdgeLightingSetting(true, style.value, { style.value = it }) {} }
             }
         }
-        listOf("Audio waveform", "Circulating", "Oscillation", "Vibration").forEach {
+        listOf("Audio waveform", "Circulating", "Circulating Waveform", "Oscillation", "Vibration").forEach {
             val option = compose.onNodeWithText(it).assertIsDisplayed()
             val bounds = option.getUnclippedBoundsInRoot()
             assertTrue(bounds.left >= 0.dp && bounds.right <= 320.dp)
@@ -279,6 +279,9 @@ class SettingsUiTest {
             compose.onNodeWithContentDescription("Edge lighting").assertIsOff().performClick()
             compose.onNodeWithText("Vibration").performClick()
             assertEquals(EdgeLightingStyle.VIBRATION, initial.edgeLightingStyle)
+            compose.onNodeWithText("Circulating Waveform").performClick().assertIsSelected()
+            assertEquals(EdgeLightingStyle.CIRCULATING_WAVEFORM, initial.edgeLightingStyle)
+            assertEquals("CIRCULATING_WAVEFORM", preferences.getString("edge_lighting_style", null))
             compose.onNodeWithContentDescription("Edge lighting").assertIsOn().performClick()
             compose.onNodeWithContentDescription("Edge lighting").assertIsOff()
             assertFalse(initial.edgeLightingEnabled)
@@ -287,7 +290,7 @@ class SettingsUiTest {
                 val recreated = MusicViewModel(application)
                 models.put("recreated", recreated)
                 assertFalse(recreated.edgeLightingEnabled)
-                assertEquals(EdgeLightingStyle.VIBRATION, recreated.edgeLightingStyle)
+                assertEquals(EdgeLightingStyle.CIRCULATING_WAVEFORM, recreated.edgeLightingStyle)
                 recreated.chooseEdgeLighting(true)
                 assertTrue(preferences.getBoolean("edge_lighting", false))
                 recreated.chooseEdgeLightingStyle(EdgeLightingStyle.AUDIO_WAVEFORM)

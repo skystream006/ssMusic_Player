@@ -44,7 +44,7 @@ internal fun edgeDisplacement(
     EdgeLightingStyle.OSCILLATION -> edgeOscillation(position, progress, level)
     EdgeLightingStyle.VIBRATION -> sin(2f * PI.toFloat() * progress * 96f) * level
     EdgeLightingStyle.CIRCULATING -> 0f
-    EdgeLightingStyle.AUDIO_WAVEFORM -> {
+    EdgeLightingStyle.AUDIO_WAVEFORM, EdgeLightingStyle.CIRCULATING_WAVEFORM -> {
         if (waveform.isEmpty()) 0f else {
             val sample = position.coerceIn(0f, 1f) * waveform.size
             val index = sample.toInt()
@@ -102,7 +102,7 @@ internal fun EdgeLighting(
                 val response = if (target > envelope) 18f else 7f
                 envelope += (target - envelope) * (delta * response).coerceAtMost(1f)
                 frame = EdgeFrame(elapsed / EDGE_CIRCULATION_SECONDS, envelope,
-                    if (style == EdgeLightingStyle.AUDIO_WAVEFORM) currentWaveform() else floatArrayOf())
+                    if (style.usesWaveform) currentWaveform() else floatArrayOf())
             }
         }
     }
@@ -122,7 +122,7 @@ internal fun EdgeLighting(
         }
         val line = Path()
         val baseWidth = 1.5.dp.toPx()
-        val amplitude = (if (style == EdgeLightingStyle.AUDIO_WAVEFORM) 4.5.dp else 2.5.dp).toPx()
+        val amplitude = (if (style.usesWaveform) 4.5.dp else 2.5.dp).toPx()
         onDrawBehind {
             if (length <= 0f || size.minDimension <= 0f) return@onDrawBehind
             val animation = frame
@@ -135,7 +135,7 @@ internal fun EdgeLighting(
             }
             line.close()
             // A continuous gradient avoids seams between individual trail segments.
-            val gradient = if (style == EdgeLightingStyle.CIRCULATING) Brush.sweepGradient(List(65) { index ->
+            val gradient = if (style.usesCirculatingGradient) Brush.sweepGradient(List(65) { index ->
                 val strength = (0.5f + 0.5f * cos(4f * PI.toFloat() * (index / 64f - animation.progress)))
                 primary.copy(alpha = 0.12f + strength * strength * (0.65f + animation.level * 0.2f))
             }) else SolidColor(primary.copy(alpha = 0.65f + animation.level * 0.2f))

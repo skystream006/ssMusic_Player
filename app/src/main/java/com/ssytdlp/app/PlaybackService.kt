@@ -8,6 +8,7 @@ import androidx.media3.common.AudioAttributes
 import androidx.media3.common.C
 import androidx.media3.common.MediaItem
 import androidx.media3.common.MediaMetadata
+import androidx.media3.common.Player
 import androidx.media3.common.util.UnstableApi
 import androidx.media3.datasource.okhttp.OkHttpDataSource
 import androidx.media3.exoplayer.ExoPlayer
@@ -28,9 +29,13 @@ import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.distinctUntilChanged
+import kotlinx.coroutines.flow.collectLatest
+import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.launch
 import kotlinx.serialization.encodeToString
+
+internal const val PLAYBACK_CHECKPOINT_INTERVAL_MS = 30_000L
 
 @androidx.annotation.OptIn(UnstableApi::class)
 class PlaybackService : MediaSessionService() {
@@ -60,10 +65,22 @@ class PlaybackService : MediaSessionService() {
         val account = app.sessions.account.value
         if (account != null) {
             persistence = PlaybackPersistence(player, app.sessions.playback, account) { it.toMediaItem(app.api) }
+            val playing = MutableStateFlow(player.isPlaying)
+            player.addListener(object : Player.Listener {
+                override fun onIsPlayingChanged(isPlaying: Boolean) { playing.value = isPlaying }
+            })
             scope.launch {
-                while (true) {
-                    delay(1_000)
-                    if (player.isPlaying) persistence?.save()
+                playing.collectLatest { active ->
+                    if (!active) return@collectLatest
+                    while (true) {
+                        delay(PLAYBACK_CHECKPOINT_INTERVAL_MS)
+                        persistence?.save()
+                    }
+                }
+            }
+            scope.launch {
+                app.uiActivity.resumed.collectLatest { resumed ->
+                    if (!resumed) persistence?.save()
                 }
             }
         }

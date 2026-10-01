@@ -26,17 +26,25 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.compose.LocalLifecycleOwner
+import androidx.lifecycle.repeatOnLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
 
 @Composable
 fun UpdateNotification(model: AppUpdater = viewModel()) {
     val context = LocalContext.current
+    val lifecycle = LocalLifecycleOwner.current.lifecycle
     val version by model.notification.collectAsStateWithLifecycle()
-    LaunchedEffect(model) { model.check(automatic = true) }
-    LaunchedEffect(version) {
-        version?.let {
-            Toast.makeText(context, "ssMusic Player $it is available. Open App updates to download.", Toast.LENGTH_LONG).show()
-            model.consumeNotification()
+    LaunchedEffect(model, lifecycle) {
+        lifecycle.repeatOnLifecycle(Lifecycle.State.RESUMED) { model.check(automatic = true) }
+    }
+    LaunchedEffect(version, lifecycle) {
+        lifecycle.repeatOnLifecycle(Lifecycle.State.RESUMED) {
+            version?.let {
+                Toast.makeText(context, "ssMusic Player $it is available. Open App updates to download.", Toast.LENGTH_LONG).show()
+                model.consumeNotification()
+            }
         }
     }
 }
@@ -45,25 +53,28 @@ fun UpdateNotification(model: AppUpdater = viewModel()) {
 fun UpdateSettings(model: AppUpdater = viewModel()) {
     val state by model.state.collectAsStateWithLifecycle()
     val context = LocalContext.current
+    val lifecycle = LocalLifecycleOwner.current.lifecycle
     var confirm by rememberSaveable { mutableStateOf(false) }
     val permission = rememberLauncherForActivityResult(ActivityResultContracts.StartActivityForResult()) {
         model.permissionReturned()
     }
-    LaunchedEffect(state.installRequested, state.busy) {
-        if (state.installRequested && !state.busy) {
-            try {
-                if (model.needsInstallPermission()) {
-                    model.beginPermissionRequest()
-                    permission.launch(updatePermissionIntent(context))
-                } else {
-                    model.installerIntent()?.let { context.startActivity(it) }
+    LaunchedEffect(state.installRequested, state.busy, lifecycle) {
+        lifecycle.repeatOnLifecycle(Lifecycle.State.RESUMED) {
+            if (state.installRequested && !state.busy) {
+                try {
+                    if (model.needsInstallPermission()) {
+                        model.beginPermissionRequest()
+                        permission.launch(updatePermissionIntent(context))
+                    } else {
+                        model.installerIntent()?.let { context.startActivity(it) }
+                    }
+                } catch (_: android.content.ActivityNotFoundException) {
+                    model.installLaunchFailed()
+                } catch (_: SecurityException) {
+                    model.installLaunchFailed()
                 }
-            } catch (_: android.content.ActivityNotFoundException) {
-                model.installLaunchFailed()
-            } catch (_: SecurityException) {
-                model.installLaunchFailed()
+                model.consumeInstallRequest()
             }
-            model.consumeInstallRequest()
         }
     }
     Column(verticalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.fillMaxWidth()) {

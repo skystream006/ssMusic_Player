@@ -42,6 +42,26 @@ class TranscriptionStatusUiTest {
         checkSubtitleAndDetails(lyricsIncluded = true, label = "Lyrics Included")
     }
 
+    @Test fun noVocalsOnlyStatusOpensInstrumentalDetailsWithoutClaimingTranscribedLyrics() {
+        var playCount = 0
+        compose.setContent {
+            MusicTheme(waveAppearance = false) {
+                TrackRow(Track(name = "song.mp3"), onClick = { playCount++ },
+                    transcription = Transcription(status = "transcribed", lyricsIncluded = true,
+                        options = SavedTranscriptionOptions(noVocalsOnly = true)))
+            }
+        }
+        compose.onNodeWithContentDescription("No-vocals version generated", substring = true)
+            .assertIsDisplayed().performClick()
+        compose.onNode(isDialog()).assertIsDisplayed()
+        compose.onNodeWithText("Generate NoVocals Only: On", substring = true).assertIsDisplayed()
+        compose.onNodeWithText("Lyrics: Unchanged (not transcribed)", substring = true).assertIsDisplayed()
+        compose.onNodeWithText("AI Transcribed").assertDoesNotExist()
+        compose.onNodeWithText("Lyrics Included").assertDoesNotExist()
+        compose.onNodeWithText("Add lyrics:", substring = true).assertDoesNotExist()
+        compose.runOnIdle { assertEquals(0, playCount) }
+    }
+
     @Test fun songWithoutTranscriptionInformationHidesStatus() {
         compose.setContent {
             MusicTheme(waveAppearance = false) { TrackRow(Track(name = "song.mp3"), onClick = {}) }

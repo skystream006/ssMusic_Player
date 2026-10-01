@@ -9,6 +9,7 @@ import androidx.compose.material.icons.rounded.Check
 import androidx.compose.material.icons.rounded.Close
 import androidx.compose.material.icons.rounded.ErrorOutline
 import androidx.compose.material.icons.rounded.HelpOutline
+import androidx.compose.material.icons.rounded.MicOff
 import androidx.compose.material.icons.rounded.Refresh
 import androidx.compose.material.icons.rounded.Schedule
 import androidx.compose.material.icons.rounded.Subtitles
@@ -33,7 +34,13 @@ import java.time.format.DateTimeFormatter
 import java.time.format.FormatStyle
 
 internal val Transcription.label: String
-    get() = when (status) {
+    get() = if (options?.noVocalsOnly == true) when (status) {
+        "sent" -> "No-vocals request sent"
+        "transcribed" -> "No-vocals version generated"
+        "failed" -> "No-vocals generation failed"
+        "interrupted" -> "No-vocals generation interrupted"
+        else -> "No-vocals status unknown"
+    } else when (status) {
         "sent" -> "Transcription request sent"
         "transcribed" -> if (lyricsIncluded) "Lyrics Included" else "AI Transcribed"
         "failed" -> "Transcription failed"
@@ -48,13 +55,17 @@ internal fun Transcription.tooltip(formatDate: (String?) -> String = ::transcrip
     add("Requested: ${formatDate(requestedAt)}")
     completedAt?.takeIf { it.isNotBlank() }?.let { add("Finished: ${formatDate(it)}") }
     options?.let { saved ->
-        add("Language: ${transcriptionLanguages.find { it.first == saved.language }?.second ?: saved.language}")
-        add("Multilingual: ${saved.multilingual.optionLabel()}")
-        add("No vocals (karaoke): ${saved.noVocals.optionLabel()}")
-        add("Viet Lyrics Fallback: ${saved.vietLyricsFallback.optionLabel()}")
-        add("Add lyrics: ${if (lyricsIncluded) "Yes" else "No"}")
-        saved.lyricsMode?.takeIf { it.isNotBlank() }?.let { mode ->
-            add("Lyrics mode: ${transcriptionLyricsModes.find { it.first == mode }?.second ?: mode}")
+        saved.noVocalsOnly?.let { add("Generate NoVocals Only: ${it.optionLabel()}") }
+        if (saved.noVocalsOnly == true) add("Lyrics: Unchanged (not transcribed)")
+        else {
+            add("Language: ${transcriptionLanguages.find { it.first == saved.language }?.second ?: saved.language}")
+            add("Multilingual: ${saved.multilingual.optionLabel()}")
+            add("No vocals (karaoke): ${saved.noVocals.optionLabel()}")
+            add("Viet Lyrics Fallback: ${saved.vietLyricsFallback.optionLabel()}")
+            add("Add lyrics: ${if (lyricsIncluded) "Yes" else "No"}")
+            saved.lyricsMode?.takeIf { it.isNotBlank() }?.let { mode ->
+                add("Lyrics mode: ${transcriptionLyricsModes.find { it.first == mode }?.second ?: mode}")
+            }
         }
     }
     error?.takeIf { it.isNotBlank() }?.let(::add)
@@ -100,7 +111,11 @@ internal fun TranscriptionStatus(transcription: Transcription?, iconOnly: Boolea
                 "sent" -> Icons.Rounded.Refresh
                 "failed" -> Icons.Rounded.ErrorOutline
                 "interrupted" -> Icons.Rounded.Schedule
-                "transcribed" -> if (transcription.lyricsIncluded) Icons.Rounded.Subtitles else Icons.Rounded.Check
+                "transcribed" -> when {
+                    transcription.options?.noVocalsOnly == true -> Icons.Rounded.MicOff
+                    transcription.lyricsIncluded -> Icons.Rounded.Subtitles
+                    else -> Icons.Rounded.Check
+                }
                 else -> Icons.Rounded.HelpOutline
             }, null, Modifier.size(24.dp), tint = color)
             if (showLabel) Text(label, style = style, color = color, maxLines = 1)

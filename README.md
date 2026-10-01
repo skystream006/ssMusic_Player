@@ -187,6 +187,8 @@ it does not prove an installed app's identity. Authorize only sign-ins you start
 | Settings | Updates at the top, Blue Wave appearance, edge-lighting toggle, optional server-synced theme and light/dark mode, account expiry, server media count, collapsible device/debugging sections, browser account/admin access |
 
 Drag the bottom mini-player's progress slider to seek without leaving Library.
+Its previous, play/pause, next, and repeat controls work without opening Now Playing;
+repeat cycles through off, one song, and the entire queue.
 Track ratings remain visible even at zero; tap the star beside a track's menu
 or queue controls to open **Rate song**. Saving uses the existing MP3 editing
 permissions. Tap the selected star again to clear a rating, then **Save**.
@@ -196,6 +198,9 @@ auto-detect or a supported language, Multilingual, a no-vocals karaoke version,
 Viet Lyrics Fallback (locks the language to Vietnamese), and optional supplied
 lyrics in Prompt, Align (default), or Correct mode. All toggles start off; supplied lyrics
 must be nonblank and at most 100,000 characters.
+**Generate NoVocals Only** hides those options and sends the boolean
+`NoVocalsOnly: true` without language or lyrics fields. It generates an
+accompaniment without transcribing or replacing existing lyrics.
 
 For non-Shared accounts, transcription is enabled only when the server reports
 the service as Active. Hover or long-press the disabled action for the explanation;
@@ -204,7 +209,8 @@ remain read-only and do not query the health endpoint.
 
 The lock button at the top right of **Transcribe Song** hides all transcription
 options; confirm **Lock transcription** to save without sending a transcription
-request. Locked songs hide **Transcribe lyrics**. Use the lock/unlock button in
+request. Locked songs retain **Transcribe lyrics**, but offer only
+**Generate NoVocals Only**, preserving the transcription lock. Use the lock/unlock button in
 **Edit song / rating**, then **Save**, to change the lock. Locking does not prevent
 manual lyric editing.
 
@@ -233,14 +239,27 @@ tracks from other pages. Browsing another page or tab does not replace playback.
 The selected playlist or folder, queue order, current song and playback position,
 shuffle, and repeat are saved on this device. Reopening after the app has stopped
 restores the queue paused; press Play to continue from the saved timestamp.
-Position is checkpointed every second while playing and on seeks, pauses, queue
-changes, and service shutdown. Reopening while background playback continues does
+Position is checkpointed every 30 seconds while playing and on seeks, pauses, queue
+changes, leaving the foreground, and service shutdown. Reopening while background playback continues does
 not interrupt it. Sign-out, session expiry, or switching accounts/servers clears
 the saved state; a removed playlist falls back to All Music.
+
+When no app activity is resumed (including screen lock), library, job, health,
+settings, and update checks stop. Non-playback reads are canceled and deferred
+until the app resumes; new mutations wait for the foreground, while already-sent
+mutations are not replayed. Song streams and song information remain available
+for background playback. UI position polling, edge animation, and PCM metering
+stop in the background; metering also stays off when edge lighting is disabled.
+These changes reduce background network traffic, CPU work, and storage writes
+without stopping the playback service.
 Use the bottom navigation to switch between **Library** and the dedicated
 **Now Playing** page; tapping the mini-player also opens **Now Playing**.
-The Library top bar contains the playlist/folder selector, search field, and
-**Play this page** button; there is no library banner, leaving more room for tracks.
+The Library top bar contains a content-width playlist/folder selector and a
+**Search** icon. Tap Search to expand and focus the input; closing search clears
+the filter. There is no top-bar play button; tap a song to play the page.
+On each library page, `[NoVocals]/` tracks appear after originals in a collapsed
+**[NoVocals]** section. Expanding it keeps playback and track actions associated
+with the original page indices.
 Open **Settings** from the upper-right gear, to the right of **Refresh**, and
 select **Jobs** there to add downloads or manage server jobs.
 In **Now Playing**, the Player, Lyrics, and Queue tabs retain all playback controls.
@@ -277,6 +296,7 @@ The choice is stored on this device. Authentication still uses the primary serve
 expands alphabetized, horizontal choices that wrap on smaller screens:
 **Audio waveform** (a border shaped by decoded PCM audio samples),
 **Circulating** (a smooth two-highlight gradient completing a lap every 12 seconds),
+**Circulating Waveform** (the circulating highlights along an audio waveform border),
 **Oscillation** (audio-reactive ripples), and **Vibration** (a rapidly pulsing
 border, not phone vibration). The switch and selected style
 are remembered on this device, including when lighting is turned off.
@@ -285,7 +305,7 @@ While music is playing, the selected effect follows the app and Now Playing page
 edges in the current theme's accent color. It does not change the sound or record
 the microphone. Lighting stops when paused, buffering, or in the background;
 disabling system animations leaves a stationary glow. Audio outputs that bypass
-PCM processing still show a glow, but only the Circulating style moves.
+PCM processing still show a glow; the two circulating styles retain moving highlights.
 
 In Settings, **Jobs** sits directly below **Appearance**. App update buttons are
 arranged side by side. **Library backup** and **Server** start collapsed and can

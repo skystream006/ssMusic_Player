@@ -14,7 +14,6 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
-import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.shape.CircleShape
@@ -126,7 +125,7 @@ fun MusicApp(model: MusicViewModel, requestNotifications: () -> Unit) {
         if (account?.user?.isShared == true && screen == 3) screen = 2
     }
     LaunchedEffect(lifecycle, account, screen) {
-        if (account != null && screen in 0..1) lifecycle.repeatOnLifecycle(Lifecycle.State.STARTED) {
+        if (account != null && screen in 0..1) lifecycle.repeatOnLifecycle(Lifecycle.State.RESUMED) {
             while (true) { model.pollTranscriptions(); delay(10_000) }
         }
     }
@@ -162,8 +161,8 @@ fun MusicApp(model: MusicViewModel, requestNotifications: () -> Unit) {
         Box(Modifier.fillMaxSize()) {
             Scaffold(containerColor = MaterialTheme.colorScheme.background, snackbarHost = { SnackbarHost(snackbar) }, topBar = {
                 if (account != null) {
-                    if (screen == 0) LibraryTopBar(model.library, playback, !model.busy,
-                        onBrowse = { libraryBrowser = true }, onSearch = model::search, onPlay = playLibrary,
+                    if (screen == 0) LibraryTopBar(model.library, !model.busy,
+                        onBrowse = { libraryBrowser = true }, onSearch = model::search,
                         onRefresh = model::refresh, onSettings = openSettings)
                     else MusicTopBar(account!!.user.name, !model.busy, model::refresh,
                         onSettings = openSettings, onBack = back)
@@ -255,6 +254,17 @@ fun LibraryScreen(model: MusicViewModel, playback: PlaybackState, onPlay: (Int) 
 fun LibraryContent(state: LibraryState, playback: PlaybackState, onPlay: (Int) -> Unit,
     onPage: (Int) -> Unit, onRating: (Track) -> Unit = {},
     trackActions: @Composable (Track, Int) -> Unit) {
+    val groups = remember(state.tracks.files) {
+        state.tracks.files.withIndex().partition { !it.value.name.startsWith("[NoVocals]/", ignoreCase = true) }
+    }
+    var showNoVocals by rememberSaveable(state.selectedId, state.search, state.page) { mutableStateOf(false) }
+    val row: @Composable (IndexedValue<Track>) -> Unit = { (index, track) ->
+        TrackRow(track.copy(rating = state.rating(track)), active = playback.track?.key == track.key,
+            enabled = playback.connected && !state.loading, transcription = state.transcription(track),
+            onRatingClick = { onRating(track) }, onClick = { onPlay(index) }) {
+            trackActions(track, index)
+        }
+    }
     Column(Modifier.fillMaxSize()) {
         Row(Modifier.fillMaxWidth().padding(horizontal = 24.dp, vertical = 8.dp), horizontalArrangement = Arrangement.SpaceBetween) {
             Text(if (state.search.isEmpty()) "TRACKS" else "SEARCH RESULTS", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
@@ -265,13 +275,15 @@ fun LibraryContent(state: LibraryState, playback: PlaybackState, onPlay: (Int) -
             if (state.tracks.files.isEmpty() && !state.loading) item {
                 EmptyState(Icons.Rounded.LibraryMusic, if (state.search.isNotBlank()) "No matching music" else "Your library is empty")
             }
-            itemsIndexed(state.tracks.files, key = { _, track -> track.key }) { index, track ->
-                TrackRow(track.copy(rating = state.rating(track)), active = playback.track?.key == track.key, enabled = playback.connected && !state.loading,
-                    transcription = state.transcription(track), onRatingClick = { onRating(track) }, onClick = {
-                    onPlay(index)
-                }) {
-                    trackActions(track, index)
+            items(groups.first, key = { it.value.key }) { row(it) }
+            if (groups.second.isNotEmpty()) {
+                item(key = "no-vocals-header") {
+                    ListItem(headlineContent = { Text("[NoVocals] (${groups.second.size})") },
+                        trailingContent = { Icon(if (showNoVocals) Icons.Rounded.ExpandLess else Icons.Rounded.ExpandMore,
+                            if (showNoVocals) "Collapse NoVocals" else "Expand NoVocals") },
+                        modifier = Modifier.clickable(role = Role.Button) { showNoVocals = !showNoVocals })
                 }
+                if (showNoVocals) items(groups.second, key = { it.value.key }) { row(it) }
             }
         }
         if (state.tracks.totalPages > 1) Row(Modifier.fillMaxWidth().padding(horizontal = 20.dp),

@@ -3,6 +3,7 @@
 package com.ssytdlp.app
 
 import android.app.Activity
+import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
@@ -17,8 +18,11 @@ import androidx.compose.material.icons.automirrored.rounded.ArrowBack
 import androidx.compose.material.icons.rounded.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.focus.FocusRequester
+import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.luminance
@@ -92,18 +96,25 @@ fun MusicNavigation(selected: Int, onSelect: (Int) -> Unit) {
 }
 
 @Composable
-fun LibraryTopBar(state: LibraryState, playback: PlaybackState, refreshEnabled: Boolean,
-    onBrowse: () -> Unit, onSearch: (String) -> Unit, onPlay: (Int) -> Unit,
+fun LibraryTopBar(state: LibraryState, refreshEnabled: Boolean,
+    onBrowse: () -> Unit, onSearch: (String) -> Unit,
     onRefresh: () -> Unit, onSettings: () -> Unit, windowInsets: WindowInsets = TopAppBarDefaults.windowInsets) {
     val selected = state.library.entries.find { it.id == state.selectedId }
     val title = selected?.let { entry -> state.library.playlists.find { it.id == entry.id }?.playlistTitle?.ifBlank { null } ?: entry.name } ?: "All Music"
+    var searchExpanded by rememberSaveable { mutableStateOf(state.search.isNotEmpty()) }
+    val searchFocus = remember { FocusRequester() }
+    val closeSearch = { searchExpanded = false; onSearch("") }
+    BackHandler(searchExpanded, onBack = closeSearch)
+    LaunchedEffect(searchExpanded) {
+        if (searchExpanded) searchFocus.requestFocus()
+    }
     Column {
         TopAppBar(windowInsets = windowInsets,
             colors = TopAppBarDefaults.topAppBarColors(containerColor = MaterialTheme.colorScheme.background),
             title = {
-                Row(Modifier.fillMaxWidth().heightIn(min = 48.dp).clickable(role = Role.Button, onClick = onBrowse),
+                Row(Modifier.heightIn(min = 48.dp).clickable(role = Role.Button, onClick = onBrowse),
                     verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(4.dp)) {
-                    Column(Modifier.weight(1f)) {
+                    Column(Modifier.weight(1f, fill = false)) {
                         Text(title, style = MaterialTheme.typography.titleMedium, maxLines = 1, overflow = TextOverflow.Ellipsis)
                         Text("${state.tracks.total} tracks", style = MaterialTheme.typography.labelSmall,
                             color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 1, overflow = TextOverflow.Ellipsis)
@@ -111,16 +122,16 @@ fun LibraryTopBar(state: LibraryState, playback: PlaybackState, refreshEnabled: 
                     Icon(Icons.Rounded.ExpandMore, "Browse library", Modifier.size(20.dp), tint = MaterialTheme.colorScheme.primary)
                 }
             }, actions = {
-                FilledIconButton(onClick = { onPlay(0) },
-                    enabled = state.tracks.files.isNotEmpty() && playback.connected && !state.loading, shape = CircleShape) {
-                    Icon(Icons.Rounded.PlayArrow, "Play this page")
+                ToolButton(if (searchExpanded) Icons.Rounded.Close else Icons.Rounded.Search,
+                    if (searchExpanded) "Close search" else "Search") {
+                    if (searchExpanded) closeSearch() else searchExpanded = true
                 }
                 ToolButton(Icons.Rounded.Refresh, "Refresh", enabled = refreshEnabled, onClick = onRefresh)
                 ToolButton(Icons.Rounded.Settings, "Settings", onClick = onSettings)
             })
-        OutlinedTextField(state.search, onSearch, Modifier.fillMaxWidth()
+        if (searchExpanded) OutlinedTextField(state.search, onSearch, Modifier.fillMaxWidth().focusRequester(searchFocus)
             .windowInsetsPadding(windowInsets.only(WindowInsetsSides.Horizontal)).padding(start = 16.dp, end = 16.dp, bottom = 8.dp),
-            placeholder = { Text("Search your music", style = MaterialTheme.typography.bodyMedium) }, singleLine = true,
+            label = { Text("Search your music", style = MaterialTheme.typography.bodyMedium) }, singleLine = true,
             shape = RoundedCornerShape(8.dp), colors = OutlinedTextFieldDefaults.colors(
                 unfocusedContainerColor = MaterialTheme.colorScheme.surfaceContainerLow,
                 focusedContainerColor = MaterialTheme.colorScheme.surfaceContainerLow,

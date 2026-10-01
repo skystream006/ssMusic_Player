@@ -38,15 +38,20 @@ data class TranscriptionOptions(
     val vietLyricsFallback: Boolean = false,
     val addLyrics: Boolean = false,
     val lyricsMode: String = "align",
-    val lyrics: String = ""
+    val lyrics: String = "",
+    val noVocalsOnly: Boolean = false
 ) {
     val isValid: Boolean
-        get() = transcriptionLanguages.any { it.first == language } &&
+        get() = noVocalsOnly || (transcriptionLanguages.any { it.first == language } &&
             (!addLyrics || (lyrics.isNotBlank() && lyrics.length <= 100_000 &&
-                transcriptionLyricsModes.any { it.first == lyricsMode }))
+                transcriptionLyricsModes.any { it.first == lyricsMode })))
 
     fun toRequestBody() = buildJsonObject {
         require(isValid) { "Select valid transcription options and nonblank lyrics of at most 100,000 characters." }
+        if (noVocalsOnly) {
+            put("NoVocalsOnly", true)
+            return@buildJsonObject
+        }
         put("Multilingual", multilingual)
         put("NoVocals", noVocals)
         put("VietLyricsFallback", vietLyricsFallback)

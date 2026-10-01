@@ -14,6 +14,8 @@ import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.launch
 
 data class PlaybackState(
@@ -23,7 +25,13 @@ data class PlaybackState(
     val repeat: Int = Player.REPEAT_MODE_OFF, val error: String? = null
 )
 
-class PlaybackConnection(private val context: Context, private val api: ServerApi, private val scope: CoroutineScope) {
+class PlaybackConnection(
+    private val context: Context,
+    private val api: ServerApi,
+    private val scope: CoroutineScope,
+    private val uiResumed: StateFlow<Boolean> =
+        (context.applicationContext as? MusicApplication)?.uiActivity?.resumed ?: MutableStateFlow(true)
+) {
     private val mutableState = MutableStateFlow(PlaybackState())
     val state = mutableState.asStateFlow()
     var controller: MediaController? = null
@@ -61,12 +69,13 @@ class PlaybackConnection(private val context: Context, private val api: ServerAp
                 controller?.addListener(listener)
                 snapshot()
                 positionJob = scope.launch {
-                    while (true) {
-                        val player = controller ?: break
-                        mutableState.value = mutableState.value.copy(position = player.currentPosition.coerceAtLeast(0), duration = player.duration.coerceAtLeast(0))
-                        delay(300)
+                    pollPlaybackPosition(uiResumed) {
+                        controller?.let { player ->
+                            mutableState.value = mutableState.value.copy(position = player.currentPosition.coerceAtLeast(0), duration = player.duration.coerceAtLeast(0))
+                        }
                     }
                 }
+
             } catch (error: Exception) {
                 DebugLog.event(DebugEvent.PLAYBACK_FAILURE, error = error)
                 future = null
@@ -119,5 +128,19 @@ class PlaybackConnection(private val context: Context, private val api: ServerAp
             player.currentMediaItemIndex, player.isPlaying, player.playbackState == Player.STATE_BUFFERING,
             player.currentPosition.coerceAtLeast(0), player.duration.coerceAtLeast(0), player.shuffleModeEnabled,
             player.repeatMode, if (player.playerError != null) mutableState.value.error else null)
+    }
+}
+
+internal suspend fun pollPlaybackPosition(
+    uiResumed: StateFlow<Boolean>,
+    intervalMillis: Long = 300,
+    update: () -> Unit
+) {
+    uiResumed.collectLatest { resumed ->
+        if (!resumed) return@collectLatest
+        while (true) {
+            update()
+            delay(intervalMillis)
+        }
     }
 }

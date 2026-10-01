@@ -72,37 +72,68 @@ import java.util.Locale
 @Composable
 fun PlayerDock(state: PlaybackState, model: MusicViewModel, expand: () -> Unit, requestNotifications: () -> Unit) {
     MiniPlayer(state, model.metadata?.artwork, expand, { requestNotifications(); model.playback.toggle() },
-        model.playback::next, model.playback::seek)
+        model.playback::next, model.playback::seek, model.playback::previous, model.playback::repeat)
 }
 
 @Composable
 fun MiniPlayer(state: PlaybackState, artwork: String?, expand: () -> Unit, toggle: () -> Unit,
-    next: () -> Unit, onSeek: (Long) -> Unit) {
+    next: () -> Unit, onSeek: (Long) -> Unit, previous: () -> Unit = {}, repeat: () -> Unit = {}) {
     val track = state.track ?: return
     Surface(color = MaterialTheme.colorScheme.surfaceContainerLow) {
-        Column(Modifier.fillMaxWidth()) {
-            HorizontalDivider(color = MaterialTheme.colorScheme.primary.copy(alpha = 0.2f))
-            Row(Modifier.fillMaxWidth().heightIn(min = 76.dp).padding(start = 20.dp, end = 8.dp), verticalAlignment = Alignment.CenterVertically) {
-                AlbumArtwork(artwork, Modifier.size(48.dp).clickable(onClick = expand))
-                Column(Modifier.weight(1f).clickable(onClick = expand).padding(horizontal = 12.dp, vertical = 10.dp)) {
-                    Text(track.displayTitle, maxLines = 1, overflow = TextOverflow.Ellipsis, style = MaterialTheme.typography.titleSmall)
-                    Text(track.displayArtist, maxLines = 1, overflow = TextOverflow.Ellipsis, style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant)
+        BoxWithConstraints(Modifier.fillMaxWidth()) {
+            Column {
+                HorizontalDivider(color = MaterialTheme.colorScheme.primary.copy(alpha = 0.2f))
+                if (maxWidth < 440.dp) {
+                    MiniPlayerTrack(track, artwork, expand, Modifier.fillMaxWidth().padding(end = 8.dp))
+                    Row(Modifier.fillMaxWidth().padding(horizontal = 8.dp), horizontalArrangement = Arrangement.End) {
+                        MiniPlayerControls(state, previous, toggle, next, repeat)
+                    }
+                } else Row(Modifier.fillMaxWidth().padding(end = 8.dp), verticalAlignment = Alignment.CenterVertically) {
+                    MiniPlayerTrack(track, artwork, expand, Modifier.weight(1f))
+                    MiniPlayerControls(state, previous, toggle, next, repeat)
                 }
-                FilledIconButton(onClick = toggle, modifier = Modifier.size(44.dp), shape = CircleShape) {
-                    Icon(if (state.playing) Icons.Rounded.Pause else Icons.Rounded.PlayArrow, if (state.playing) "Pause" else "Play", Modifier.size(22.dp))
+                key(track.key) {
+                    var seeking by remember(state.duration) { mutableStateOf<Float?>(null) }
+                    Slider(value = seeking ?: state.position.toFloat().coerceIn(0f, state.duration.toFloat().coerceAtLeast(1f)),
+                        onValueChange = { seeking = it },
+                        onValueChangeFinished = { seeking?.let { onSeek(it.toLong()) }; seeking = null },
+                        valueRange = 0f..state.duration.toFloat().coerceAtLeast(1f), enabled = state.duration > 0,
+                        modifier = Modifier.fillMaxWidth().padding(horizontal = 12.dp).semantics { contentDescription = "Playback position" })
                 }
-                ToolButton(Icons.Rounded.SkipNext, "Next track", enabled = state.queue.size > 1, onClick = next)
-            }
-            key(track.key) {
-                var seeking by remember(state.duration) { mutableStateOf<Float?>(null) }
-                Slider(value = seeking ?: state.position.toFloat().coerceIn(0f, state.duration.toFloat().coerceAtLeast(1f)),
-                    onValueChange = { seeking = it },
-                    onValueChangeFinished = { seeking?.let { onSeek(it.toLong()) }; seeking = null },
-                    valueRange = 0f..state.duration.toFloat().coerceAtLeast(1f), enabled = state.duration > 0,
-                    modifier = Modifier.fillMaxWidth().padding(horizontal = 12.dp).semantics { contentDescription = "Playback position" })
             }
         }
+    }
+}
+
+@Composable
+private fun MiniPlayerTrack(track: Track, artwork: String?, expand: () -> Unit, modifier: Modifier) {
+    Row(modifier.heightIn(min = 76.dp).padding(start = 20.dp), verticalAlignment = Alignment.CenterVertically) {
+        AlbumArtwork(artwork, Modifier.size(48.dp).clickable(onClick = expand))
+        Column(Modifier.weight(1f).clickable(onClick = expand).padding(horizontal = 12.dp, vertical = 10.dp)) {
+            Text(track.displayTitle, maxLines = 1, overflow = TextOverflow.Ellipsis, style = MaterialTheme.typography.titleSmall)
+            Text(track.displayArtist, maxLines = 1, overflow = TextOverflow.Ellipsis, style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant)
+        }
+    }
+}
+
+@Composable
+private fun MiniPlayerControls(state: PlaybackState, previous: () -> Unit, toggle: () -> Unit,
+    next: () -> Unit, repeat: () -> Unit) {
+    ToolButton(Icons.Rounded.SkipPrevious, "Previous track", onClick = previous)
+    FilledIconButton(onClick = toggle, modifier = Modifier.size(48.dp), shape = CircleShape) {
+        Icon(if (state.playing) Icons.Rounded.Pause else Icons.Rounded.PlayArrow,
+            if (state.playing) "Pause" else "Play", Modifier.size(22.dp))
+    }
+    ToolButton(Icons.Rounded.SkipNext, "Next track", enabled = state.queue.size > 1, onClick = next)
+    RepeatButton(state.repeat, repeat)
+}
+
+@Composable
+private fun RepeatButton(mode: Int, repeat: () -> Unit) {
+    IconToggleButton(checked = mode != Player.REPEAT_MODE_OFF, onCheckedChange = { repeat() }, modifier = Modifier.size(48.dp)) {
+        Icon(if (mode == Player.REPEAT_MODE_ONE) Icons.Rounded.RepeatOne else Icons.Rounded.Repeat,
+            "Repeat: ${if (mode == Player.REPEAT_MODE_OFF) "off" else if (mode == Player.REPEAT_MODE_ONE) "one" else "all"}", Modifier.size(20.dp))
     }
 }
 
@@ -253,10 +284,7 @@ fun PlayerTransport(state: PlaybackState, onSeek: (Long) -> Unit, previous: () -
                 Icon(if (state.playing) Icons.Rounded.Pause else Icons.Rounded.PlayArrow, if (state.playing) "Pause" else "Play", Modifier.size(32.dp))
             }
             ToolButton(Icons.Rounded.SkipNext, "Next track", enabled = state.queue.size > 1, onClick = next)
-            IconToggleButton(checked = state.repeat != Player.REPEAT_MODE_OFF, onCheckedChange = { repeat() }) {
-                Icon(if (state.repeat == Player.REPEAT_MODE_ONE) Icons.Rounded.RepeatOne else Icons.Rounded.Repeat,
-                    "Repeat: ${if (state.repeat == Player.REPEAT_MODE_OFF) "off" else if (state.repeat == Player.REPEAT_MODE_ONE) "one" else "all"}", Modifier.size(20.dp))
-            }
+            RepeatButton(state.repeat, repeat)
         }
     }
 }
@@ -458,13 +486,13 @@ fun TrackMenu(model: MusicViewModel, track: Track, index: Int, download: (String
     var open by remember { mutableStateOf(false) }
     var edit by remember { mutableStateOf(false) }
     var remove by remember { mutableStateOf(false) }
-    var transcribe by remember { mutableStateOf(false) }
     val account by model.sessions.account.collectAsStateWithLifecycle()
     val user = account?.user
     val canTransfer = user?.isShared == false && track.playlistId != null
     var transfer by remember(canTransfer) { mutableStateOf<String?>(null) }
     val canModify = user != null && !user.isShared &&
         model.library.library.jobs.find { it.id == track.jobId }?.canModify(user) == true
+    var transcribe by remember(canModify, track.key) { mutableStateOf(false) }
     Box {
         ToolButton(Icons.Rounded.MoreVert, "Options for ${track.displayTitle}", enabled = !model.busy) { open = true }
         DropdownMenu(open, { open = false }) {
@@ -476,8 +504,9 @@ fun TrackMenu(model: MusicViewModel, track: Track, index: Int, download: (String
             }
             val state = model.library
             if (state.selectedId == track.playlistId && state.tracks.totalPages == 1 && state.search.isEmpty()) {
-                if (index > 0) DropdownMenuItem(text = { Text("Move up") }, leadingIcon = { Icon(Icons.Rounded.ArrowUpward, null) }, onClick = { open = false; model.reorder(track, state.tracks.files[index - 1], false) })
-                if (index < state.tracks.files.lastIndex) DropdownMenuItem(text = { Text("Move down") }, leadingIcon = { Icon(Icons.Rounded.ArrowDownward, null) }, onClick = { open = false; model.reorder(track, state.tracks.files[index + 1], true) })
+                val (previous, next) = trackReorderNeighbors(state.tracks.files, index)
+                if (previous != null) DropdownMenuItem(text = { Text("Move up") }, leadingIcon = { Icon(Icons.Rounded.ArrowUpward, null) }, onClick = { open = false; model.reorder(track, previous, false) })
+                if (next != null) DropdownMenuItem(text = { Text("Move down") }, leadingIcon = { Icon(Icons.Rounded.ArrowDownward, null) }, onClick = { open = false; model.reorder(track, next, true) })
             }
             if (canModify && track.name.endsWith(".mp3", true)) {
                 DropdownMenuItem(text = { Text("Edit song / rating") }, leadingIcon = { Icon(Icons.Rounded.Edit, null) }, onClick = { open = false; edit = true })
@@ -498,13 +527,22 @@ fun TrackMenu(model: MusicViewModel, track: Track, index: Int, download: (String
     }
 }
 
+internal fun trackReorderNeighbors(files: List<Track>, index: Int): Pair<Track?, Track?> {
+    val track = files.getOrNull(index) ?: return null to null
+    val noVocals = track.name.startsWith("[NoVocals]/", ignoreCase = true)
+    val sameGroup: (Track) -> Boolean = { it.name.startsWith("[NoVocals]/", ignoreCase = true) == noVocals }
+    return files.subList(0, index).lastOrNull(sameGroup) to
+        files.subList(index + 1, files.size).firstOrNull(sameGroup)
+}
+
 @Composable
 internal fun TranscribeMenuItem(locked: Boolean, available: Boolean, busy: Boolean = false, onClick: () -> Unit) {
-    if (locked) return
     TooltipBox(positionProvider = TooltipDefaults.rememberPlainTooltipPositionProvider(),
         tooltip = { if (!available) PlainTooltip { Text(INACTIVE_TRANSCRIPTION_MESSAGE) } },
         state = rememberTooltipState()) {
-        DropdownMenuItem(text = { Text("Transcribe lyrics") }, leadingIcon = { Icon(Icons.Rounded.Lyrics, null) },
+        DropdownMenuItem(text = { Text("Transcribe lyrics") }, leadingIcon = {
+            Icon(if (locked) Icons.Rounded.MicOff else Icons.Rounded.Lyrics, null)
+        },
             enabled = available && !busy,
             modifier = Modifier.semantics {
                 if (!available) contentDescription = INACTIVE_TRANSCRIPTION_MESSAGE
@@ -576,14 +614,15 @@ fun MetadataDialog(value: SongMetadata?, onValueChange: (SongMetadata) -> Unit, 
 @Composable
 fun TranscribeDialog(model: MusicViewModel, track: Track, dismiss: () -> Unit) {
     TranscribeDialog(dismiss, { options -> model.transcribe(track, options); dismiss() }, model.busy,
-        available = model.transcriptionAvailable && !model.library.transcriptionLocked(track),
-        lock = { model.lockTranscription(track, true); dismiss() })
+        available = model.transcriptionAvailable, lock = { model.lockTranscription(track, true); dismiss() },
+        transcriptionLocked = model.library.transcriptionLocked(track))
 }
 
 @Composable
 fun TranscribeDialog(dismiss: () -> Unit, submit: (TranscriptionOptions) -> Unit, busy: Boolean = false,
-    available: Boolean = true, lock: () -> Unit = {}) {
-    var locked by rememberSaveable { mutableStateOf(false) }
+    available: Boolean = true, lock: () -> Unit = {}, transcriptionLocked: Boolean = false) {
+    var lockRequested by rememberSaveable(transcriptionLocked) { mutableStateOf(false) }
+    var noVocalsOnly by rememberSaveable { mutableStateOf(false) }
     var language by rememberSaveable { mutableStateOf("") }
     var multilingual by rememberSaveable { mutableStateOf(false) }
     var instrumental by rememberSaveable { mutableStateOf(false) }
@@ -591,48 +630,60 @@ fun TranscribeDialog(dismiss: () -> Unit, submit: (TranscriptionOptions) -> Unit
     var addLyrics by rememberSaveable { mutableStateOf(false) }
     var lyricsMode by rememberSaveable { mutableStateOf("align") }
     var lyrics by rememberSaveable { mutableStateOf("") }
-    val options = TranscriptionOptions(language, multilingual, instrumental, vietLyricsFallback, addLyrics, lyricsMode, lyrics)
+    val locking = lockRequested && !transcriptionLocked
+    val generateOnly = transcriptionLocked || noVocalsOnly
+    val options = TranscriptionOptions(language, multilingual, instrumental, vietLyricsFallback, addLyrics, lyricsMode, lyrics,
+        noVocalsOnly = generateOnly)
     AlertDialog(onDismissRequest = { if (!busy) dismiss() }, title = {
         Row(verticalAlignment = Alignment.CenterVertically) {
             Text("Transcribe Song", Modifier.weight(1f))
-            TranscriptionLockButton(locked, !busy) { locked = it }
+            if (transcriptionLocked) Icon(Icons.Rounded.Lock, "Transcription locked")
+            else TranscriptionLockButton(lockRequested, !busy) { lockRequested = it }
         }
     }, text = {
-        if (locked) Text("Submit to lock transcription for this song. You can unlock it in Edit song.")
+        if (locking) Text("Submit to lock transcription for this song. You can unlock it in Edit song.")
         else Column(Modifier.verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(10.dp)) {
             if (!available) Text(INACTIVE_TRANSCRIPTION_MESSAGE)
-            Text("Language (optional)")
-            ChoiceField("Language (optional)", transcriptionLanguages.first { it.first == language }.second,
-                transcriptionLanguages.map { it.second }, enabled = !busy && !vietLyricsFallback) { selected ->
-                language = transcriptionLanguages.first { it.second == selected }.first
-            }
-            TranscriptionToggle("Multilingual", multilingual, !busy) { multilingual = it }
-            TranscriptionToggle("Create no-vocals version [Karaoke version]", instrumental, !busy) { instrumental = it }
-            TranscriptionToggle("Viet Lyrics Fallback", vietLyricsFallback, !busy) {
-                vietLyricsFallback = it
-                if (it) language = "vi"
-            }
-            Text("Enable the Viet Lyrics fallback pass when the service's opening retry triggers.",
+            if (transcriptionLocked) Text("Transcription is locked. Only a no-vocals version can be generated; lyrics and the lock will not change.")
+            TranscriptionToggle("Generate NoVocals Only", generateOnly, !busy && !transcriptionLocked) { noVocalsOnly = it }
+            if (generateOnly) Text("Generates an instrumental version without transcribing or changing lyrics.",
                 style = MaterialTheme.typography.bodySmall)
-            TranscriptionToggle("Add lyrics", addLyrics, !busy) { addLyrics = it }
-            if (addLyrics) {
-                Text("Lyrics mode")
-                ChoiceField("Lyrics mode", transcriptionLyricsModes.first { it.first == lyricsMode }.second,
-                    transcriptionLyricsModes.map { it.second }, enabled = !busy) { selected ->
-                    lyricsMode = transcriptionLyricsModes.first { it.second == selected }.first
+            else {
+                Text("Language (optional)")
+                ChoiceField("Language (optional)", transcriptionLanguages.first { it.first == language }.second,
+                    transcriptionLanguages.map { it.second }, enabled = !busy && !vietLyricsFallback) { selected ->
+                    language = transcriptionLanguages.first { it.second == selected }.first
                 }
-                Text(when (lyricsMode) {
-                    "align" -> "Maps authoritative lyric lines onto ASR timing."
-                    "correct" -> "Replaces recognized text while preserving ASR segment timing."
-                    else -> "Biases recognition toward known words."
-                }, style = MaterialTheme.typography.bodySmall)
-                OutlinedTextField(lyrics, { lyrics = it.take(100_000) }, label = { Text("Lyrics") },
-                    enabled = !busy, minLines = 4, maxLines = 8, modifier = Modifier.fillMaxWidth())
+                TranscriptionToggle("Multilingual", multilingual, !busy) { multilingual = it }
+                TranscriptionToggle("Create no-vocals version [Karaoke version]", instrumental, !busy) { instrumental = it }
+                TranscriptionToggle("Viet Lyrics Fallback", vietLyricsFallback, !busy) {
+                    vietLyricsFallback = it
+                    if (it) language = "vi"
+                }
+                Text("Enable the Viet Lyrics fallback pass when the service's opening retry triggers.",
+                    style = MaterialTheme.typography.bodySmall)
+                TranscriptionToggle("Add lyrics", addLyrics, !busy) { addLyrics = it }
+                if (addLyrics) {
+                    Text("Lyrics mode")
+                    ChoiceField("Lyrics mode", transcriptionLyricsModes.first { it.first == lyricsMode }.second,
+                        transcriptionLyricsModes.map { it.second }, enabled = !busy) { selected ->
+                        lyricsMode = transcriptionLyricsModes.first { it.second == selected }.first
+                    }
+                    Text(when (lyricsMode) {
+                        "align" -> "Maps authoritative lyric lines onto ASR timing."
+                        "correct" -> "Replaces recognized text while preserving ASR segment timing."
+                        else -> "Biases recognition toward known words."
+                    }, style = MaterialTheme.typography.bodySmall)
+                    OutlinedTextField(lyrics, { lyrics = it.take(100_000) }, label = { Text("Lyrics") },
+                        enabled = !busy, minLines = 4, maxLines = 8, modifier = Modifier.fillMaxWidth())
+                }
             }
         }
     }, confirmButton = {
-        TextButton(onClick = { if (locked) lock() else submit(options) },
-            enabled = !busy && (locked || (available && options.isValid))) { Text(if (locked) "Lock transcription" else "Transcribe") }
+        TextButton(onClick = { if (locking) lock() else submit(options) },
+            enabled = !busy && (locking || (available && options.isValid))) {
+            Text(if (locking) "Lock transcription" else if (generateOnly) "Generate" else "Transcribe")
+        }
     },
         dismissButton = { TextButton(onClick = dismiss, enabled = !busy) { Text("Cancel") } })
 }

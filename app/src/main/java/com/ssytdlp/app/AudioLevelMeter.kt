@@ -12,6 +12,11 @@ import kotlin.math.sqrt
 class AudioLevelMeter(private val nanoTime: () -> Long = System::nanoTime) : TeeAudioProcessor.AudioBufferSink {
     private data class Sample(val level: Float, val time: Long, val waveform: FloatArray = floatArrayOf())
     @Volatile private var sample = Sample(0f, 0L)
+    @Volatile var enabled: Boolean = true
+        set(value) {
+            field = value
+            if (!value) clear()
+        }
     private var encoding = C.ENCODING_INVALID
     private var channels = 1
 
@@ -22,6 +27,7 @@ class AudioLevelMeter(private val nanoTime: () -> Long = System::nanoTime) : Tee
     }
 
     override fun handleBuffer(buffer: ByteBuffer) {
+        if (!enabled) return
         val bytesPerSample = when (encoding) {
             C.ENCODING_PCM_16BIT -> 2
             C.ENCODING_PCM_FLOAT -> 4
@@ -46,15 +52,17 @@ class AudioLevelMeter(private val nanoTime: () -> Long = System::nanoTime) : Tee
                 measured++
             }
         }
-        sample = Sample(sqrt(energy / measured).toFloat().coerceIn(0f, 1f), nanoTime(), waveform)
+        if (enabled) sample = Sample(sqrt(energy / measured).toFloat().coerceIn(0f, 1f), nanoTime(), waveform)
     }
 
     fun level(): Float {
+        if (!enabled) return 0f
         val current = sample
         return current.level * freshness(current)
     }
 
     fun waveform(): FloatArray {
+        if (!enabled) return floatArrayOf()
         val current = sample
         val scale = freshness(current)
         return FloatArray(current.waveform.size) { current.waveform[it] * scale }
