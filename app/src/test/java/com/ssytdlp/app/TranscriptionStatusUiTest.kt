@@ -62,7 +62,7 @@ class TranscriptionStatusUiTest {
                     LibraryState(library = Library(jobs = listOf(Job(id = "source",
                         transcriptions = record.value?.let { mapOf(track.name to it) }.orEmpty()))),
                         tracks = TrackPage(files = listOf(track), total = 1)),
-                    PlaybackState(connected = true), onBrowse = {}, onPlay = {}, onSearch = {}, onPage = {}
+                    PlaybackState(connected = true), onPlay = {}, onPage = {}
                 ) { _, _ -> }
             }
         }
@@ -81,7 +81,7 @@ class TranscriptionStatusUiTest {
         compose.setContent {
             MusicTheme(waveAppearance = false) {
                 LibraryContent(state.value, PlaybackState(connected = true),
-                    onBrowse = {}, onPlay = {}, onSearch = {}, onPage = {}) { _, _ -> }
+                    onPlay = {}, onPage = {}) { _, _ -> }
             }
         }
         statuses.forEach { (transcription, label) ->
