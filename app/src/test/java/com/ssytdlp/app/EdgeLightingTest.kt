@@ -75,18 +75,45 @@ class EdgeLightingTest {
         assertEquals(1f, displacement(EdgeLightingStyle.VIBRATION, 0f, 1f / 384f), 0.0001f)
         assertEquals(1f, displacement(EdgeLightingStyle.VIBRATION, 0.75f, 1f / 384f), 0.0001f)
         assertEquals(0f, displacement(EdgeLightingStyle.CIRCULATING, 0.3f, 0.1f), 0f)
-        assertEquals(-1f, displacement(EdgeLightingStyle.AUDIO_WAVEFORM, 0f), 0f)
-        assertEquals(-0.5f, displacement(EdgeLightingStyle.AUDIO_WAVEFORM, 0.125f), 0f)
-        assertEquals(1f, displacement(EdgeLightingStyle.AUDIO_WAVEFORM, 0.5f), 0f)
-        assertEquals(-1f, displacement(EdgeLightingStyle.AUDIO_WAVEFORM, 1f), 0f)
-        assertEquals(0f, edgeDisplacement(EdgeLightingStyle.AUDIO_WAVEFORM, 0f, 0f, 1f,
-            floatArrayOf(Float.NaN)), 0f)
+        listOf(EdgeLightingStyle.AUDIO_WAVEFORM, EdgeLightingStyle.CIRCULATING_WAVEFORM).forEach { style ->
+            assertEquals(-1f, displacement(style, 0f), 0f)
+            assertEquals(-0.5f, displacement(style, 0.125f), 0f)
+            assertEquals(1f, displacement(style, 0.5f), 0f)
+            assertEquals(-1f, displacement(style, 1f), 0f)
+            assertEquals(1f, displacement(style, 0.5f, progress = 0.7f, level = 0f), 0f)
+            assertEquals(0f, edgeDisplacement(style, 0f, 0f, 1f, floatArrayOf(Float.NaN)), 0f)
+        }
         EdgeLightingStyle.entries.forEach { style ->
             assertEquals(0f, edgeDisplacement(style, 0.23f, 0.1f, 0f, floatArrayOf()), 0f)
             for (index in 0..100) {
                 assertTrue(displacement(style, index / 100f, index / 100f) in -1f..1f)
             }
         }
+    }
+
+    @Test fun waveformStylesClampInvalidSamplesAndCloseTheLoop() {
+        listOf(EdgeLightingStyle.AUDIO_WAVEFORM, EdgeLightingStyle.CIRCULATING_WAVEFORM).forEach { style ->
+            val waveform = floatArrayOf(-2f, Float.NaN, 2f, Float.POSITIVE_INFINITY)
+            val expected = listOf(-1f, -0.5f, 0f, 0.5f, 1f, 0.5f, 0f, -0.5f, -1f)
+            expected.forEachIndexed { index, sample ->
+                assertEquals(sample, edgeDisplacement(style, index / 8f, 0.8f, 0.2f, waveform), 0f)
+            }
+            assertEquals(0f, edgeDisplacement(style, 0.5f, 0.8f, 1f, floatArrayOf()), 0f)
+            assertEquals(0.4f, edgeDisplacement(style, 0.5f, 0.8f, 1f, floatArrayOf(0.4f)), 0f)
+        }
+    }
+
+    @Test fun circulatingWaveformCombinesBothStyleFeatures() {
+        EdgeLightingStyle.entries.forEach { style ->
+            assertEquals(style in listOf(EdgeLightingStyle.AUDIO_WAVEFORM, EdgeLightingStyle.CIRCULATING_WAVEFORM),
+                style.usesWaveform)
+            assertEquals(style in listOf(EdgeLightingStyle.CIRCULATING, EdgeLightingStyle.CIRCULATING_WAVEFORM),
+                style.usesCirculatingGradient)
+            assertEquals(style, EdgeLightingStyle.fromPreference(style.name))
+        }
+        assertEquals("Circulating Waveform", EdgeLightingStyle.CIRCULATING_WAVEFORM.label)
+        assertEquals(EdgeLightingStyle.OSCILLATION, EdgeLightingStyle.fromPreference(null))
+        assertEquals(EdgeLightingStyle.OSCILLATION, EdgeLightingStyle.fromPreference("unknown-style"))
     }
 
     @Test fun lightingDefaultsOffWithoutReadingAudio() {
@@ -114,8 +141,13 @@ class EdgeLightingTest {
         compose.runOnIdle { assertEquals(0, waveformReads) }
         EdgeLightingStyle.entries.forEach { option ->
             update { style = option }
+            val reads = compose.runOnIdle { waveformReads }
             compose.mainClock.advanceTimeBy(100)
             compose.onNodeWithTag("edges").assertIsDisplayed()
+            compose.runOnIdle {
+                if (option.usesWaveform) assertTrue(waveformReads > reads)
+                else assertEquals(reads, waveformReads)
+            }
         }
         compose.runOnIdle { assertTrue(waveformReads > 0) }
         update { style = EdgeLightingStyle.CIRCULATING }
@@ -123,6 +155,56 @@ class EdgeLightingTest {
         val reads = compose.runOnIdle { waveformReads }
         compose.mainClock.advanceTimeBy(100)
         compose.runOnIdle { assertEquals(reads, waveformReads) }
+    }
+
+    @Test fun circulatingWaveformStopsReadingAudioWhenInactiveAndResumes() {
+        enableAnimations()
+        val owner = object : LifecycleOwner {
+            val registry = LifecycleRegistry.createUnsafe(this)
+            override val lifecycle: Lifecycle = registry
+        }
+        owner.registry.currentState = Lifecycle.State.RESUMED
+        var playing by mutableStateOf(true)
+        var enabled by mutableStateOf(true)
+        var levelReads = 0
+        var waveformReads = 0
+        compose.mainClock.autoAdvance = false
+        compose.setContent {
+            CompositionLocalProvider(LocalLifecycleOwner provides owner) {
+                MaterialTheme {
+                    EdgeLighting(playing, { levelReads++; 0.5f }, Modifier.fillMaxSize().testTag("edges"),
+                        enabled = enabled, style = EdgeLightingStyle.CIRCULATING_WAVEFORM,
+                        audioWaveform = { waveformReads++; floatArrayOf(-1f, 1f) })
+                }
+            }
+        }
+        compose.mainClock.advanceTimeBy(100)
+        compose.runOnIdle { assertTrue(levelReads > 0); assertTrue(waveformReads > 0) }
+        fun assertInactive() {
+            compose.mainClock.advanceTimeByFrame()
+            compose.onNodeWithTag("edges").assertDoesNotExist()
+            val reads = compose.runOnIdle { levelReads to waveformReads }
+            compose.mainClock.advanceTimeBy(500)
+            compose.runOnIdle { assertEquals(reads, levelReads to waveformReads) }
+        }
+        fun assertResumed() {
+            val reads = compose.runOnIdle { levelReads to waveformReads }
+            compose.mainClock.advanceTimeBy(100)
+            compose.onNodeWithTag("edges").assertIsDisplayed()
+            compose.runOnIdle { assertTrue(levelReads > reads.first); assertTrue(waveformReads > reads.second) }
+        }
+        update { owner.registry.currentState = Lifecycle.State.STARTED }
+        assertInactive()
+        update { owner.registry.currentState = Lifecycle.State.RESUMED }
+        assertResumed()
+        update { playing = false }
+        assertInactive()
+        update { playing = true }
+        assertResumed()
+        update { enabled = false }
+        assertInactive()
+        update { enabled = true }
+        assertResumed()
     }
 
     // With a paused clock, writes must be applied explicitly so the recomposer sees them.
@@ -211,7 +293,8 @@ class EdgeLightingTest {
         compose.setContent {
             MaterialTheme(colorScheme = darkColorScheme(primary = accent)) {
                 Box(Modifier.fillMaxSize().background(Color.Black)) {
-                    EdgeLighting(true, { 0f }, Modifier.matchParentSize(), enabled = true, style = style,
+                    EdgeLighting(true, { error("Reduced motion must not read audio level") },
+                        Modifier.matchParentSize(), enabled = true, style = style,
                         audioWaveform = { error("Reduced motion must not read waveform") })
                 }
             }

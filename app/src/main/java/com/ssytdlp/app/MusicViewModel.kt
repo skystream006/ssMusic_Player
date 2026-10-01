@@ -406,20 +406,21 @@ class MusicViewModel @JvmOverloads constructor(application: Application, private
     }
 
     fun transcribe(track: Track, options: TranscriptionOptions) = launchAction {
-        require(!library.transcriptionLocked(track)) { "Transcription is locked for this song." }
+        require(options.noVocalsOnly || !library.transcriptionLocked(track)) { "Transcription is locked for this song." }
         require(transcriptionAvailable) { INACTIVE_TRANSCRIPTION_MESSAGE }
         val body = options.toRequestBody()
         val account = sessions.account.value
         transcriptionGeneration++
         val pending = Transcription(status = "sent", requestedAt = java.time.Instant.now().toString(),
-            lyricsIncluded = options.addLyrics, options = ApiJson.decodeFromJsonElement<SavedTranscriptionOptions>(body))
+            lyricsIncluded = options.addLyrics && !options.noVocalsOnly,
+            options = ApiJson.decodeFromJsonElement<SavedTranscriptionOptions>(body))
         library = library.copy(pendingTranscriptions = library.pendingTranscriptions + (track.key to pending))
         try {
             val job = ApiJson.decodeFromJsonElement<Job>(
                 api.request("/api/jobs/${encode(track.jobId)}/files/${encode(track.name)}/transcribe", "POST", body))
             transcriptionGeneration++
             library = library.withTranscriptions(job, listOf(track))
-            message("Transcription complete.")
+            message(if (options.noVocalsOnly) "NoVocals version generated." else "Transcription complete.")
             refreshTracks()
         } finally {
             transcriptionGeneration++

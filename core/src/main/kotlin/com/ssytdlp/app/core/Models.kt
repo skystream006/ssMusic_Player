@@ -105,7 +105,8 @@ data class SavedTranscriptionOptions(
     @SerialName("Multilingual") val multilingual: Boolean? = null,
     @SerialName("NoVocals") val noVocals: Boolean? = null,
     @SerialName("VietLyricsFallback") val vietLyricsFallback: Boolean? = null,
-    @SerialName("lyrics_mode") val lyricsMode: String? = null
+    @SerialName("lyrics_mode") val lyricsMode: String? = null,
+    @SerialName("NoVocalsOnly") val noVocalsOnly: Boolean? = null
 )
 
 @Serializable

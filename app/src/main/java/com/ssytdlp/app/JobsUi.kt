@@ -42,7 +42,7 @@ fun JobsScreen(model: MusicViewModel, requestNotifications: () -> Unit, download
     val account by model.sessions.account.collectAsStateWithLifecycle()
     val user = account?.user ?: return
     LaunchedEffect(lifecycle) {
-        lifecycle.repeatOnLifecycle(Lifecycle.State.STARTED) {
+        lifecycle.repeatOnLifecycle(Lifecycle.State.RESUMED) {
             while (true) { model.pollJobs(); delay(5_000) }
         }
     }

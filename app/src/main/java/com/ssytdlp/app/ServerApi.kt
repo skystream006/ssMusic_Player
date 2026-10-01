@@ -7,9 +7,9 @@ import com.ssytdlp.app.core.ServerResource
 import java.io.IOException
 import java.time.Instant
 import java.util.concurrent.TimeUnit
-import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.currentCoroutineContext
+import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.suspendCancellableCoroutine
-import kotlinx.coroutines.withContext
 import kotlinx.serialization.json.JsonElement
 import kotlinx.serialization.json.JsonNull
 import kotlinx.serialization.json.JsonObject
@@ -32,12 +32,21 @@ internal fun shouldLogApiStatus(account: Account?, path: String): Boolean =
     account?.user?.isShared != true ||
         path != "/api/health" && path != "/api/jobs"
 
+internal fun isBackgroundPlaybackRequest(method: String, path: String): Boolean =
+    method in listOf("GET", "HEAD") &&
+        (Regex("/api/jobs/[^/]+/(lyrics|stream|download)/[^/]+").matches(path) ||
+            Regex("/api/stream/[^/]+").matches(path))
+
 class ServerApi(
     private val currentAccount: () -> Account?,
     private val clearAccount: (String) -> Unit,
-    client: OkHttpClient = OkHttpClient()
+    client: OkHttpClient = OkHttpClient(),
+    private val uiActivity: UiActivityGate? = null
 ) {
-    constructor(sessions: SessionStore) : this({ sessions.account.value }, { sessions.clear(it) })
+    private class RequestOwner(val account: Account)
+
+    constructor(sessions: SessionStore, uiActivity: UiActivityGate? = null) :
+        this({ sessions.account.value }, { sessions.clear(it) }, uiActivity = uiActivity)
 
     private val transport = client.newBuilder()
         .addInterceptor { chain ->
@@ -50,7 +59,7 @@ class ServerApi(
                     }
                 }
             } catch (error: IOException) {
-                DebugLog.event(DebugEvent.API_FAILURE, error = error)
+                if (!chain.call().isCanceled()) DebugLog.event(DebugEvent.API_FAILURE, error = error)
                 throw error
             }
         }
@@ -60,6 +69,7 @@ class ServerApi(
 
     val authenticatedClient: OkHttpClient = transport.newBuilder().addInterceptor { chain ->
         val account = currentAccount() ?: throw ApiException(401, "Sign in with your passkey.")
+        chain.request().tag(RequestOwner::class.java)?.let { requireOwner(it.account, account) }
         if (!Instant.parse(account.session.expiresAt).isAfter(Instant.now())) {
             clearAccount(account.session.token)
             throw ApiException(401, "Your session expired. Sign in again.")
@@ -77,25 +87,67 @@ class ServerApi(
     )
 
     suspend fun request(path: String, method: String = "GET", body: JsonElement? = null): JsonElement {
-        val request = Request.Builder().url(url(path)).method(method,
+        val owner = currentAccount() ?: throw ApiException(401, "Sign in with your passkey.")
+        val request = Request.Builder().url(ServerResource.resolve(owner.origin, path)).tag(RequestOwner::class.java, RequestOwner(owner)).method(method,
             if (method in listOf("GET", "HEAD")) null else (body?.toString() ?: "{}").toRequestBody(JSON)).build()
         val client = if (path.substringBefore('?') == "/api/jobs/import") authenticatedClient.newBuilder()
             .readTimeout(30, TimeUnit.MINUTES).build() else authenticatedClient
-        return executeJson(client.newCall(request))
+        suspend fun execute(): JsonElement {
+            requireOwner(owner)
+            return executeJson(client.newCall(request)).also { requireOwner(owner) }
+        }
+        if (uiActivity == null || isBackgroundPlaybackRequest(method, request.url.encodedPath)) return execute()
+        if (method in listOf("GET", "HEAD")) return uiActivity.readWhileResumed { execute() }
+        // A mutation may have reached the server already. Never replay it on a lifecycle transition.
+        return mutationWhileResumed { execute() }
     }
 
-    suspend fun exchange(origin: String, body: JsonElement): JsonElement = executeJson(transport.newCall(
-        Request.Builder().url("${AuthProtocol.normalizeOrigin(origin)}/api/auth/app/token")
-            .post(body.toString().toRequestBody(JSON)).build()
-    ))
-
-    suspend fun upload(body: RequestBody): JsonElement = executeJson(authenticatedClient.newBuilder()
-        .readTimeout(30, TimeUnit.MINUTES).build().newCall(
-            Request.Builder().url(url("/api/jobs/import")).post(body).build()
+    suspend fun exchange(origin: String, body: JsonElement): JsonElement = mutationWhileResumed(
+        "Sign-in stopped when the app went into the background. The server may have completed it; start a new sign-in."
+    ) {
+        executeJson(transport.newCall(
+            Request.Builder().url("${AuthProtocol.normalizeOrigin(origin)}/api/auth/app/token")
+                .post(body.toString().toRequestBody(JSON)).build()
         ))
+    }
 
-    suspend fun download(path: String, write: (java.io.InputStream) -> Unit): Unit = suspendCancellableCoroutine { continuation ->
-        val call = authenticatedClient.newCall(Request.Builder().url(url(path)).build())
+    suspend fun upload(body: RequestBody): JsonElement {
+        val owner = currentAccount() ?: throw ApiException(401, "Sign in with your passkey.")
+        return mutationWhileResumed {
+            requireOwner(owner)
+            executeJson(authenticatedClient.newBuilder().readTimeout(30, TimeUnit.MINUTES).build().newCall(
+                Request.Builder().url(ServerResource.resolve(owner.origin, "/api/jobs/import"))
+                    .tag(RequestOwner::class.java, RequestOwner(owner)).post(body).build()
+            )).also { requireOwner(owner) }
+        }
+    }
+
+    private suspend fun <T> mutationWhileResumed(
+        interruptedMessage: String = "Request stopped when the app went into the background. Server changes may have completed; refresh before retrying.",
+        block: suspend () -> T
+    ): T {
+        if (uiActivity == null) return block()
+        try {
+            return uiActivity.onceWhileResumed(block)
+        } catch (error: UiActivityGate.UiPaused) {
+            currentCoroutineContext().ensureActive()
+            throw IOException(interruptedMessage, error)
+        }
+    }
+
+    suspend fun download(path: String, write: (java.io.InputStream) -> Unit) {
+        val owner = currentAccount() ?: throw ApiException(401, "Sign in with your passkey.")
+        val request = Request.Builder().url(ServerResource.resolve(owner.origin, path)).tag(RequestOwner::class.java, RequestOwner(owner)).build()
+        suspend fun execute() {
+            requireOwner(owner)
+            download(authenticatedClient.newCall(request), write)
+            requireOwner(owner)
+        }
+        if (uiActivity == null || isBackgroundPlaybackRequest("GET", request.url.encodedPath)) execute()
+        else uiActivity.onceWhileResumed { execute() }
+    }
+
+    private suspend fun download(call: Call, write: (java.io.InputStream) -> Unit): Unit = suspendCancellableCoroutine { continuation ->
         continuation.invokeOnCancellation { call.cancel() }
         call.enqueue(object : Callback {
             override fun onFailure(call: Call, error: IOException) {
@@ -116,26 +168,47 @@ class ServerApi(
         })
     }
 
-    private suspend fun executeJson(call: Call): JsonElement = withContext(Dispatchers.IO) {
-        call.awaitResponse().use { response ->
-            val text = response.body?.string().orEmpty()
-            val data = runCatching { ApiJson.parseToJsonElement(text) }.getOrNull()
-            if (!response.isSuccessful) {
-                val payload = data as? JsonObject
-                throw ApiException(response.code, payload?.get("error")?.jsonPrimitive?.content
-                    ?: "Server request failed (${response.code}).", payload)
-            }
-            if (text.isBlank()) JsonNull else data ?: run {
-                DebugLog.event(DebugEvent.API_INVALID_RESPONSE, status = response.code)
-                throw IOException("The server returned an invalid response.")
-            }
+    private fun requireOwner(expected: Account, account: Account? = currentAccount()) {
+        if (account == null || account.origin != expected.origin || account.user.id != expected.user.id ||
+            account.session.token != expected.session.token) {
+            throw IOException("The account changed. Retry from the current account.")
         }
+    }
+
+    private suspend fun executeJson(call: Call): JsonElement = suspendCancellableCoroutine { continuation ->
+        // Keep cancellation attached through body parsing, not only until response headers arrive.
+        continuation.invokeOnCancellation { call.cancel() }
+        call.enqueue(object : Callback {
+            override fun onFailure(call: Call, error: IOException) {
+                if (continuation.isActive) continuation.resumeWithException(error)
+            }
+            override fun onResponse(call: Call, response: Response) {
+                try {
+                    val result = response.use {
+                        val text = response.body?.string().orEmpty()
+                        val data = runCatching { ApiJson.parseToJsonElement(text) }.getOrNull()
+                        if (!response.isSuccessful) {
+                            val payload = data as? JsonObject
+                            throw ApiException(response.code, payload?.get("error")?.jsonPrimitive?.content
+                                ?: "Server request failed (${response.code}).", payload)
+                        }
+                        if (text.isBlank()) JsonNull else data ?: run {
+                            DebugLog.event(DebugEvent.API_INVALID_RESPONSE, status = response.code)
+                            throw IOException("The server returned an invalid response.")
+                        }
+                    }
+                    if (continuation.isActive) continuation.resume(result)
+                } catch (error: Exception) {
+                    if (continuation.isActive) continuation.resumeWithException(error)
+                }
+            }
+        })
     }
 
     companion object { val JSON = "application/json; charset=utf-8".toMediaType() }
 }
 
-private suspend fun Call.awaitResponse(): Response = suspendCancellableCoroutine { continuation ->
+internal suspend fun Call.awaitResponse(): Response = suspendCancellableCoroutine { continuation ->
     continuation.invokeOnCancellation { cancel() }
     enqueue(object : Callback {
         override fun onFailure(call: Call, error: IOException) {

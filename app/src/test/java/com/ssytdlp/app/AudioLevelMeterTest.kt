@@ -100,6 +100,44 @@ class AudioLevelMeterTest {
         processor.reset()
     }
 
+    @Test fun disabledMeterSkipsAnalysisClearsOldSamplesAndResumesFresh() {
+        var clockReads = 0
+        val meter = AudioLevelMeter { clockReads++; 0L }
+        meter.flush(48_000, 1, C.ENCODING_PCM_16BIT)
+        meter.handleBuffer(pcm(Short.MIN_VALUE))
+        assertEquals(1, clockReads)
+        meter.enabled = false
+        val input = pcm(123, Short.MIN_VALUE).apply { position(2) }
+        val expected = input.array().copyOf()
+        meter.handleBuffer(input)
+        assertEquals(1, clockReads)
+        assertEquals(2, input.position())
+        assertArrayEquals(expected, input.array())
+        assertEquals(0f, meter.level(), 0f)
+        assertTrue(meter.waveform().isEmpty())
+        meter.enabled = true
+        assertEquals(0f, meter.level(), 0f)
+        meter.handleBuffer(pcm(16384))
+        assertEquals(0.5f, meter.level(), 0f)
+    }
+
+    @Test fun disabledAudioTapStillPassesEveryByteThrough() {
+        val meter = AudioLevelMeter { error("Disabled analysis must not sample the clock") }
+        meter.enabled = false
+        val processor = TeeAudioProcessor(meter)
+        processor.configure(AudioFormat(48_000, 2, C.ENCODING_PCM_16BIT))
+        processor.flush()
+        val input = pcm(Short.MIN_VALUE, Short.MAX_VALUE, 0, -1234)
+        val expected = input.array().copyOf()
+        processor.queueInput(input)
+        val output = processor.output
+        assertArrayEquals(expected, ByteArray(output.remaining()).also { output.get(it) })
+        assertFalse(input.hasRemaining())
+        assertEquals(0f, meter.level(), 0f)
+        assertTrue(meter.waveform().isEmpty())
+        processor.reset()
+    }
+
     private fun pcm(vararg values: Short): ByteBuffer =
         ByteBuffer.allocate(values.size * 2).order(ByteOrder.LITTLE_ENDIAN).apply {
             values.forEach { putShort(it) }

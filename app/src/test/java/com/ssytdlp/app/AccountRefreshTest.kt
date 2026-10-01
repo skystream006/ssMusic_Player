@@ -413,6 +413,9 @@ class AccountRefreshTest {
         assertEquals(INACTIVE_TRANSCRIPTION_MESSAGE, model.notice)
         assertTrue(drainRequests().isEmpty())
         assertTrue(model.library.pendingTranscriptions.isEmpty())
+        perform(model) { model.transcribe(track, TranscriptionOptions(noVocalsOnly = true)) }
+        assertEquals(INACTIVE_TRANSCRIPTION_MESSAGE, model.notice)
+        assertTrue(drainRequests().isEmpty())
 
         status.set("active")
         listedTrack.set(track.copy(transcriptionLocked = true))
@@ -425,6 +428,32 @@ class AccountRefreshTest {
         assertEquals("Transcription is locked for this song.", model.notice)
         assertTrue(drainRequests().isEmpty())
         assertTrue(model.library.pendingTranscriptions.isEmpty())
+    }
+
+    @Test fun noVocalsOnlyAllowsLockedSongsWithoutSendingLyricsOrChangingTheirLock() {
+        val track = Track("job", "song.mp3", transcriptionLocked = true)
+        val path = "/api/jobs/${encode(track.jobId)}/files/${encode(track.name)}/transcribe"
+        val model = startModel(track) { request ->
+            when (request.requestUrl!!.encodedPath) {
+                path, "/api/jobs/job" -> MockResponse().setBody("""{"id":"job"}""")
+                else -> null
+            }
+        }
+        drainRequests()
+
+        perform(model) {
+            model.transcribe(track, TranscriptionOptions(noVocalsOnly = true,
+                addLyrics = true, lyrics = "Must not send these lyrics", multilingual = true, noVocals = true))
+        }
+        val requests = drainRequests()
+        val transcription = requests.single { it.path == path }
+        assertEquals("POST", transcription.method)
+        assertEquals(ApiJson.parseToJsonElement("""{"NoVocalsOnly":true}"""),
+            ApiJson.parseToJsonElement(transcription.body.readUtf8()))
+        assertFalse(requests.any { it.method == "PATCH" })
+        assertTrue(model.library.transcriptionLocked(track))
+        assertTrue(model.library.pendingTranscriptions.isEmpty())
+        assertEquals("NoVocals version generated.", model.notice)
     }
 
     private fun startModel(

@@ -30,6 +30,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.Density
 import androidx.test.core.app.ApplicationProvider
 import androidx.core.view.drawToBitmap
+import androidx.media3.common.Player
 import com.ssytdlp.app.core.Track
 import com.ssytdlp.app.core.Preferences
 import com.ssytdlp.app.core.TrackPage
@@ -112,44 +113,43 @@ class MusicUiTest {
     @Test fun libraryTopBarLeavesRoomForTracksAndStaysVisibleWhileScrolling() {
         showLibraryPreview()
         compose.onNodeWithText("All Music").assertIsDisplayed()
-        compose.onNodeWithContentDescription("Play this page").assertIsDisplayed()
+        compose.onNodeWithContentDescription("Play this page").assertDoesNotExist()
         compose.onNodeWithText("Quiet signal").assertIsDisplayed()
         compose.onNodeWithText("LIBRARY").assertDoesNotExist()
         compose.onNodeWithText("ssMusic").assertDoesNotExist()
         compose.onAllNodesWithContentDescription("Browse library").assertCountEquals(1)
-        compose.onAllNodes(hasSetTextAction()).assertCountEquals(1)
+        compose.onAllNodes(hasSetTextAction()).assertCountEquals(0)
         val browse = compose.onNodeWithContentDescription("Browse library").getUnclippedBoundsInRoot()
-        val play = compose.onNodeWithContentDescription("Play this page").getUnclippedBoundsInRoot()
-        val search = compose.onNode(hasSetTextAction()).assertIsDisplayed().getUnclippedBoundsInRoot()
+        val search = compose.onNodeWithContentDescription("Search").assertIsDisplayed().getUnclippedBoundsInRoot()
         val tracks = compose.onNodeWithText("TRACKS").getUnclippedBoundsInRoot()
-        assertTrue(browse.right <= play.left)
-        assertTrue(browse.bottom <= search.top)
-        assertTrue(play.bottom <= search.top)
+        assertTrue(browse.right <= search.left)
         assertTrue(search.bottom <= tracks.top)
-        assertTrue("Tracks should start directly below the compact top bar", tracks.top <= 176.dp)
+        assertTrue("Tracks should start directly below the compact top bar", tracks.top <= 112.dp)
         savePreview("library-phone")
         compose.onNode(hasScrollToIndexAction()).performScrollToIndex(7)
         compose.onNodeWithText("Slow motion").assertIsDisplayed()
-        compose.onNode(hasSetTextAction()).assertIsDisplayed()
-        compose.onNodeWithContentDescription("Play this page").assertIsDisplayed()
+        compose.onNode(hasSetTextAction()).assertDoesNotExist()
+        compose.onNodeWithContentDescription("Search").assertIsDisplayed()
         assertEquals(browse, compose.onNodeWithContentDescription("Browse library").assertIsDisplayed().getUnclippedBoundsInRoot())
     }
 
     @Test fun libraryTopBarControlsKeepTheirActionsAndSearchCanBeCleared() {
         val state = mutableStateOf(LibraryState(tracks = TrackPage(files = previewTracks(), total = 8)))
         var browsed = false
-        var selected = -1
         var refreshed = false
         var settingsOpened = false
         compose.setContent {
             MusicTheme {
-                LibraryTopBar(state.value, PlaybackState(connected = true), true,
+                LibraryTopBar(state.value, true,
                     onBrowse = { browsed = true }, onSearch = { state.value = state.value.copy(search = it) },
-                    onPlay = { selected = it }, onRefresh = { refreshed = true }, onSettings = { settingsOpened = true })
+                    onRefresh = { refreshed = true }, onSettings = { settingsOpened = true })
             }
         }
         compose.onNodeWithContentDescription("Browse library").assertHasClickAction().performClick()
-        compose.onNodeWithContentDescription("Play this page").assertIsEnabled().performClick()
+        compose.onNodeWithContentDescription("Play this page").assertDoesNotExist()
+        compose.onNode(hasSetTextAction()).assertDoesNotExist()
+        compose.onNodeWithContentDescription("Search").assertIsEnabled().performClick()
+        compose.onNode(hasSetTextAction()).assertIsFocused()
         compose.onNodeWithContentDescription("Refresh").performClick()
         compose.onNodeWithContentDescription("Settings").performClick()
         compose.onNodeWithContentDescription("Clear search").assertDoesNotExist()
@@ -158,42 +158,35 @@ class MusicUiTest {
         compose.onNodeWithContentDescription("Clear search").assertIsDisplayed().performClick()
         compose.onNodeWithText("Search your music").assertIsDisplayed()
         compose.onNodeWithContentDescription("Clear search").assertDoesNotExist()
+        compose.onNode(hasSetTextAction()).performTextInput("Hidden filter")
+        compose.onNodeWithContentDescription("Close search").performClick()
+        compose.onNode(hasSetTextAction()).assertDoesNotExist()
+        compose.onNodeWithContentDescription("Search").assertIsDisplayed()
         compose.runOnIdle {
             assertEquals("", state.value.search)
             assertTrue(browsed)
-            assertEquals(0, selected)
             assertTrue(refreshed)
             assertTrue(settingsOpened)
         }
     }
 
-    @Test fun libraryTopBarDisablesPlayForEmptyLoadingOrDisconnectedPages() {
+    @Test fun libraryTopBarKeepsSearchAvailableWhileLoadingAnEmptyPage() {
         val state = mutableStateOf(LibraryState())
-        val playback = mutableStateOf(PlaybackState(connected = true))
-        var plays = 0
         var settingsOpened = false
         compose.setContent {
             MusicTheme {
-                LibraryTopBar(state.value, playback.value, !state.value.loading, {}, {}, { plays++ }, {},
+                LibraryTopBar(state.value, !state.value.loading, {}, {}, {},
                     onSettings = { settingsOpened = true })
             }
         }
-        val play = compose.onNodeWithContentDescription("Play this page")
-        play.assertIsNotEnabled()
-        compose.runOnIdle {
-            state.value = state.value.copy(tracks = TrackPage(files = previewTracks(), total = 8))
-            playback.value = playback.value.copy(connected = false)
-        }
-        play.assertIsNotEnabled()
-        compose.runOnIdle { playback.value = playback.value.copy(connected = true) }
-        play.assertIsEnabled().performClick()
+        compose.onNodeWithContentDescription("Play this page").assertDoesNotExist()
+        compose.onNodeWithContentDescription("Search").assertIsEnabled().performClick()
         compose.runOnIdle { state.value = state.value.copy(loading = true) }
-        play.assertIsNotEnabled()
         compose.onNodeWithContentDescription("Refresh").assertIsNotEnabled()
         compose.onNodeWithContentDescription("Settings").assertIsEnabled().performClick()
         compose.onNodeWithContentDescription("Browse library").assertIsEnabled()
         compose.onNode(hasSetTextAction()).assertIsEnabled()
-        compose.runOnIdle { assertEquals(1, plays); assertTrue(settingsOpened) }
+        compose.runOnIdle { assertTrue(settingsOpened) }
     }
 
     @Test fun libraryTopBarShowsSelectedPlaylistFolderAndFallbackTitles() {
@@ -203,7 +196,7 @@ class MusicUiTest {
             playlists = listOf(LibraryPlaylist("playlist", "Night Sessions")))))
         compose.setContent {
             MusicTheme(waveAppearance = false) {
-                LibraryTopBar(state.value, PlaybackState(), true, {}, {}, {}, {}, {})
+                LibraryTopBar(state.value, true, {}, {}, {}, {})
             }
         }
         compose.onNodeWithText("All Music").assertIsDisplayed()
@@ -221,12 +214,78 @@ class MusicUiTest {
 
     @Test
     @Config(qualifiers = "w780dp-h360dp")
+    fun playlistSelectorWrapsItsTextInsteadOfSpanningTheTitleArea() {
+        val state = mutableStateOf(LibraryState())
+        compose.setContent {
+            MusicTheme { LibraryTopBar(state.value, true, {}, {}, {}, {}) }
+        }
+        val selector = compose.onNodeWithContentDescription("Browse library").getUnclippedBoundsInRoot()
+        assertTrue("Short playlist selectors must wrap their contents", selector.width < 180.dp)
+        val title = compose.onNodeWithText("All Music", useUnmergedTree = true).getUnclippedBoundsInRoot()
+        val arrow = compose.onNodeWithContentDescription("Browse library", useUnmergedTree = true)
+            .getUnclippedBoundsInRoot()
+        assertTrue(arrow.left - title.right <= 8.dp)
+        compose.runOnIdle {
+            state.value = LibraryState(selectedId = "long", library = Library(entries = listOf(
+                LibraryEntry("long", "playlist", "An extremely long playlist title ".repeat(10)))))
+        }
+        val search = compose.onNodeWithContentDescription("Search").assertIsDisplayed().getUnclippedBoundsInRoot()
+        val longSelector = compose.onNodeWithContentDescription("Browse library").getUnclippedBoundsInRoot()
+        assertTrue(longSelector.right <= search.left)
+        compose.onNodeWithContentDescription("Settings").assertIsDisplayed()
+    }
+
+    @Test fun noVocalsAreGroupedBelowOriginalsWithoutChangingPlaybackOrActionIndices() {
+        val instrumental = Track("job", "[NoVocals]/Instrumental.mp3", title = "Instrumental")
+        val original = Track("job", "Original.mp3", title = "Original")
+        val secondInstrumental = Track("other", "[novocals]/Second.mp3", title = "Second instrumental")
+        val state = LibraryState(tracks = TrackPage(files = listOf(instrumental, original, secondInstrumental)))
+        var played = -1
+        var action = -1
+        compose.setContent {
+            MusicTheme {
+                LibraryContent(state, PlaybackState(connected = true), { played = it }, {}) { track, index ->
+                    ToolButton(Icons.Rounded.MoreVert, "Options ${track.displayTitle}") { action = index }
+                }
+            }
+        }
+        compose.onNodeWithText("Original").assertIsDisplayed().performClick()
+        compose.runOnIdle { assertEquals(1, played) }
+        compose.onNodeWithText("Instrumental").assertDoesNotExist()
+        val group = compose.onNodeWithText("[NoVocals] (2)").assertIsDisplayed()
+        assertTrue(group.getUnclippedBoundsInRoot().top >=
+            compose.onNodeWithText("Original").getUnclippedBoundsInRoot().bottom)
+        compose.onNodeWithContentDescription("Expand NoVocals").performClick()
+        compose.onNodeWithText("Instrumental").assertIsDisplayed().performClick()
+        compose.runOnIdle { assertEquals(0, played) }
+        compose.onNodeWithContentDescription("Options Second instrumental").performClick()
+        compose.runOnIdle { assertEquals(2, action) }
+        compose.onNodeWithContentDescription("Collapse NoVocals").performClick()
+        compose.onNodeWithText("Instrumental").assertDoesNotExist()
+        compose.onNodeWithText("Original").assertIsDisplayed()
+    }
+
+    @Test fun noVocalsOnlyPageCanBeExpanded() {
+        val track = Track("job", "[NoVocals]/Song.mp3", title = "Accompaniment")
+        compose.setContent {
+            MusicTheme {
+                LibraryContent(LibraryState(tracks = TrackPage(files = listOf(track))),
+                    PlaybackState(connected = true), {}, {}) { _, _ -> }
+            }
+        }
+        compose.onNodeWithText("Your library is empty").assertDoesNotExist()
+        compose.onNodeWithContentDescription("Expand NoVocals").performClick()
+        compose.onNodeWithText("Accompaniment").assertIsDisplayed()
+    }
+
+    @Test
+    @Config(qualifiers = "w780dp-h360dp")
     fun librarySearchRespectsSideSystemBarInsetsInLandscape() {
         val state = mutableStateOf(LibraryState(search = "Quiet"))
         compose.setContent {
             MusicTheme {
-                LibraryTopBar(state.value, PlaybackState(), true, {},
-                    onSearch = { state.value = state.value.copy(search = it) }, {}, {}, {},
+                LibraryTopBar(state.value, true, {},
+                    onSearch = { state.value = state.value.copy(search = it) }, {}, {},
                     windowInsets = WindowInsets(left = 32.dp, top = 24.dp, right = 48.dp, bottom = 0.dp))
             }
         }
@@ -407,6 +466,38 @@ class MusicUiTest {
         compose.onNodeWithContentDescription("Playback position").assertDoesNotExist()
     }
 
+    @Test
+    @Config(qualifiers = "w320dp-h640dp")
+    fun miniPlayerPreviousAndRepeatFitSmallPhonesAndKeepIndependentActions() {
+        val titleText = "A long song title that still has space beside its artwork"
+        val state = mutableStateOf(previewPlayback().let {
+            it.copy(track = it.track!!.copy(title = titleText), repeat = Player.REPEAT_MODE_OFF)
+        })
+        var previous = 0
+        var expanded = 0
+        var toggled = 0
+        compose.setContent {
+            MusicTheme {
+                MiniPlayer(state.value, null, { expanded++ }, { toggled++ }, {}, {},
+                    previous = { previous++ },
+                    repeat = { state.value = state.value.copy(repeat = (state.value.repeat + 1) % 3) })
+            }
+        }
+        val title = compose.onNodeWithText(titleText).assertIsDisplayed().getUnclippedBoundsInRoot()
+        assertTrue("Mini-player must leave readable space for song text", title.width >= 100.dp)
+        listOf("Previous track", "Pause", "Next track", "Repeat: off").forEach { label ->
+            val bounds = compose.onNodeWithContentDescription(label).assertIsDisplayed().getUnclippedBoundsInRoot()
+            assertTrue(bounds.width >= 48.dp && bounds.height >= 48.dp)
+            assertTrue(bounds.left >= 0.dp && bounds.right <= 320.dp)
+        }
+        compose.onNodeWithContentDescription("Previous track").performClick()
+        compose.onNodeWithContentDescription("Repeat: off").assertIsOff().performClick()
+        compose.onNodeWithContentDescription("Repeat: one").assertIsOn().performClick()
+        compose.onNodeWithContentDescription("Repeat: all").assertIsOn().performClick()
+        compose.onNodeWithContentDescription("Repeat: off").assertIsOff()
+        compose.runOnIdle { assertEquals(1, previous); assertEquals(0, toggled); assertEquals(0, expanded) }
+    }
+
     @Test fun miniPlayerKeepsDraggedPositionWhilePlaybackUpdatesAndSeeksOnRelease() {
         val state = mutableStateOf(previewPlayback())
         val seeks = mutableListOf<Long>()
@@ -470,19 +561,21 @@ class MusicUiTest {
         val title = "A very long playlist title that should not crowd the controls"
         showLibraryPreview(1.5f, title)
         compose.onNodeWithText(title).assertIsDisplayed()
-        compose.onNodeWithContentDescription("Play this page").assertIsDisplayed()
+        compose.onNodeWithContentDescription("Play this page").assertDoesNotExist()
         compose.onNodeWithContentDescription("Pause").assertIsDisplayed()
-        compose.onNode(hasSetTextAction()).assertIsDisplayed()
+        compose.onNode(hasSetTextAction()).assertDoesNotExist()
         val browse = compose.onNodeWithContentDescription("Browse library").assertIsDisplayed().getUnclippedBoundsInRoot()
-        val play = compose.onNodeWithContentDescription("Play this page").getUnclippedBoundsInRoot()
+        val search = compose.onNodeWithContentDescription("Search").assertIsDisplayed().getUnclippedBoundsInRoot()
         val refresh = compose.onNodeWithContentDescription("Refresh").assertIsDisplayed().getUnclippedBoundsInRoot()
         val settings = compose.onNodeWithContentDescription("Settings").assertIsDisplayed().getUnclippedBoundsInRoot()
         val pause = compose.onNodeWithContentDescription("Pause").getUnclippedBoundsInRoot()
-        assertTrue(browse.left >= 0.dp && browse.right <= play.left)
-        assertTrue(play.right <= refresh.left && refresh.right <= settings.left)
+        assertTrue(browse.left >= 0.dp && browse.right <= search.left)
+        assertTrue(search.right <= refresh.left && refresh.right <= settings.left)
         assertTrue(settings.right <= 320.dp)
-        assertTrue(play.left >= 0.dp && play.right <= 320.dp)
+        assertTrue(search.left >= 0.dp && search.right <= 320.dp)
         assertTrue(pause.left >= 0.dp && pause.right <= 320.dp)
+        compose.onNodeWithContentDescription("Search").performClick()
+        compose.onNode(hasSetTextAction()).assertIsDisplayed()
         savePreview("library-large-text")
     }
 
@@ -730,7 +823,7 @@ class MusicUiTest {
             CompositionLocalProvider(LocalDensity provides Density(LocalDensity.current.density, fontScale)) {
                 MusicTheme {
                     Scaffold(containerColor = MaterialTheme.colorScheme.background, topBar = {
-                        LibraryTopBar(library, playback, true, {}, {}, {}, {}, {})
+                        LibraryTopBar(library, true, {}, {}, {}, {})
                     }, bottomBar = {
                         Column {
                             MiniPlayer(playback, null, {}, {}, {}, {})

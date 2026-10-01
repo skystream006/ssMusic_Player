@@ -133,5 +133,17 @@ class ModelsTest {
         val explicitFalse = ApiJson.decodeFromString<Transcription>("""{"options":{"Multilingual":false,"NoVocals":null}}""")
         assertEquals(false, explicitFalse.options!!.multilingual)
         assertNull(explicitFalse.options!!.noVocals)
+        assertNull(explicitFalse.options!!.noVocalsOnly)
+    }
+
+    @Test fun `saved no vocals only mode decodes from track and job records and survives persistence`() {
+        val record = """{"status":"transcribed","options":{"NoVocalsOnly":true}}"""
+        val track = ApiJson.decodeFromString<Track>("""{"name":"song.mp3","transcription":$record}""")
+        val job = ApiJson.decodeFromString<Job>("""{"id":"source","transcriptions":{"song.mp3":$record}}""")
+        assertEquals(job.transcriptions.getValue("song.mp3"), track.transcription)
+        assertEquals(SavedTranscriptionOptions(noVocalsOnly = true), track.transcription!!.options)
+        assertEquals(track, ApiJson.decodeFromString<Track>(ApiJson.encodeToString(track)))
+        assertEquals(false, ApiJson.decodeFromString<SavedTranscriptionOptions>("""{"NoVocalsOnly":false}""").noVocalsOnly)
+        assertNull(ApiJson.decodeFromString<SavedTranscriptionOptions>("""{"NoVocalsOnly":null}""").noVocalsOnly)
     }
 }

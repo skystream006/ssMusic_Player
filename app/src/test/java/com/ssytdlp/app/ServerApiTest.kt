@@ -2,6 +2,7 @@ package com.ssytdlp.app
 
 import com.ssytdlp.app.core.Account
 import com.ssytdlp.app.core.AuthProtocol
+import com.ssytdlp.app.core.ApiJson
 import com.ssytdlp.app.core.Job
 import com.ssytdlp.app.core.Library
 import com.ssytdlp.app.core.Session
@@ -15,6 +16,7 @@ import kotlinx.coroutines.runBlocking
 import kotlinx.serialization.json.JsonNull
 import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.buildJsonObject
+import kotlinx.serialization.json.decodeFromJsonElement
 import kotlinx.serialization.json.put
 import okhttp3.OkHttpClient
 import okhttp3.Request
@@ -85,6 +87,24 @@ class ServerApiTest {
         assertNull(request.getHeader("Cookie"))
         assertFalse(request.path!!.contains(token))
         assertEquals("/api/library/tracks?page=1&pageSize=50", request.path)
+    }
+
+    @Test fun `no vocals only posts its standalone option and reads saved result mode`() = runBlocking {
+        server.enqueue(MockResponse().setBody("""{"id":"source","transcriptions":{
+            "folder/song.mp3":{"status":"transcribed","options":{"NoVocalsOnly":true}}}}"""))
+        val options = TranscriptionOptions(language = "vi", multilingual = true, noVocals = true,
+            vietLyricsFallback = true, addLyrics = true, lyrics = "Ignored lyrics", noVocalsOnly = true)
+        val result = ApiJson.decodeFromJsonElement<Job>(api.request(
+            "/api/jobs/source/files/folder%2Fsong.mp3/transcribe", "POST", options.toRequestBody()))
+        val request = server.takeRequest(2, TimeUnit.SECONDS)!!
+        assertEquals("POST", request.method)
+        assertEquals("/api/jobs/source/files/folder%2Fsong.mp3/transcribe", request.path)
+        assertEquals("******", request.getHeader("Authorization"))
+        assertEquals("""{"NoVocalsOnly":true}""", request.body.readUtf8())
+        val record = result.transcriptions.getValue("folder/song.mp3")
+        assertEquals(true, record.options!!.noVocalsOnly)
+        assertEquals("No-vocals version generated", record.label)
+        assertFalse(record.lyricsIncluded)
     }
 
     @Test fun `app exchange uses unauthenticated transport even with an existing session`() = runBlocking {

@@ -52,7 +52,7 @@ fun SettingsScreen(model: MusicViewModel, download: (String, String) -> Unit, on
     var backupFormat by rememberSaveable { mutableStateOf("android") }
     var destination by rememberSaveable { mutableStateOf("") }
     LaunchedEffect(lifecycle) {
-        lifecycle.repeatOnLifecycle(Lifecycle.State.STARTED) {
+        lifecycle.repeatOnLifecycle(Lifecycle.State.RESUMED) {
             while (true) { model.pollSettings(); delay(5_000) }
         }
     }

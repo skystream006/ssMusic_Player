@@ -1,11 +1,18 @@
 package com.ssytdlp.app
 
+import android.app.Activity
 import android.app.Application
+import android.content.SharedPreferences
+import android.os.Bundle
 import com.ssytdlp.app.core.AuthProtocol
 import com.ssytdlp.app.core.PendingLogin
 
 class MusicApplication : Application() {
-    val audioLevels = AudioLevelMeter()
+    val uiActivity = UiActivityGate()
+    val audioLevels = AudioLevelMeter().apply { enabled = false }
+    private val settingsListener = SharedPreferences.OnSharedPreferenceChangeListener { _, key ->
+        if (key == null || key == "edge_lighting") updateMeter()
+    }
     lateinit var sessions: SessionStore
         private set
     lateinit var serverConfig: ServerConfig
@@ -15,6 +22,25 @@ class MusicApplication : Application() {
 
     override fun onCreate() {
         super.onCreate()
+        getSharedPreferences("settings", MODE_PRIVATE).registerOnSharedPreferenceChangeListener(settingsListener)
+        registerActivityLifecycleCallbacks(object : ActivityLifecycleCallbacks {
+            override fun onActivityResumed(activity: Activity) {
+                uiActivity.activityResumed(activity)
+                updateMeter()
+            }
+            override fun onActivityPaused(activity: Activity) {
+                uiActivity.activityPaused(activity)
+                updateMeter()
+            }
+            override fun onActivityDestroyed(activity: Activity) {
+                uiActivity.activityPaused(activity)
+                updateMeter()
+            }
+            override fun onActivityCreated(activity: Activity, state: Bundle?) = Unit
+            override fun onActivityStarted(activity: Activity) = Unit
+            override fun onActivityStopped(activity: Activity) = Unit
+            override fun onActivitySaveInstanceState(activity: Activity, state: Bundle) = Unit
+        })
         DebugLog.initialize(this)
         DebugLog.event(DebugEvent.APP_STARTED)
         sessions = SessionStore(this)
@@ -26,7 +52,12 @@ class MusicApplication : Application() {
             accountOrigin != null && accountOrigin != serverConfig.origin.value -> sessions.clear()
         }
         if (sessions.pending?.origin?.let { it != serverConfig.origin.value } == true) sessions.pending = null
-        api = ServerApi(sessions)
+        api = ServerApi(sessions, uiActivity)
+    }
+
+    private fun updateMeter() {
+        audioLevels.enabled = uiActivity.resumed.value &&
+            getSharedPreferences("settings", MODE_PRIVATE).getBoolean("edge_lighting", false)
     }
 }
 

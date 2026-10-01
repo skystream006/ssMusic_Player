@@ -21,9 +21,12 @@ import javax.net.ssl.SSLContext
 import javax.net.ssl.TrustManagerFactory
 import javax.net.ssl.X509TrustManager
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.CoroutineStart
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.NonCancellable
+import kotlinx.coroutines.awaitCancellation
+import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -209,6 +212,7 @@ class AppUpdater(application: Application) : AndroidViewModel(application) {
     private val partial = File(directory, "update.part")
     private val apk = File(directory, "update.apk")
     private val client by lazy { updateClient() }
+    private val uiActivity = (application as? MusicApplication)?.uiActivity
     private var release: UpdateRelease? = null
     private var operation: Job? = null
     @Volatile private var activeCall: Call? = null
@@ -226,7 +230,22 @@ class AppUpdater(application: Application) : AndroidViewModel(application) {
             .header("User-Agent", "ssMusic-Player/${BuildConfig.VERSION_NAME}").build())
         activeCall = call
         currentCoroutineContext().ensureActive()
-        return call.execute()
+        return call.awaitResponse()
+    }
+
+    private suspend fun <T> foregroundNetwork(block: suspend () -> T): T {
+        suspend fun attempt(): T = coroutineScope {
+            val cancellation = launch(start = CoroutineStart.UNDISPATCHED) {
+                try { awaitCancellation() } finally { activeCall?.cancel() }
+            }
+            try {
+                block()
+            } catch (error: Exception) {
+                currentCoroutineContext().ensureActive()
+                throw error
+            } finally { cancellation.cancel() }
+        }
+        return if (uiActivity == null) attempt() else uiActivity.readWhileResumed { attempt() }
     }
 
     fun check(automatic: Boolean = false) {
@@ -241,17 +260,19 @@ class AppUpdater(application: Application) : AndroidViewModel(application) {
         DebugLog.event(DebugEvent.UPDATE_CHECK_STARTED)
         operation = viewModelScope.launch {
             try {
-                val latest = withContext(Dispatchers.IO) {
-                    cleanup.join()
-                    discardFiles()
-                    request(UPDATE_ENDPOINT.toHttpUrlOrNull()!!).use { response ->
-                        if (!response.isSuccessful) throw updateHttpError(response.code)
-                        val body = response.body ?: throw IOException("GitHub returned an empty response. Try again.")
-                        if (body.contentLength() > MAX_METADATA_BYTES) throw IOException("Release information is too large.")
-                        val source = body.source()
-                        source.request(MAX_METADATA_BYTES + 1)
-                        if (source.buffer.size > MAX_METADATA_BYTES) throw IOException("Release information is too large.")
-                        parseUpdateRelease(source.readUtf8())
+                val latest = foregroundNetwork {
+                    withContext(Dispatchers.IO) {
+                        cleanup.join()
+                        discardFiles()
+                        request(UPDATE_ENDPOINT.toHttpUrlOrNull()!!).use { response ->
+                            if (!response.isSuccessful) throw updateHttpError(response.code)
+                            val body = response.body ?: throw IOException("GitHub returned an empty response. Try again.")
+                            if (body.contentLength() > MAX_METADATA_BYTES) throw IOException("Release information is too large.")
+                            val source = body.source()
+                            source.request(MAX_METADATA_BYTES + 1)
+                            if (source.buffer.size > MAX_METADATA_BYTES) throw IOException("Release information is too large.")
+                            parseUpdateRelease(source.readUtf8())
+                        }
                     }
                 }
                 val installed = UpdateVersion.parse(BuildConfig.VERSION_NAME)
@@ -290,18 +311,21 @@ class AppUpdater(application: Application) : AndroidViewModel(application) {
         DebugLog.event(DebugEvent.UPDATE_DOWNLOAD_STARTED)
         operation = viewModelScope.launch {
             try {
-                withContext(Dispatchers.IO) {
-                    cleanup.join()
-                    discardFiles()
-                    try {
-                        if (!directory.isDirectory && !directory.mkdirs()) throw IOException("Unable to create update cache. Free device storage and retry.")
-                        downloadFile(latest)
-                        validateApk(partial, latest.version)
-                        currentCoroutineContext().ensureActive()
-                        if (!partial.renameTo(apk)) throw IOException("Unable to save the update. Free device storage and retry.")
-                    } catch (e: Exception) {
+                foregroundNetwork {
+                    withContext(Dispatchers.IO) {
+                        cleanup.join()
                         discardFiles()
-                        throw e
+                        mutableState.update { it.copy(downloaded = 0) }
+                        try {
+                            if (!directory.isDirectory && !directory.mkdirs()) throw IOException("Unable to create update cache. Free device storage and retry.")
+                            downloadFile(latest)
+                            validateApk(partial, latest.version)
+                            currentCoroutineContext().ensureActive()
+                            if (!partial.renameTo(apk)) throw IOException("Unable to save the update. Free device storage and retry.")
+                        } catch (e: Exception) {
+                            discardFiles()
+                            throw e
+                        }
                     }
                 }
                 mutableState.update { it.copy(ready = true, installRequested = true,
