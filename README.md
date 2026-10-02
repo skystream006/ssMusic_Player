@@ -198,6 +198,21 @@ Track ratings remain visible even at zero; tap the star beside a track's menu
 or queue controls to open **Rate song**. Saving uses the existing MP3 editing
 permissions. Tap the selected star again to clear a rating, then **Save**.
 
+Choose **Replace File** from a Library song's options or the Now Playing header
+to upload one non-empty audio file in the same format, up to 512 MB. Selecting
+a file does not upload it: confirm **Replace File** to overwrite the song.
+Convert other formats first; renaming the extension does not convert the audio.
+This requires a server with the replacement API and job owner, contributor, or
+administrator permission; Shared accounts and active jobs cannot use it.
+
+Replacement overwrites audio and embedded tags, artwork, ratings, and lyrics
+in every linked playlist. The server filename, playlist membership/order,
+transcription lock, and other files (including NoVocals versions) stay intact.
+Library and queued copies refresh, old transcription status is cleared, and
+the current song reloads from the beginning without resuming paused playback.
+Keep the app open during upload. If interrupted, refresh before retrying:
+the server may already have completed the replacement.
+
 **Transcribe lyrics** opens the server-compatible **Transcribe Song** options:
 auto-detect or a supported language, Multilingual, a no-vocals karaoke version,
 Viet Lyrics Fallback (locks the language to Vietnamese), and optional supplied

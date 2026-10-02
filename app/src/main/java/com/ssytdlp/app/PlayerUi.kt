@@ -148,6 +148,7 @@ fun NowPlayingScreen(model: MusicViewModel, state: PlaybackState, download: (Str
     var ratingTrack by remember { mutableStateOf<Track?>(null) }
     var editingTrack by remember { mutableStateOf<Track?>(null) }
     val account by model.sessions.account.collectAsStateWithLifecycle()
+    var replacingTrack by remember(account?.origin, account?.user?.id, account?.user?.role) { mutableStateOf<Track?>(null) }
     var preferUslt by rememberSaveable(state.track?.key) { mutableStateOf(false) }
     var artworkDrag by remember(state.track?.key, tab) { mutableFloatStateOf(0f) }
     val artworkOffset by key(state.track?.key, tab) {
@@ -171,6 +172,10 @@ fun NowPlayingScreen(model: MusicViewModel, state: PlaybackState, download: (Str
                     !user.isShared && model.library.library.jobs.find { it.id == track.jobId }?.canModify(user) == true
                 } == true
                 if (canEdit) ToolButton(Icons.Rounded.Edit, "Edit metadata", enabled = !model.busy) { editingTrack = track }
+                if (canReplaceFile(account?.user,
+                    model.library.library.jobs.find { it.id == track.jobId } ?: model.jobs.find { it.id == track.jobId }, track)) {
+                    ToolButton(Icons.Rounded.UploadFile, "Replace File", enabled = !model.busy) { replacingTrack = track }
+                }
                 ToolButton(Icons.Rounded.Download, "Save file", enabled = !model.busy) {
                     download(track.downloadUrl ?: songPath(track, "download"), track.name)
                 }
@@ -221,6 +226,12 @@ fun NowPlayingScreen(model: MusicViewModel, state: PlaybackState, download: (Str
     }
     ratingTrack?.let { track -> MetadataDialog(model, track, ratingOnly = true) { ratingTrack = null } }
     editingTrack?.let { track -> MetadataDialog(model, track) { editingTrack = null } }
+    replacingTrack?.let { track ->
+        if (canReplaceFile(account?.user,
+            model.library.library.jobs.find { it.id == track.jobId } ?: model.jobs.find { it.id == track.jobId }, track)) {
+            ReplaceFileDialog(model, track) { replacingTrack = null }
+        }
+    }
 }
 
 @Composable
@@ -511,6 +522,9 @@ fun TrackMenu(model: MusicViewModel, track: Track, index: Int, download: (String
     var transfer by remember(canTransfer) { mutableStateOf<String?>(null) }
     val canModify = user != null && !user.isShared &&
         model.library.library.jobs.find { it.id == track.jobId }?.canModify(user) == true
+    val canReplace = canReplaceFile(user,
+        model.library.library.jobs.find { it.id == track.jobId } ?: model.jobs.find { it.id == track.jobId }, track)
+    var replace by remember(canReplace, track.key, account?.origin, user?.id) { mutableStateOf(false) }
     var transcribe by remember(canModify, track.key) { mutableStateOf(false) }
     Box {
         ToolButton(Icons.Rounded.MoreVert, "Options for ${track.displayTitle}", enabled = !model.busy) { open = true }
@@ -532,11 +546,15 @@ fun TrackMenu(model: MusicViewModel, track: Track, index: Int, download: (String
                 TranscribeMenuItem(model.library.transcriptionLocked(track), model.transcriptionAvailable, model.busy) {
                     open = false; transcribe = true
                 }
+                if (canReplace) DropdownMenuItem(text = { Text("Replace File") },
+                    leadingIcon = { Icon(Icons.Rounded.UploadFile, null) }, enabled = !model.busy,
+                    onClick = { open = false; replace = true })
             }
             if (canModify && track.playlistId != null) DropdownMenuItem(text = { Text("Remove from playlist") }, leadingIcon = { Icon(Icons.Rounded.DeleteOutline, null) }, onClick = { open = false; remove = true })
         }
     }
     if (edit) MetadataDialog(model, track) { edit = false }
+    if (canReplace && replace) ReplaceFileDialog(model, track) { replace = false }
     if (transcribe) TranscribeDialog(model, track) { transcribe = false }
     if (remove) ConfirmDialog("Remove this song?", "This removes its playlist membership. If no other links remain, the server deletes the media file. This cannot be undone.", { remove = false }) { model.remove(track); remove = false }
     if (canTransfer && transfer != null) DestinationDialog(if (transfer == "link") "Add to playlist" else "Move to playlist",

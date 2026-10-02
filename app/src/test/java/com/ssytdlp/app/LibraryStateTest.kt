@@ -110,4 +110,42 @@ class LibraryStateTest {
         assertEquals(sent, refreshed.transcription(track))
         assertEquals(failed, refreshed.copy(pendingTranscriptions = emptyMap()).transcription(track))
     }
+
+    @Test fun `replacement clears stale rating and transcription while keeping membership and companions`() {
+        val companion = track.copy(name = "[NoVocals]/song.mp3")
+        val original = track.copy(playlistId = "playlist", playlistTitle = "Playlist", rating = 5,
+            transcription = done, transcriptionLocked = true, noVocalsVersion = companion)
+        val other = original.copy(jobId = "other")
+        val initial = LibraryState(selectedId = "playlist", search = "old", page = 2,
+            tracks = TrackPage(files = listOf(original, other)),
+            pendingTranscriptions = mapOf(original.key to sent),
+            transcriptions = mapOf(original.key to done), ratings = mapOf(original.key to 5))
+        val file = track.copy(title = "Replacement", streamUrl = "/api/stream/song.mp3?v=2", transcriptionLocked = true)
+        val refreshed = initial.withReplacedFile(file)
+        val updated = refreshed.tracks.files.first()
+        assertEquals(file.streamUrl, updated.streamUrl)
+        assertEquals("Replacement", updated.title)
+        assertEquals(original.key, updated.key)
+        assertEquals("playlist", updated.playlistId)
+        assertEquals("Playlist", updated.playlistTitle)
+        assertEquals(companion, updated.noVocalsVersion)
+        assertTrue(refreshed.transcriptionLocked(original))
+        assertEquals(0, refreshed.rating(original))
+        assertNull(refreshed.transcription(original))
+        assertFalse(refreshed.pendingTranscriptions.containsKey(original.key))
+        assertEquals(other, refreshed.tracks.files.last())
+        assertEquals("playlist", refreshed.selectedId)
+        assertEquals("old", refreshed.search)
+        assertEquals(2, refreshed.page)
+    }
+
+    @Test fun `replacing a no vocals file refreshes nested references but not original audio`() {
+        val companion = track.copy(name = "[NoVocals]/song.mp3", streamUrl = "/api/stream/karaoke?v=1")
+        val original = track.copy(noVocalsVersion = companion, streamUrl = "/api/stream/original?v=1")
+        val replacement = companion.copy(title = "New instrumental", streamUrl = "/api/stream/karaoke?v=2")
+        val updated = original.withReplacedFile(replacement)
+        assertEquals(original.streamUrl, updated.streamUrl)
+        assertEquals(replacement, updated.noVocalsVersion)
+        assertEquals(replacement, companion.withReplacedFile(replacement))
+    }
 }

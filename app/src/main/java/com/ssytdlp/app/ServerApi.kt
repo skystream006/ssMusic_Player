@@ -111,12 +111,12 @@ class ServerApi(
         ))
     }
 
-    suspend fun upload(body: RequestBody): JsonElement {
+    suspend fun upload(body: RequestBody, path: String = "/api/jobs/import"): JsonElement {
         val owner = currentAccount() ?: throw ApiException(401, "Sign in with your passkey.")
         return mutationWhileResumed {
             requireOwner(owner)
             executeJson(authenticatedClient.newBuilder().readTimeout(30, TimeUnit.MINUTES).build().newCall(
-                Request.Builder().url(ServerResource.resolve(owner.origin, "/api/jobs/import"))
+                Request.Builder().url(ServerResource.resolve(owner.origin, path))
                     .tag(RequestOwner::class.java, RequestOwner(owner)).post(body).build()
             )).also { requireOwner(owner) }
         }

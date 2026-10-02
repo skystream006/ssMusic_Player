@@ -20,6 +20,8 @@ import kotlinx.serialization.json.decodeFromJsonElement
 import kotlinx.serialization.json.put
 import okhttp3.OkHttpClient
 import okhttp3.Request
+import okhttp3.MultipartBody
+import okhttp3.RequestBody.Companion.toRequestBody
 import okhttp3.mockwebserver.MockResponse
 import okhttp3.mockwebserver.MockWebServer
 import okhttp3.tls.HandshakeCertificates
@@ -107,6 +109,37 @@ class ServerApiTest {
         assertEquals(true, record.options!!.noVocalsOnly)
         assertEquals("No-vocals version generated", record.label)
         assertFalse(record.lyricsIncluded)
+    }
+
+    @Test fun `replacement uploads one file to the fully encoded song path`() = runBlocking {
+        server.enqueue(MockResponse().setBody("""{"file":{"name":"[NoVocals]/a & b.mp3","streamUrl":"/api/stream/song.mp3?v=2"},"metadata":{"rating":0}}"""))
+        val body = MultipartBody.Builder().setType(MultipartBody.FORM)
+            .addFormDataPart("file", "new.MP3", "replacement audio".toRequestBody()).build()
+        val result = api.upload(body, "/api/jobs/${encode("job/id")}/files/${encode("[NoVocals]/a & b.mp3")}/replace")
+        val request = server.takeRequest(2, TimeUnit.SECONDS)!!
+        assertEquals("POST", request.method)
+        assertEquals(listOf("api", "jobs", "job/id", "files", "[NoVocals]/a & b.mp3", "replace"),
+            request.requestUrl!!.pathSegments)
+        assertEquals(listOf("Bearer", token).joinToString(" "), request.getHeader("Authorization"))
+        assertTrue(request.getHeader("Content-Type")!!.startsWith("multipart/form-data;"))
+        val text = request.body.readUtf8()
+        assertEquals(1, Regex("Content-Disposition: form-data;").findAll(text).count())
+        assertTrue(text.contains("name=\"file\"; filename=\"new.MP3\""))
+        assertTrue(text.contains("replacement audio"))
+        assertTrue(result.toString().contains("?v=2"))
+    }
+
+    @Test fun `replacement surfaces server validation permission and conflict failures`() = runBlocking {
+        for (status in listOf(400, 403, 409, 413)) {
+            server.enqueue(MockResponse().setResponseCode(status).setBody("""{"error":"Replacement rejected $status"}"""))
+            val error = runCatching {
+                api.upload("audio".toRequestBody(), "/api/jobs/job/files/song.mp3/replace")
+            }.exceptionOrNull() as ApiException
+            assertEquals(status, error.status)
+            assertEquals("Replacement rejected $status", error.message)
+            assertNotNull(account)
+        }
+        assertEquals(4, server.requestCount)
     }
 
     @Test fun `app exchange uses unauthenticated transport even with an existing session`() = runBlocking {
