@@ -546,10 +546,10 @@ fun TrackMenu(model: MusicViewModel, track: Track, index: Int, download: (String
                 TranscribeMenuItem(model.library.transcriptionLocked(track), model.transcriptionAvailable, model.busy) {
                     open = false; transcribe = true
                 }
-                if (canReplace) DropdownMenuItem(text = { Text("Replace File") },
-                    leadingIcon = { Icon(Icons.Rounded.UploadFile, null) }, enabled = !model.busy,
-                    onClick = { open = false; replace = true })
             }
+            if (canReplace) DropdownMenuItem(text = { Text("Replace File") },
+                leadingIcon = { Icon(Icons.Rounded.UploadFile, null) }, enabled = !model.busy,
+                onClick = { open = false; replace = true })
             if (canModify && track.playlistId != null) DropdownMenuItem(text = { Text("Remove from playlist") }, leadingIcon = { Icon(Icons.Rounded.DeleteOutline, null) }, onClick = { open = false; remove = true })
         }
     }

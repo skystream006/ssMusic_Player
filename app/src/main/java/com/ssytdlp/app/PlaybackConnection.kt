@@ -124,16 +124,6 @@ class PlaybackConnection(
         mutableState.value = PlaybackState()
     }
 
-    internal fun Player.replaceSongFile(file: Track, api: ServerApi) {
-        val current = currentMediaItem?.asTrack()
-        for (index in 0 until mediaItemCount) {
-            val track = getMediaItemAt(index).asTrack() ?: continue
-            val updated = track.withReplacedFile(file)
-            if (updated != track) replaceMediaItem(index, updated.toMediaItem(api))
-        }
-        if (current?.key == file.key && current.streamUrl != file.streamUrl) seekTo(currentMediaItemIndex, 0)
-    }
-
     private fun snapshot() {
         val player = controller ?: return
         mutableState.value = PlaybackState(true, player.currentMediaItem?.asTrack(),
@@ -142,4 +132,17 @@ class PlaybackConnection(
             player.currentPosition.coerceAtLeast(0), player.duration.coerceAtLeast(0), player.shuffleModeEnabled,
             player.repeatMode, if (player.playerError != null) mutableState.value.error else null)
     }
+}
+
+internal fun Player.replaceSongFile(file: Track, api: ServerApi) {
+    val current = currentMediaItem?.asTrack()
+    val currentIndex = currentMediaItemIndex
+    val position = currentPosition
+    for (index in 0 until mediaItemCount) {
+        val track = getMediaItemAt(index).asTrack() ?: continue
+        val updated = track.withReplacedFile(file)
+        if (updated != track) replaceMediaItem(index, updated.toMediaItem(api))
+    }
+    val reload = current?.key == file.key && current.streamUrl != file.streamUrl
+    if (reload || currentMediaItemIndex != currentIndex) seekTo(currentIndex, if (reload) 0 else position)
 }

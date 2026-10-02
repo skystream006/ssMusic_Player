@@ -31,7 +31,7 @@ internal suspend fun buildReplacementBody(context: Context, track: Track, uri: U
     withContext(Dispatchers.IO) {
         val document = selectedDocument(context, uri)
         validateReplacementDocument(track, document)
-        MultipartBody.Builder().setType(MultipartBody.FORM).addFormDataPart("file", document.name,
+        val multipart = MultipartBody.Builder().setType(MultipartBody.FORM).addFormDataPart("file", document.name,
             object : RequestBody() {
                 override fun contentType() = "application/octet-stream".toMediaType()
                 override fun contentLength() = document.size ?: -1L
@@ -54,6 +54,13 @@ internal suspend fun buildReplacementBody(context: Context, track: Track, uri: U
                     }
                 }
             }).build()
+        // OkHttp 4.x does not propagate isOneShot from multipart parts to the outer body.
+        object : RequestBody() {
+            override fun contentType() = multipart.contentType()
+            override fun contentLength() = multipart.contentLength()
+            override fun isOneShot() = true
+            override fun writeTo(sink: BufferedSink) = multipart.writeTo(sink)
+        }
     }
 
 fun selectedDocument(context: Context, uri: Uri): SelectedDocument {

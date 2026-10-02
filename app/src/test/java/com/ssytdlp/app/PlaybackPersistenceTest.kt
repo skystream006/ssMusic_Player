@@ -205,6 +205,18 @@ class PlaybackPersistenceTest {
         assertTrue(player.playWhenReady)
     }
 
+    @Test fun `replacement keeps the selected duplicate with repeat one enabled`() {
+        player.setMediaItems(listOf(second, first, first).map { it.toMediaItem(api) }, 2, 12_345)
+        player.repeatMode = Player.REPEAT_MODE_ONE
+        val replacement = first.copy(streamUrl = "/api/stream/first.mp3?v=2")
+        player.replaceSongFile(replacement, api)
+        assertEquals(2, player.currentMediaItemIndex)
+        assertEquals(replacement, player.currentMediaItem!!.asTrack())
+        assertEquals(0L, player.currentPosition)
+        assertFalse(player.playWhenReady)
+        assertEquals(Player.REPEAT_MODE_ONE, player.repeatMode)
+    }
+
     @Test fun `replacing current audio preserves play intent and refreshing nested karaoke does not rewind`() {
         val instrumental = first.copy(name = "[NoVocals]/first.mp3", streamUrl = "/api/stream/karaoke?v=1")
         player.setMediaItems(listOf(first.copy(noVocalsVersion = instrumental).toMediaItem(api)), 0, 12_345)

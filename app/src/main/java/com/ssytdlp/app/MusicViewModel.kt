@@ -65,7 +65,7 @@ data class LibraryState(
 internal fun Track.withReplacedFile(file: Track): Track = when {
     key == file.key -> file.copy(playlistId = playlistId, playlistTitle = playlistTitle,
         noVocalsVersion = file.noVocalsVersion ?: noVocalsVersion, transcription = null)
-    noVocalsVersion?.key == file.key -> copy(noVocalsVersion = noVocalsVersion.withReplacedFile(file))
+    noVocalsVersion?.key == file.key -> copy(noVocalsVersion = noVocalsVersion?.withReplacedFile(file))
     else -> this
 }
 

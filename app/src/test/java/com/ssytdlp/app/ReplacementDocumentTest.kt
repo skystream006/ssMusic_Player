@@ -14,7 +14,6 @@ import java.io.File
 import java.io.IOException
 import java.io.RandomAccessFile
 import kotlinx.coroutines.runBlocking
-import okhttp3.MultipartBody
 import okio.Buffer
 import okio.blackholeSink
 import okio.buffer
@@ -71,16 +70,16 @@ class ReplacementDocumentTest {
 
     @Test fun `multipart contains exactly one streamed file and no import fields`() = runBlocking {
         provider.size = null
-        val body = buildReplacementBody(context, track, uri) as MultipartBody
-        assertEquals(1, body.parts.size)
-        val part = body.parts.single()
-        assertEquals("form-data; name=\"file\"; filename=\"replacement.MP3\"",
-            part.headers!!["Content-Disposition"])
-        assertTrue(part.body.isOneShot())
-        assertEquals(-1L, part.body.contentLength())
+        val body = buildReplacementBody(context, track, uri)
+        assertTrue(body.isOneShot())
+        assertEquals(-1L, body.contentLength())
+        assertTrue(body.contentType().toString().startsWith("multipart/form-data;"))
         val buffer = Buffer()
-        part.body.writeTo(buffer)
-        assertEquals("replacement audio", buffer.readUtf8())
+        body.writeTo(buffer)
+        val text = buffer.readUtf8()
+        assertEquals(1, Regex("Content-Disposition: form-data;").findAll(text).count())
+        assertTrue(text.contains("name=\"file\"; filename=\"replacement.MP3\""))
+        assertTrue(text.contains("\r\n\r\nreplacement audio\r\n"))
     }
 
     @Test fun `unknown empty and changed content are rejected while streaming`(): Unit = runBlocking {

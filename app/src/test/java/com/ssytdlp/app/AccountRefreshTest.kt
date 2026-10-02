@@ -626,6 +626,21 @@ class AccountRefreshTest {
         assertEquals(1, drainRequests().size)
     }
 
+    @Test fun libraryOffersReplacementForNonMp3Audio() {
+        val track = Track("job", "song.flac")
+        val model = startModel(track) { request ->
+            if (request.requestUrl!!.encodedPath == "/api/library")
+                MockResponse().setBody(ApiJson.encodeToString(
+                    Library(jobs = listOf(Job("job", initiatedBy = account.user))))) else null
+        }
+        compose.setContent { MusicTheme(waveAppearance = false) { TrackMenu(model, track, 0) { _, _ -> } } }
+        compose.onNodeWithContentDescription("Options for ${track.displayTitle}").performClick()
+        compose.onNodeWithText("Edit song / rating").assertDoesNotExist()
+        compose.onNodeWithText("Replace File").assertIsDisplayed().performClick()
+        compose.onNode(isDialog()).assertIsDisplayed()
+        compose.onNodeWithText("Choose replacement file").assertExists()
+    }
+
     @Test fun changedStreamUrlReloadsLyricsAndArtworkForTheSameSongKey() {
         val track = Track("job", "song.mp3", streamUrl = "/api/stream/song.mp3?v=1")
         val old = SongMetadata(uslt = "Old lyrics", artwork = "old artwork", canEdit = true)
