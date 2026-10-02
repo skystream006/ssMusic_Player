@@ -3,12 +3,16 @@ package com.ssytdlp.app
 import android.content.Context
 import android.os.Looper
 import androidx.activity.ComponentActivity
+import androidx.compose.runtime.collectAsState
+import androidx.compose.ui.test.*
 import androidx.compose.ui.test.junit4.createAndroidComposeRule
 import androidx.lifecycle.ViewModelStore
 import androidx.lifecycle.viewModelScope
 import androidx.test.core.app.ApplicationProvider
 import com.ssytdlp.app.core.Account
 import com.ssytdlp.app.core.ApiJson
+import com.ssytdlp.app.core.Job
+import com.ssytdlp.app.core.Library
 import com.ssytdlp.app.core.LyricLine
 import com.ssytdlp.app.core.Preferences
 import com.ssytdlp.app.core.Session
@@ -300,6 +304,50 @@ class AccountRefreshTest {
         assertFalse(unlockRequests.any { it.path!!.endsWith("/transcribe") })
         assertFalse(model.library.transcriptionLocked(track))
         assertEquals(unlocked, model.metadata)
+    }
+
+    @Test fun nowPlayingMetadataEditorKeepsItsDraftAndSaveBoundToTheOriginalSong() {
+        val track = Track("job", "song.mp3", title = "Original song")
+        val next = track.copy(name = "next.mp3", title = "Next song")
+        val original = SongMetadata(title = "Original song", artist = "Artist", album = "Album",
+            genre = "Pop", year = "2026", rating = 3, canEdit = true)
+        val nextMetadata = original.copy(title = "Next song")
+        val updated = original.copy(title = "Edited song")
+        val path = "/api/jobs/job/files/song.mp3/metadata"
+        val model = startModel(track) { request ->
+            when (request.requestUrl!!.encodedPath) {
+                "/api/library" -> MockResponse().setBody(ApiJson.encodeToString(
+                    Library(jobs = listOf(Job("job", initiatedBy = account.user)))))
+                songPath(track, "lyrics") -> MockResponse().setBody(ApiJson.encodeToString(original))
+                songPath(next, "lyrics") -> MockResponse().setBody(ApiJson.encodeToString(nextMetadata))
+                path -> metadataResponse(updated)
+                else -> null
+            }
+        }
+        showTrack(model, track)
+        compose.setContent {
+            MusicTheme { NowPlayingScreen(model, model.playback.state.collectAsState().value) { _, _ -> } }
+        }
+        compose.onNodeWithContentDescription("Edit metadata").performClick()
+        waitFor { compose.onAllNodesWithText("Title").fetchSemanticsNodes().isNotEmpty() }
+        compose.onNodeWithText("Title").performTextReplacement("Discard this")
+        compose.onNodeWithText("Cancel").performClick()
+        compose.onNode(isDialog()).assertDoesNotExist()
+        assertFalse(drainRequests().any { it.method == "PATCH" })
+
+        compose.onNodeWithContentDescription("Edit metadata").performClick()
+        waitFor { compose.onAllNodesWithText("Title").fetchSemanticsNodes().isNotEmpty() }
+        compose.onNodeWithText("Title").assertTextContains("Original song").performTextReplacement("Edited song")
+        showTrack(model, next)
+        waitFor { model.metadata == nextMetadata }
+        compose.onNodeWithText("Title").assertTextContains("Edited song")
+        compose.onNodeWithText("Save").assertIsEnabled().performClick()
+        waitFor { model.notice == "Song information saved." && !model.busy }
+        compose.onNode(isDialog()).assertDoesNotExist()
+        assertPatch(drainRequests().single { it.method == "PATCH" }, path,
+            """{"title":"Edited song","artist":"Artist","album":"Album","genre":"Pop","year":"2026","rating":3}""")
+        assertEquals(nextMetadata, model.metadata)
+        assertEquals(next, model.playback.state.value.track)
     }
 
     @Test fun unlockingTranscriptionPatchesOnlyTheLockEvenWhenServiceIsInactive() {

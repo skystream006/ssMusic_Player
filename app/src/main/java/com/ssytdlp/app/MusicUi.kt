@@ -217,7 +217,7 @@ fun MusicApp(model: MusicViewModel, requestNotifications: () -> Unit) {
                                 LibraryScreen(model, playback, playLibrary, download)
                                 if (libraryBrowser) LibraryBrowser(model) { libraryBrowser = false }
                             }
-                            1 -> NowPlayingScreen(model, playback)
+                            1 -> NowPlayingScreen(model, playback, download)
                             2 -> SettingsScreen(model, download, onJobs = { screen = 3 })
                             3 -> if (account?.user?.isShared != true) JobsScreen(model, requestNotifications, download)
                         }

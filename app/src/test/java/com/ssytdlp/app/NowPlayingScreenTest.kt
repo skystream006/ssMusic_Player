@@ -73,11 +73,79 @@ class NowPlayingScreenTest {
     }
 
     @Test fun emptyPageExplainsHowToStartPlayback() {
-        compose.setContent { MusicTheme { NowPlayingScreen(model, PlaybackState()) } }
+        compose.setContent { MusicTheme { NowPlayingScreen(model, PlaybackState()) { _, _ -> } } }
         compose.onNodeWithText("NOW PLAYING").assertIsDisplayed()
         compose.onNodeWithText("Choose a song from Library to start playing.").assertIsDisplayed()
         compose.onNodeWithContentDescription("Play").assertDoesNotExist()
         compose.onNodeWithContentDescription("Close player").assertDoesNotExist()
+        compose.onNodeWithContentDescription("Edit metadata").assertDoesNotExist()
+        compose.onNodeWithContentDescription("Save file").assertDoesNotExist()
+    }
+
+    @Test fun nowPlayingActionsRespectEditingPermissionsAndBusyStateAcrossTabs() {
+        val track = Track(jobId = "preview", name = "song.MP3", playlistTitle = "A long playlist title ".repeat(5))
+        val state = mutableStateOf(PlaybackState(track = track, queue = listOf(track)))
+        val account = ReflectionHelpers.getField<MutableStateFlow<Account?>>(model.sessions, "mutableAccount")
+        val library = ReflectionHelpers.getField<MutableState<LibraryState>>(model, "library\$delegate")
+        val busy = ReflectionHelpers.getField<MutableState<Boolean>>(model, "busy\$delegate")
+        compose.runOnIdle {
+            model.viewModelScope.cancel()
+            account.value = Account("https://music.example", User(id = "owner"), Session("test", "2099-01-01T00:00:00Z"))
+            library.value = LibraryState(library = Library(jobs = listOf(
+                Job("preview", initiatedBy = User(id = "owner"), contributors = listOf(User(id = "contributor"))))))
+        }
+        compose.setContent { MusicTheme { NowPlayingScreen(model, state.value) { _, _ -> } } }
+        listOf("Player", "Lyrics", "Queue").forEach { tab ->
+            compose.onNodeWithText(tab).performClick()
+            compose.onNodeWithContentDescription("Edit metadata").assertIsDisplayed().assertIsEnabled()
+            compose.onNodeWithContentDescription("Save file").assertIsDisplayed().assertIsEnabled()
+        }
+        compose.runOnIdle { busy.value = true }
+        compose.onNodeWithContentDescription("Edit metadata").assertIsNotEnabled()
+        compose.onNodeWithContentDescription("Save file").assertIsNotEnabled()
+        compose.runOnIdle { busy.value = false }
+        listOf(User(id = "contributor"), User(id = "admin", role = "admin")).forEach { user ->
+            compose.runOnIdle { account.value = account.value!!.copy(user = user) }
+            compose.onNodeWithContentDescription("Edit metadata").assertIsEnabled()
+        }
+        listOf(User(id = "unrelated"), User(id = "owner", role = "Shared"),
+            User(id = "owner", role = "SHARED")).forEach { user ->
+            compose.runOnIdle { account.value = account.value!!.copy(user = user) }
+            compose.onNodeWithContentDescription("Edit metadata").assertDoesNotExist()
+            compose.onNodeWithContentDescription("Save file").assertIsEnabled()
+        }
+        compose.runOnIdle {
+            account.value = account.value!!.copy(user = User(id = "owner"))
+            state.value = state.value.copy(track = track.copy(name = "video.mp4", mediaType = "video"))
+        }
+        compose.onNodeWithContentDescription("Edit metadata").assertDoesNotExist()
+        compose.onNodeWithContentDescription("Save file").assertIsEnabled()
+        compose.runOnIdle { account.value = null; state.value = state.value.copy(track = track) }
+        compose.onNodeWithContentDescription("Edit metadata").assertDoesNotExist()
+    }
+
+    @Test fun saveFileUsesCurrentTracksDownloadUrlOrEncodedFallbackWithoutChangingPlayback() {
+        val track = Track(jobId = "job id", name = "[NoVocals]/first song.mp3", downloadUrl = "/api/custom/download")
+        val next = Track(jobId = "job id", name = "[NoVocals]/next song.mp3")
+        val state = mutableStateOf(PlaybackState(track = track, queue = listOf(track, next), position = 42_000))
+        val downloads = mutableListOf<Pair<String, String>>()
+        compose.setContent {
+            MusicTheme { NowPlayingScreen(model, state.value) { path, name -> downloads.add(path to name) } }
+        }
+        compose.onNodeWithContentDescription("Save file").performClick()
+        compose.runOnIdle {
+            assertEquals(listOf("/api/custom/download" to track.name), downloads)
+            assertEquals(track, state.value.track)
+            assertEquals(42_000L, state.value.position)
+            state.value = state.value.copy(track = next, index = 1)
+        }
+        compose.onNodeWithText("Queue").performClick()
+        compose.onNodeWithContentDescription("Save file").performClick()
+        compose.runOnIdle {
+            assertEquals(listOf("/api/custom/download" to track.name,
+                "/api/jobs/job%20id/download/%5BNoVocals%5D%2Fnext%20song.mp3" to next.name), downloads)
+            assertEquals(1, state.value.index)
+        }
     }
 
     @Test fun noVocalsOnlyHidesOtherOptionsAndRestoresItsSelection() {
@@ -354,7 +422,7 @@ class NowPlayingScreenTest {
             metadata.value = SongMetadata(sylt = listOf(LyricLine(1.234, "Timed line")), uslt = "Plain line",
                 transcriptionLocked = true, canEdit = true)
         }
-        compose.setContent { MusicTheme { NowPlayingScreen(model, PlaybackState(track = track)) } }
+        compose.setContent { MusicTheme { NowPlayingScreen(model, PlaybackState(track = track)) { _, _ -> } } }
         compose.onNodeWithText("SYLT Lyrics").performClick()
         compose.onNodeWithText("Edit lyrics").assertIsDisplayed().performClick()
         compose.onNode(isDialog()).assertIsDisplayed()
@@ -384,7 +452,7 @@ class NowPlayingScreenTest {
             account.value = Account("https://music.example", User(id = "owner"), Session("test", "2099-01-01T00:00:00Z"))
             metadata.value = SongMetadata(uslt = "Original lyrics", canEdit = true)
         }
-        compose.setContent { MusicTheme { NowPlayingScreen(model, state.value) } }
+        compose.setContent { MusicTheme { NowPlayingScreen(model, state.value) { _, _ -> } } }
         compose.onNodeWithText("USLT Lyrics").performClick()
         compose.onNodeWithText("Edit lyrics").performClick()
         compose.onNodeWithTag("uslt-editor").performTextReplacement("Unsaved draft")
@@ -404,7 +472,7 @@ class NowPlayingScreenTest {
         val track = Track(jobId = "preview", name = "song.mp3", title = "Blue hour", artist = "Northbound")
         val state = PlaybackState(track = track, queue = listOf(track), duration = 180_000)
         val restoration = StateRestorationTester(compose)
-        restoration.setContent { MusicTheme { NowPlayingScreen(model, state) } }
+        restoration.setContent { MusicTheme { NowPlayingScreen(model, state) { _, _ -> } } }
         compose.onNodeWithText("Player").assertIsSelected()
         compose.onNodeWithContentDescription("Playback position").assertIsDisplayed()
         compose.onNodeWithContentDescription("Play").assertIsDisplayed()
@@ -436,7 +504,7 @@ class NowPlayingScreenTest {
         val track = Track(jobId = "preview", name = "song.mp3")
         val next = track.copy(name = "next.mp3", rating = 4)
         compose.setContent {
-            MusicTheme { NowPlayingScreen(model, PlaybackState(track = track, queue = listOf(track, next))) }
+            MusicTheme { NowPlayingScreen(model, PlaybackState(track = track, queue = listOf(track, next))) { _, _ -> } }
         }
         compose.onNodeWithText("Queue").performClick()
         compose.onNodeWithContentDescription("Rating: 4 out of 5").performClick()
@@ -450,7 +518,7 @@ class NowPlayingScreenTest {
     @Test fun queueRatingReflectsSavedAndClearedValuesOutsideTheCurrentLibraryPage() {
         val track = Track(jobId = "preview", name = "song.mp3", rating = 4)
         val library = ReflectionHelpers.getField<MutableState<LibraryState>>(model, "library\$delegate")
-        compose.setContent { MusicTheme { NowPlayingScreen(model, PlaybackState(track = track, queue = listOf(track))) } }
+        compose.setContent { MusicTheme { NowPlayingScreen(model, PlaybackState(track = track, queue = listOf(track))) { _, _ -> } } }
         compose.onNodeWithText("Queue").performClick()
         compose.onNodeWithContentDescription("Rating: 4 out of 5").assertIsDisplayed()
         compose.runOnIdle { library.value = library.value.copy(ratings = mapOf(track.key to 2)) }
@@ -472,7 +540,7 @@ class NowPlayingScreenTest {
         }
         compose.setContent {
             MusicTheme {
-                Box(Modifier.fillMaxSize().testTag("page")) { NowPlayingScreen(model, state.value) }
+                Box(Modifier.fillMaxSize().testTag("page")) { NowPlayingScreen(model, state.value) { _, _ -> } }
             }
         }
         compose.onNodeWithText("SYLT Lyrics").performClick()
@@ -539,7 +607,7 @@ class NowPlayingScreenTest {
             library.value = LibraryState(library = Library(jobs = listOf(Job(id = "source",
                 transcriptions = mapOf(track.name to Transcription(status = "transcribed", lyricsIncluded = true))))))
         }
-        compose.setContent { MusicTheme { NowPlayingScreen(model, PlaybackState(track = track, queue = listOf(track))) } }
+        compose.setContent { MusicTheme { NowPlayingScreen(model, PlaybackState(track = track, queue = listOf(track))) { _, _ -> } } }
         compose.onNodeWithText("Queue").performClick()
         compose.onNodeWithText("Lyrics Included").assertDoesNotExist()
         val status = compose.onNodeWithContentDescription("Lyrics Included", substring = true)
@@ -560,7 +628,7 @@ class NowPlayingScreenTest {
     @Test fun playerTabShowsTranscriptionStatusButHidesNotTranscribed() {
         val track = Track(jobId = "source", name = "song.mp3", artist = "Northbound")
         val library = ReflectionHelpers.getField<MutableState<LibraryState>>(model, "library\$delegate")
-        compose.setContent { MusicTheme { NowPlayingScreen(model, PlaybackState(track = track)) } }
+        compose.setContent { MusicTheme { NowPlayingScreen(model, PlaybackState(track = track)) { _, _ -> } } }
         compose.onNodeWithText("Northbound").assertIsDisplayed()
         compose.onNodeWithText("Not transcribed").assertDoesNotExist()
         compose.onNodeWithContentDescription("Transcription status unknown", substring = true).assertDoesNotExist()
@@ -576,7 +644,7 @@ class NowPlayingScreenTest {
     @Test fun queueShowsRefreshedStatusInsteadOfItsOriginalTrackSnapshot() {
         val track = Track(jobId = "source", name = "song.mp3", transcription = Transcription(status = "sent"))
         val library = ReflectionHelpers.getField<MutableState<LibraryState>>(model, "library\$delegate")
-        compose.setContent { MusicTheme { NowPlayingScreen(model, PlaybackState(track = track, queue = listOf(track))) } }
+        compose.setContent { MusicTheme { NowPlayingScreen(model, PlaybackState(track = track, queue = listOf(track))) { _, _ -> } } }
         compose.onNodeWithText("Queue").performClick()
         compose.onNodeWithContentDescription("Transcription request sent", substring = true).assertIsDisplayed()
         compose.runOnIdle {
@@ -597,7 +665,7 @@ class NowPlayingScreenTest {
     @Test fun lyricsTabTracksDisplayedSourceWithoutChangingSelection() {
         val track = Track(jobId = "preview", name = "song.mp3")
         val metadata = ReflectionHelpers.getField<MutableState<SongMetadata?>>(model, "metadata\$delegate")
-        compose.setContent { MusicTheme { NowPlayingScreen(model, PlaybackState(track = track)) } }
+        compose.setContent { MusicTheme { NowPlayingScreen(model, PlaybackState(track = track)) { _, _ -> } } }
         compose.onNodeWithText("Lyrics").performClick().assertIsSelected()
         compose.onNodeWithText("Loading lyrics...").assertIsDisplayed()
 
@@ -630,7 +698,7 @@ class NowPlayingScreenTest {
             metadata.value = SongMetadata(sylt = listOf(LyricLine(0.0, "Synchronized line")), uslt = "Plain lyrics")
         }
         val restoration = StateRestorationTester(compose)
-        restoration.setContent { MusicTheme { NowPlayingScreen(model, state.value) } }
+        restoration.setContent { MusicTheme { NowPlayingScreen(model, state.value) { _, _ -> } } }
         compose.onNodeWithText("SYLT Lyrics").performClick().assertIsSelected()
         compose.onNodeWithText("Synchronized line").assertIsDisplayed()
         compose.onNodeWithText("SYLT Lyrics").performClick()
@@ -664,7 +732,7 @@ class NowPlayingScreenTest {
             MusicTheme {
                 Box(Modifier.fillMaxSize().testTag("page").playerTrackSwipes(true, true,
                     previous = { unhandledSwipes++ }, next = { unhandledSwipes++ })) {
-                    NowPlayingScreen(model, PlaybackState(track = track, queue = listOf(track)))
+                    NowPlayingScreen(model, PlaybackState(track = track, queue = listOf(track))) { _, _ -> }
                 }
             }
         }
@@ -693,7 +761,7 @@ class NowPlayingScreenTest {
         compose.setContent {
             MusicTheme {
                 Box(Modifier.fillMaxSize().testTag("page")) {
-                    NowPlayingScreen(model, PlaybackState(track = track, queue = listOf(track)))
+                    NowPlayingScreen(model, PlaybackState(track = track, queue = listOf(track))) { _, _ -> }
                 }
             }
         }
@@ -733,7 +801,7 @@ class NowPlayingScreenTest {
         val state = mutableStateOf(PlaybackState(track = track))
         compose.setContent {
             MusicTheme {
-                Box(Modifier.fillMaxSize().testTag("page")) { NowPlayingScreen(model, state.value) }
+                Box(Modifier.fillMaxSize().testTag("page")) { NowPlayingScreen(model, state.value) { _, _ -> } }
             }
         }
         val artwork = compose.onNodeWithContentDescription("Album artwork unavailable")
