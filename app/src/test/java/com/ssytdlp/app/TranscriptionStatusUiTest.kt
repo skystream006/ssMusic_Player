@@ -1,6 +1,9 @@
 package com.ssytdlp.app
 
 import android.app.Application
+import android.graphics.Bitmap
+import android.graphics.Canvas
+import android.view.ViewGroup
 import androidx.activity.ComponentActivity
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.width
@@ -8,6 +11,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.MoreVert
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.snapshots.Snapshot
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.test.*
@@ -34,6 +38,65 @@ import org.robolectric.annotation.GraphicsMode
 @GraphicsMode(GraphicsMode.Mode.LEGACY)
 class TranscriptionStatusUiTest {
     @get:Rule val compose = createAndroidComposeRule<ComponentActivity>()
+
+    @Test
+    @GraphicsMode(GraphicsMode.Mode.NATIVE)
+    fun requestSentIconSpinsInBothLayoutsAndStopsForOtherStatuses() {
+        val record = mutableStateOf<Transcription?>(Transcription(status = "sent"))
+        val iconOnly = mutableStateOf(false)
+        compose.mainClock.autoAdvance = false
+        compose.setContent {
+            MusicTheme(waveAppearance = false) {
+                TranscriptionStatus(record.value, iconOnly = iconOnly.value)
+            }
+        }
+        fun update(transcription: Transcription?, compact: Boolean) {
+            compose.runOnIdle {
+                record.value = transcription
+                iconOnly.value = compact
+                Snapshot.sendApplyNotifications()
+            }
+            compose.mainClock.advanceTimeBy(100)
+        }
+        fun assertMotion(label: String, spinning: Boolean) {
+            val before = captureStatus(label)
+            compose.mainClock.advanceTimeBy(256)
+            val after = captureStatus(label)
+            assertEquals("Unexpected icon motion for $label", spinning, !before.sameAs(after))
+            before.recycle()
+            after.recycle()
+        }
+        listOf(false, true).forEach { compact ->
+            update(Transcription(status = "sent"), compact)
+            assertMotion("Transcription request sent", spinning = true)
+            compose.mainClock.advanceTimeBy(1200)
+            assertMotion("Transcription request sent", spinning = true)
+            statuses.drop(1).forEach { (transcription, label) ->
+                update(transcription, compact)
+                assertMotion(label, spinning = false)
+            }
+            update(Transcription(status = "sent",
+                options = SavedTranscriptionOptions(noVocalsOnly = true)), compact)
+            assertMotion("No-vocals request sent", spinning = true)
+            update(null, compact)
+            compose.onNodeWithContentDescription("request sent", substring = true).assertDoesNotExist()
+        }
+    }
+
+    private fun captureStatus(label: String): Bitmap {
+        val bounds = compose.onNodeWithContentDescription(label, substring = true)
+            .assertIsDisplayed().fetchSemanticsNode().boundsInRoot
+        // Draw the host directly; captureToImage() can hang with Robolectric's paused clock.
+        return compose.runOnIdle {
+            val view = compose.activity.findViewById<ViewGroup>(android.R.id.content).getChildAt(0)
+            Bitmap.createBitmap(bounds.width.toInt(), bounds.height.toInt(), Bitmap.Config.ARGB_8888)
+                .also {
+                    val canvas = Canvas(it)
+                    canvas.translate(-bounds.left, -bounds.top)
+                    view.draw(canvas)
+                }
+        }
+    }
 
     @Test fun aiTranscribedIconOpensDetailsWithoutPlayingSong() {
         checkIconAndDetails(lyricsIncluded = false, label = "AI Transcribed")
