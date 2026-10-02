@@ -1,5 +1,10 @@
 package com.ssytdlp.app
 
+import androidx.compose.animation.core.LinearEasing
+import androidx.compose.animation.core.animateFloat
+import androidx.compose.animation.core.infiniteRepeatable
+import androidx.compose.animation.core.rememberInfiniteTransition
+import androidx.compose.animation.core.tween
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
@@ -20,6 +25,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.contentDescription
@@ -95,6 +101,16 @@ internal fun TranscriptionStatus(transcription: Transcription?, iconOnly: Boolea
         "sent", "transcribed" -> MaterialTheme.colorScheme.primary
         else -> MaterialTheme.colorScheme.onSurfaceVariant
     }
+    val iconModifier = if (transcription.status == "sent") {
+        val transition = rememberInfiniteTransition(label = "Transcription request")
+        val rotation by transition.animateFloat(
+            initialValue = 0f,
+            targetValue = 360f,
+            animationSpec = infiniteRepeatable(tween(1000, easing = LinearEasing)),
+            label = "Transcription request rotation"
+        )
+        Modifier.graphicsLayer { rotationZ = rotation }
+    } else Modifier
     val textMeasurer = rememberTextMeasurer()
     val style = MaterialTheme.typography.labelSmall
     val labelWidth = textMeasurer.measure(label, style, softWrap = false).size.width
@@ -115,7 +131,7 @@ internal fun TranscriptionStatus(transcription: Transcription?, iconOnly: Boolea
                     else -> Icons.Rounded.Subtitles
                 }
                 else -> Icons.Rounded.HelpOutline
-            }, null, Modifier.size(24.dp), tint = color)
+            }, null, Modifier.size(24.dp).then(iconModifier), tint = color)
             if (showLabel) Text(label, style = style, color = color, maxLines = 1)
         }
     }

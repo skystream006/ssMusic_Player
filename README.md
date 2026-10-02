@@ -224,6 +224,7 @@ Library and queue tracks show an icon-only transcription status to the left of
 the rating: request sent, AI transcription, Lyrics included, failed, interrupted,
 or unknown (an unrecognized server status). Tracks without a transcription record
 show no status. AI transcription and Lyrics included share the subtitles icon.
+The request-sent icon spins while the request is pending, including in Now Playing.
 Tap the icon for the status label, request/finish times, saved language and options, and any error;
 tap X or outside the popup to close it. Supplied lyrics are never shown in the
 popup. Status is read from each server track and refreshes every 10 seconds
