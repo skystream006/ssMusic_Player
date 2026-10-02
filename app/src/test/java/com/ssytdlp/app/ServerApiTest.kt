@@ -210,6 +210,18 @@ class ServerApiTest {
         assertEquals(4, server.requestCount)
     }
 
+    @Test fun `replacement multipart uploads are not retried by the HTTP client`() = runBlocking {
+        server.enqueue(MockResponse().setResponseCode(503).setHeader("Retry-After", "0")
+            .setBody("""{"error":"Try again later"}"""))
+        server.enqueue(MockResponse().setBody("{}"))
+        val body = MultipartBody.Builder().setType(MultipartBody.FORM)
+            .addFormDataPart("file", "replacement.mp3", "audio".toRequestBody()).build()
+        val failure = runCatching { api.replaceFile(Track("job", "song.mp3"), body) }.exceptionOrNull()
+        assertTrue(failure is ApiException)
+        assertEquals(503, (failure as ApiException).status)
+        assertEquals(1, server.requestCount)
+    }
+
     @Test fun `library conflicts preserve their response payload for the UI`() = runBlocking {
         server.enqueue(MockResponse().setResponseCode(409).setBody("""{"error":"Library changed","code":"CONFLICT"}"""))
         val failure = runCatching { api.request("/api/library/entries", "POST", buildJsonObject { put("version", 1) }) }.exceptionOrNull() as ApiException

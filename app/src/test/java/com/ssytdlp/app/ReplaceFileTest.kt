@@ -74,7 +74,7 @@ class ReplaceFileTest {
         assertEquals(1, body.parts.size)
         assertEquals("form-data; name=\"file\"; filename=\"replacement.MP3\"",
             body.parts.single().headers!!["Content-Disposition"])
-        assertTrue(body.isOneShot())
+        assertTrue(body.parts.single().body.isOneShot())
         val data = Buffer()
         body.parts.single().body.writeTo(data)
         assertArrayEquals(bytes, data.readByteArray())

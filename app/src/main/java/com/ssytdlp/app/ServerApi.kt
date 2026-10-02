@@ -119,11 +119,18 @@ class ServerApi(
 
     private suspend fun upload(path: String, body: RequestBody): JsonElement {
         val owner = currentAccount() ?: throw ApiException(401, "Sign in with your passkey.")
+        // OkHttp checks the outer body, not individual multipart parts, before retrying.
+        val upload = object : RequestBody() {
+            override fun contentType() = body.contentType()
+            override fun contentLength() = body.contentLength()
+            override fun isOneShot() = true
+            override fun writeTo(sink: okio.BufferedSink) = body.writeTo(sink)
+        }
         return mutationWhileResumed {
             requireOwner(owner)
             executeJson(authenticatedClient.newBuilder().readTimeout(30, TimeUnit.MINUTES).build().newCall(
                 Request.Builder().url(ServerResource.resolve(owner.origin, path))
-                    .tag(RequestOwner::class.java, RequestOwner(owner)).post(body).build()
+                    .tag(RequestOwner::class.java, RequestOwner(owner)).post(upload).build()
             )).also { requireOwner(owner) }
         }
     }
