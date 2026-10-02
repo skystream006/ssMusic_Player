@@ -65,7 +65,8 @@ class BackgroundApiTest {
         }
         listOf("/api/jobs", "/api/jobs/job", "/api/health", "/api/library/tracks",
             "/api/preferences", "/api/auth/me", "/api/jobs/job/download-all",
-            "/api/jobs/job/transcribe/song.mp3", "/api/jobs/job/files/song.mp3/metadata").forEach {
+            "/api/jobs/job/transcribe/song.mp3", "/api/jobs/job/files/song.mp3/metadata",
+            "/api/jobs/job/files/song.mp3/replace").forEach {
             assertFalse(it, isBackgroundPlaybackRequest("GET", it))
         }
     }
@@ -157,6 +158,34 @@ class BackgroundApiTest {
         gate.activityResumed(activity)
         assertNull(server.takeRequest(150, TimeUnit.MILLISECONDS))
         assertEquals(1, server.requestCount)
+    }
+
+    @Test fun `replacement upload cancels on pause without replaying destructive changes`() = runBlocking {
+        server.enqueue(MockResponse().setSocketPolicy(SocketPolicy.NO_RESPONSE))
+        gate.activityResumed(activity)
+        val upload = async(Dispatchers.IO) {
+            runCatching { api.upload("audio".toRequestBody(), "/api/jobs/job/files/song.mp3/replace") }
+        }
+        assertEquals("/api/jobs/job/files/song.mp3/replace", server.takeRequest(5, TimeUnit.SECONDS)!!.path)
+        gate.activityPaused(activity)
+        withTimeout(5_000) { failures.receive() }
+        val error = withTimeout(5_000) { upload.await() }.exceptionOrNull()
+        assertTrue(error is IOException)
+        assertTrue(error!!.message!!.contains("refresh before retrying"))
+        gate.activityResumed(activity)
+        assertNull(server.takeRequest(150, TimeUnit.MILLISECONDS))
+        assertEquals(1, server.requestCount)
+    }
+
+    @Test fun `deferred replacement upload cannot use a different account`() = runBlocking {
+        val upload = async(Dispatchers.IO, start = CoroutineStart.UNDISPATCHED) {
+            runCatching { api.upload("audio".toRequestBody(), "/api/jobs/job/files/song.mp3/replace") }
+        }
+        assertNull(server.takeRequest(150, TimeUnit.MILLISECONDS))
+        account = account.copy(user = User("replacement"))
+        gate.activityResumed(activity)
+        assertTrue(withTimeout(5_000) { upload.await() }.exceptionOrNull() is IOException)
+        assertEquals(0, server.requestCount)
     }
 
     @Test fun `caller cancellation stays cancellation instead of becoming a lifecycle error`() = runBlocking {

@@ -1,7 +1,9 @@
 package com.ssytdlp.app
 
 import android.content.Context
+import android.content.pm.ProviderInfo
 import android.os.Looper
+import android.net.Uri
 import androidx.activity.ComponentActivity
 import androidx.compose.runtime.collectAsState
 import androidx.compose.ui.test.*
@@ -56,15 +58,18 @@ import org.junit.BeforeClass
 import org.junit.Rule
 import org.junit.Test
 import org.junit.runner.RunWith
+import org.junit.rules.TemporaryFolder
 import org.robolectric.RobolectricTestRunner
 import org.robolectric.Shadows.shadowOf
 import org.robolectric.annotation.Config
+import org.robolectric.shadows.ShadowContentResolver
 import org.robolectric.util.ReflectionHelpers
 
 @RunWith(RobolectricTestRunner::class)
 @Config(sdk = [34], application = MusicApplication::class)
 class AccountRefreshTest {
     @get:Rule val compose = createAndroidComposeRule<ComponentActivity>()
+    @get:Rule val replacementDocuments = TemporaryFolder()
     private val models = ViewModelStore()
     private lateinit var context: Context
     private lateinit var application: MusicApplication
@@ -559,6 +564,109 @@ class AccountRefreshTest {
         assertTrue(model.library.transcriptionLocked(track))
         assertTrue(model.library.pendingTranscriptions.isEmpty())
         assertEquals("NoVocals version generated.", model.notice)
+    }
+
+    @Test fun replacementUpdatesLibraryAfterAConfirmedSuccessfulUpload() {
+        val track = Track("job", "song.mp3", title = "Old song", rating = 5,
+            playlistId = "playlist", playlistTitle = "Playlist", transcriptionLocked = true,
+            transcription = com.ssytdlp.app.core.Transcription(status = "transcribed"),
+            streamUrl = "/api/stream/song.mp3?v=1")
+        val replacement = track.copy(title = "New song", rating = 0, transcription = null,
+            streamUrl = "/api/stream/song.mp3?v=2")
+        val saved = AtomicReference(track)
+        val model = startModel(track) { request ->
+            when (request.requestUrl!!.encodedPath) {
+                "/api/library" -> MockResponse().setBody(ApiJson.encodeToString(
+                    Library(jobs = listOf(Job("job", initiatedBy = account.user)))))
+                "/api/library/tracks" -> MockResponse().setBody(ApiJson.encodeToString(
+                    TrackPage(files = listOf(saved.get()))))
+                "/api/jobs/job/files/song.mp3/replace" -> {
+                    saved.set(replacement)
+                    MockResponse().setBody(JsonObject(mapOf(
+                        "file" to ApiJson.encodeToJsonElement(replacement.copy(jobId = "", playlistId = null, playlistTitle = "")),
+                        "metadata" to ApiJson.encodeToJsonElement(SongMetadata(title = "New song", transcriptionLocked = true))
+                    )).toString())
+                }
+                else -> null
+            }
+        }
+        drainRequests()
+        var completed = false
+        val uri = replacementDocument()
+        perform(model) { model.replaceFile(track, uri) { completed = true } }
+        val upload = drainRequests().single { it.method == "POST" }
+        assertEquals("/api/jobs/job/files/song.mp3/replace", upload.path)
+        assertTrue(upload.body.readUtf8().contains("name=\"file\"; filename=\"replacement.MP3\""))
+        assertTrue(completed)
+        assertEquals(replacement, model.library.tracks.files.single())
+        assertEquals(0, model.library.rating(track))
+        assertNull(model.library.transcription(track))
+        assertTrue(model.library.transcriptionLocked(track))
+        assertEquals("Replaced Old song.", model.notice)
+    }
+
+    @Test fun rejectedReplacementLeavesTheSongAndDialogUnchanged() {
+        val track = Track("job", "song.mp3", title = "Original", rating = 5)
+        val model = startModel(track) { request ->
+            when (request.requestUrl!!.encodedPath) {
+                "/api/library" -> MockResponse().setBody(ApiJson.encodeToString(
+                    Library(jobs = listOf(Job("job", initiatedBy = account.user)))))
+                "/api/jobs/job/files/song.mp3/replace" ->
+                    MockResponse().setResponseCode(409).setBody("""{"error":"Song is busy"}""")
+                else -> null
+            }
+        }
+        drainRequests()
+        var completed = false
+        val uri = replacementDocument()
+        perform(model) { model.replaceFile(track, uri) { completed = true } }
+        assertFalse(completed)
+        assertEquals(track, model.library.tracks.files.single())
+        assertEquals(5, model.library.rating(track))
+        assertEquals("Song is busy", model.notice)
+        assertEquals(1, drainRequests().size)
+    }
+
+    @Test fun libraryOffersReplacementForNonMp3Audio() {
+        val track = Track("job", "song.flac")
+        val model = startModel(track) { request ->
+            if (request.requestUrl!!.encodedPath == "/api/library")
+                MockResponse().setBody(ApiJson.encodeToString(
+                    Library(jobs = listOf(Job("job", initiatedBy = account.user))))) else null
+        }
+        compose.setContent { MusicTheme(waveAppearance = false) { TrackMenu(model, track, 0) { _, _ -> } } }
+        compose.onNodeWithContentDescription("Options for ${track.displayTitle}").performClick()
+        compose.onNodeWithText("Edit song / rating").assertDoesNotExist()
+        compose.onNodeWithText("Replace File").assertIsDisplayed().performClick()
+        compose.onNode(isDialog()).assertIsDisplayed()
+        compose.onNodeWithText("Choose replacement file").assertExists()
+    }
+
+    @Test fun changedStreamUrlReloadsLyricsAndArtworkForTheSameSongKey() {
+        val track = Track("job", "song.mp3", streamUrl = "/api/stream/song.mp3?v=1")
+        val old = SongMetadata(uslt = "Old lyrics", artwork = "old artwork", canEdit = true)
+        val saved = AtomicReference(old)
+        val model = startModel(track) { request ->
+            if (request.requestUrl!!.encodedPath == songPath(track, "lyrics"))
+                MockResponse().setBody(ApiJson.encodeToString(saved.get())) else null
+        }
+        showTrack(model, track)
+        assertEquals(old, model.metadata)
+        drainRequests()
+        val updated = old.copy(uslt = "Replacement lyrics", artwork = "replacement artwork")
+        saved.set(updated)
+        showTrack(model, track.copy(streamUrl = "/api/stream/song.mp3?v=2"))
+        waitFor { model.metadata == updated }
+        assertEquals(listOf(songPath(track, "lyrics")), drainRequests().map { it.path })
+        assertTrue(model.metadata!!.canEdit)
+    }
+
+    private fun replacementDocument(): Uri {
+        val uri = Uri.parse("content://replacement-test/song")
+        val provider = ReplacementDocumentProvider(replacementDocuments.newFile().apply { writeText("replacement audio") })
+        provider.attachInfo(context, ProviderInfo().apply { authority = uri.authority })
+        ShadowContentResolver.registerProviderInternal(uri.authority, provider)
+        return uri
     }
 
     private fun startModel(

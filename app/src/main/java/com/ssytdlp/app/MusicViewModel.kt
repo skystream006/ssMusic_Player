@@ -53,6 +53,20 @@ data class LibraryState(
     fun withTranscriptions(job: Job, tracks: List<Track>): LibraryState = copy(
         transcriptions = transcriptions + tracks.filter { it.jobId == job.id }
             .associate { it.key to job.transcriptions[it.name] })
+
+    fun withReplacedFile(file: Track): LibraryState = copy(
+        tracks = tracks.copy(files = tracks.files.map { it.withReplacedFile(file) }),
+        ratings = ratings + (file.key to file.rating),
+        transcriptionLocks = transcriptionLocks + (file.key to file.transcriptionLocked),
+        pendingTranscriptions = pendingTranscriptions - file.key,
+        transcriptions = transcriptions + (file.key to null))
+}
+
+internal fun Track.withReplacedFile(file: Track): Track = when {
+    key == file.key -> file.copy(playlistId = playlistId, playlistTitle = playlistTitle,
+        noVocalsVersion = file.noVocalsVersion ?: noVocalsVersion, transcription = null)
+    noVocalsVersion?.key == file.key -> copy(noVocalsVersion = noVocalsVersion?.withReplacedFile(file))
+    else -> this
 }
 
 class MusicViewModel @JvmOverloads constructor(application: Application, private val connectPlayback: Boolean = true) : AndroidViewModel(application) {
@@ -128,7 +142,7 @@ class MusicViewModel @JvmOverloads constructor(application: Application, private
             }
         }
         viewModelScope.launch {
-            playback.state.map { it.track }.distinctUntilChangedBy { it?.key }.collectLatest { track ->
+            playback.state.map { it.track }.distinctUntilChangedBy { it?.let { track -> track.key to track.streamUrl } }.collectLatest { track ->
                 metadata = null
                 metadataError = null
                 if (track != null && track.mediaType != "video") {
@@ -403,6 +417,29 @@ class MusicViewModel @JvmOverloads constructor(application: Application, private
         refreshTracks()
         message("Lyrics saved.")
         onSuccess()
+    }
+
+    fun replaceFile(track: Track, uri: Uri, onSuccess: () -> Unit) = launchAction {
+        val account = sessions.account.value
+        require(canReplaceFile(account?.user,
+            library.library.jobs.find { it.id == track.jobId } ?: jobs.find { it.id == track.jobId }, track)) {
+            "You do not have permission to replace this song, or its job is active."
+        }
+        val body = buildReplacementBody(getApplication(), track, uri)
+        require(sessions.account.value == account) { "The account changed. Choose the file again." }
+        val result = api.upload(body, "/api/jobs/${encode(track.jobId)}/files/${encode(track.name)}/replace").jsonObject
+        val song = ApiJson.decodeFromJsonElement<SongMetadata>(result.getValue("metadata"))
+        val file = ApiJson.decodeFromJsonElement<Track>(result.getValue("file")).copy(
+            jobId = track.jobId, transcription = null, transcriptionLocked = song.transcriptionLocked)
+        require(file.name == track.name) { "The server returned a different song. Refresh before retrying." }
+        transcriptionGeneration++
+        trackRequest?.cancel()
+        library = library.withReplacedFile(file)
+        playback.replaceFile(file)
+        message("Replaced ${track.displayTitle}.")
+        onSuccess()
+        loadLibrary()
+        refreshTracks()
     }
 
     fun transcribe(track: Track, options: TranscriptionOptions) = launchAction {

@@ -177,6 +177,60 @@ class PlaybackPersistenceTest {
         assertEquals(17_500L, PlaybackStore(context).apply { setAccount(account) }.playback(account)!!.position)
     }
 
+    @Test fun `replacement refreshes every queued copy and persistence without resuming paused playback`() {
+        attach()
+        player.setMediaItems(listOf(first, second, first).map { it.toMediaItem(api) }, 2, 12_345)
+        player.shuffleModeEnabled = true
+        player.repeatMode = Player.REPEAT_MODE_ALL
+        val replacement = first.copy(title = "Replacement", streamUrl = "/api/stream/first.mp3?v=2")
+        player.replaceSongFile(replacement, api)
+        flushEvents()
+        assertEquals(listOf(replacement, second, replacement),
+            (0 until player.mediaItemCount).map { player.getMediaItemAt(it).asTrack() })
+        assertEquals(2, player.currentMediaItemIndex)
+        assertEquals(0L, player.currentPosition)
+        assertFalse(player.playWhenReady)
+        assertTrue(player.shuffleModeEnabled)
+        assertEquals(Player.REPEAT_MODE_ALL, player.repeatMode)
+        assertEquals(api.url(replacement.streamUrl!!), player.currentMediaItem!!.localConfiguration!!.uri.toString())
+        assertEquals(listOf(replacement, second, replacement), store.playback(account)!!.queue)
+    }
+
+    @Test fun `replacing another song preserves current position and playback intent`() {
+        player.setMediaItems(listOf(first, second).map { it.toMediaItem(api) }, 1, 12_345)
+        player.playWhenReady = true
+        player.replaceSongFile(first.copy(streamUrl = "/api/stream/first.mp3?v=2"), api)
+        assertEquals(second, player.currentMediaItem!!.asTrack())
+        assertEquals(12_345L, player.currentPosition)
+        assertTrue(player.playWhenReady)
+    }
+
+    @Test fun `replacement keeps the selected duplicate with repeat one enabled`() {
+        player.setMediaItems(listOf(second, first, first).map { it.toMediaItem(api) }, 2, 12_345)
+        player.repeatMode = Player.REPEAT_MODE_ONE
+        val replacement = first.copy(streamUrl = "/api/stream/first.mp3?v=2")
+        player.replaceSongFile(replacement, api)
+        assertEquals(2, player.currentMediaItemIndex)
+        assertEquals(replacement, player.currentMediaItem!!.asTrack())
+        assertEquals(0L, player.currentPosition)
+        assertFalse(player.playWhenReady)
+        assertEquals(Player.REPEAT_MODE_ONE, player.repeatMode)
+    }
+
+    @Test fun `replacing current audio preserves play intent and refreshing nested karaoke does not rewind`() {
+        val instrumental = first.copy(name = "[NoVocals]/first.mp3", streamUrl = "/api/stream/karaoke?v=1")
+        player.setMediaItems(listOf(first.copy(noVocalsVersion = instrumental).toMediaItem(api)), 0, 12_345)
+        player.playWhenReady = true
+        val karaoke = instrumental.copy(streamUrl = "/api/stream/karaoke?v=2")
+        player.replaceSongFile(karaoke, api)
+        assertEquals(karaoke, player.currentMediaItem!!.asTrack()!!.noVocalsVersion)
+        assertEquals(12_345L, player.currentPosition)
+        player.replaceSongFile(first.copy(streamUrl = "/api/stream/first.mp3?v=2"), api)
+        assertEquals(0L, player.currentPosition)
+        assertTrue(player.playWhenReady)
+        assertEquals(karaoke, player.currentMediaItem!!.asTrack()!!.noVocalsVersion)
+    }
+
     private fun attach() {
         persistence = PlaybackPersistence(player, store, account) { it.toMediaItem(api) }
     }
