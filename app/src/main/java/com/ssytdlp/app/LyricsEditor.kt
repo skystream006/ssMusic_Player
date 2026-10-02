@@ -165,6 +165,7 @@ fun LyricsEditorDialog(value: SongMetadata, preferUslt: Boolean, busy: Boolean =
                                     if (editUslt) it else it.copy(fontFamily = FontFamily.Monospace)
                                 },
                                 modifier = Modifier.fillMaxWidth().weight(1f)
+                                    .heightIn(max = maxHeight.coerceAtLeast(160.dp))
                                     .testTag(if (editUslt) "uslt-editor" else "sylt-editor")
                             )
                         }

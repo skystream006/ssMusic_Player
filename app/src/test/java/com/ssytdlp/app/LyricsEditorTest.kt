@@ -149,6 +149,22 @@ class LyricsEditorDialogTest {
         compose.onNodeWithText("Save").assertIsDisplayed()
     }
 
+    @Test fun longLyricsKeepEditorsBoundedAndCanStillBeClearedAndSaved() {
+        val longLyrics = original.copy(
+            uslt = List(20_000) { "x" }.joinToString("\n"),
+            sylt = List(10_000) { LyricLine(it.toDouble(), "x") })
+        show(preferUslt = true, value = longLyrics)
+        compose.onNodeWithTag("uslt-editor").assertHeightIsAtMost(800.dp)
+        compose.onNodeWithText("Clear USLT").performScrollTo().assertIsDisplayed().performClick()
+        compose.onNodeWithText("SYLT").assertIsDisplayed().performClick()
+        compose.onNodeWithTag("sylt-editor").assertHeightIsAtMost(800.dp)
+        compose.onNodeWithText("Clear SYLT").performScrollTo().assertIsDisplayed().performClick()
+        compose.onNodeWithText("Save").assertIsDisplayed().assertIsEnabled().performClick()
+        compose.runOnIdle {
+            assertEquals(JsonObject(mapOf("sylt" to JsonArray(emptyList()), "uslt" to JsonPrimitive(""))), requests.single())
+        }
+    }
+
     @Test
     @Config(qualifiers = "w800dp-h360dp-land")
     fun landscapeKeepsTabsAndActionsVisibleWhileErrorsScroll() {
@@ -290,10 +306,10 @@ class LyricsEditorDialogTest {
         assertEquals(screen.heightPixels.toFloat(), bounds.height, 1f)
     }
 
-    private fun show(preferUslt: Boolean = false) {
+    private fun show(preferUslt: Boolean = false, value: SongMetadata = original) {
         compose.setContent {
             MaterialTheme {
-                if (visible.value) LyricsEditorDialog(original, preferUslt, busy.value,
+                if (visible.value) LyricsEditorDialog(value, preferUslt, busy.value,
                     dismiss = { dismissals++; visible.value = false }, save = { requests += it })
             }
         }
