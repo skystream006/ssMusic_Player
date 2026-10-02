@@ -4,6 +4,7 @@ import android.app.Application
 import android.content.ContentProvider
 import android.content.ContentValues
 import android.content.Context
+import android.content.pm.ProviderInfo
 import android.database.MatrixCursor
 import android.net.Uri
 import android.os.ParcelFileDescriptor
@@ -39,6 +40,7 @@ class ReplacementDocumentTest {
     @Before fun setup() {
         context = ApplicationProvider.getApplicationContext()
         provider = ReplacementDocumentProvider(temporary.newFile().apply { writeText("replacement audio") })
+        provider.attachInfo(context, ProviderInfo().apply { authority = uri.authority })
         ShadowContentResolver.registerProviderInternal(uri.authority, provider)
     }
 

@@ -1,6 +1,7 @@
 package com.ssytdlp.app
 
 import android.content.Context
+import android.content.pm.ProviderInfo
 import android.os.Looper
 import android.net.Uri
 import androidx.activity.ComponentActivity
@@ -663,6 +664,7 @@ class AccountRefreshTest {
     private fun replacementDocument(): Uri {
         val uri = Uri.parse("content://replacement-test/song")
         val provider = ReplacementDocumentProvider(replacementDocuments.newFile().apply { writeText("replacement audio") })
+        provider.attachInfo(context, ProviderInfo().apply { authority = uri.authority })
         ShadowContentResolver.registerProviderInternal(uri.authority, provider)
         return uri
     }
