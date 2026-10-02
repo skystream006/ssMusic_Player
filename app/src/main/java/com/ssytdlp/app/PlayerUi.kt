@@ -143,9 +143,11 @@ private fun RepeatButton(mode: Int, repeat: () -> Unit) {
 
 @androidx.annotation.OptIn(UnstableApi::class)
 @Composable
-fun NowPlayingScreen(model: MusicViewModel, state: PlaybackState) {
+fun NowPlayingScreen(model: MusicViewModel, state: PlaybackState, download: (String, String) -> Unit) {
     var tab by rememberSaveable { mutableIntStateOf(0) }
     var ratingTrack by remember { mutableStateOf<Track?>(null) }
+    var editingTrack by remember { mutableStateOf<Track?>(null) }
+    val account by model.sessions.account.collectAsStateWithLifecycle()
     var preferUslt by rememberSaveable(state.track?.key) { mutableStateOf(false) }
     var artworkDrag by remember(state.track?.key, tab) { mutableFloatStateOf(0f) }
     val artworkOffset by key(state.track?.key, tab) {
@@ -157,10 +159,22 @@ fun NowPlayingScreen(model: MusicViewModel, state: PlaybackState) {
         previous = model.playback::previousTrack, next = model.playback::next,
         trackKey = state.track?.key, onDragDistanceChanged = { artworkDrag = it }
     )) {
-        Column(Modifier.fillMaxWidth().padding(horizontal = 20.dp, vertical = 12.dp)) {
-            Text("NOW PLAYING", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.primary)
-            Text(state.track?.playlistTitle?.ifBlank { null } ?: "Your queue", style = MaterialTheme.typography.titleLarge,
-                maxLines = 1, overflow = TextOverflow.Ellipsis)
+        Row(Modifier.fillMaxWidth().padding(horizontal = 20.dp, vertical = 12.dp),
+            verticalAlignment = Alignment.CenterVertically) {
+            Column(Modifier.weight(1f)) {
+                Text("NOW PLAYING", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.primary)
+                Text(state.track?.playlistTitle?.ifBlank { null } ?: "Your queue", style = MaterialTheme.typography.titleLarge,
+                    maxLines = 1, overflow = TextOverflow.Ellipsis)
+            }
+            state.track?.let { track ->
+                val canEdit = track.name.endsWith(".mp3", true) && account?.user?.let { user ->
+                    !user.isShared && model.library.library.jobs.find { it.id == track.jobId }?.canModify(user) == true
+                } == true
+                if (canEdit) ToolButton(Icons.Rounded.Edit, "Edit metadata", enabled = !model.busy) { editingTrack = track }
+                ToolButton(Icons.Rounded.Download, "Save file", enabled = !model.busy) {
+                    download(track.downloadUrl ?: songPath(track, "download"), track.name)
+                }
+            }
         }
         if (state.track == null) {
             Box(Modifier.weight(1f).fillMaxWidth(), contentAlignment = Alignment.Center) {
@@ -206,6 +220,7 @@ fun NowPlayingScreen(model: MusicViewModel, state: PlaybackState) {
         }
     }
     ratingTrack?.let { track -> MetadataDialog(model, track, ratingOnly = true) { ratingTrack = null } }
+    editingTrack?.let { track -> MetadataDialog(model, track) { editingTrack = null } }
 }
 
 @Composable
