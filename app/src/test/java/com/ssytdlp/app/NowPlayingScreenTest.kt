@@ -82,6 +82,72 @@ class NowPlayingScreenTest {
         compose.onNodeWithContentDescription("Save file").assertDoesNotExist()
     }
 
+    @Test fun nowPlayingActionsRespectEditingPermissionsAndBusyStateAcrossTabs() {
+        val track = Track(jobId = "preview", name = "song.MP3", playlistTitle = "A long playlist title ".repeat(5))
+        val state = mutableStateOf(PlaybackState(track = track, queue = listOf(track)))
+        val account = ReflectionHelpers.getField<MutableStateFlow<Account?>>(model.sessions, "mutableAccount")
+        val library = ReflectionHelpers.getField<MutableState<LibraryState>>(model, "library\$delegate")
+        val busy = ReflectionHelpers.getField<MutableState<Boolean>>(model, "busy\$delegate")
+        compose.runOnIdle {
+            model.viewModelScope.cancel()
+            account.value = Account("https://music.example", User(id = "owner"), Session("test", "2099-01-01T00:00:00Z"))
+            library.value = LibraryState(library = Library(jobs = listOf(
+                Job("preview", initiatedBy = User(id = "owner"), contributors = listOf(User(id = "contributor"))))))
+        }
+        compose.setContent { MusicTheme { NowPlayingScreen(model, state.value) { _, _ -> } } }
+        listOf("Player", "Lyrics", "Queue").forEach { tab ->
+            compose.onNodeWithText(tab).performClick()
+            compose.onNodeWithContentDescription("Edit metadata").assertIsDisplayed().assertIsEnabled()
+            compose.onNodeWithContentDescription("Save file").assertIsDisplayed().assertIsEnabled()
+        }
+        compose.runOnIdle { busy.value = true }
+        compose.onNodeWithContentDescription("Edit metadata").assertIsNotEnabled()
+        compose.onNodeWithContentDescription("Save file").assertIsNotEnabled()
+        compose.runOnIdle { busy.value = false }
+        listOf(User(id = "contributor"), User(id = "admin", role = "admin")).forEach { user ->
+            compose.runOnIdle { account.value = account.value!!.copy(user = user) }
+            compose.onNodeWithContentDescription("Edit metadata").assertIsEnabled()
+        }
+        listOf(User(id = "unrelated"), User(id = "owner", role = "Shared"),
+            User(id = "owner", role = "SHARED")).forEach { user ->
+            compose.runOnIdle { account.value = account.value!!.copy(user = user) }
+            compose.onNodeWithContentDescription("Edit metadata").assertDoesNotExist()
+            compose.onNodeWithContentDescription("Save file").assertIsEnabled()
+        }
+        compose.runOnIdle {
+            account.value = account.value!!.copy(user = User(id = "owner"))
+            state.value = state.value.copy(track = track.copy(name = "video.mp4", mediaType = "video"))
+        }
+        compose.onNodeWithContentDescription("Edit metadata").assertDoesNotExist()
+        compose.onNodeWithContentDescription("Save file").assertIsEnabled()
+        compose.runOnIdle { account.value = null; state.value = state.value.copy(track = track) }
+        compose.onNodeWithContentDescription("Edit metadata").assertDoesNotExist()
+    }
+
+    @Test fun saveFileUsesCurrentTracksDownloadUrlOrEncodedFallbackWithoutChangingPlayback() {
+        val track = Track(jobId = "job id", name = "[NoVocals]/first song.mp3", downloadUrl = "/api/custom/download")
+        val next = Track(jobId = "job id", name = "[NoVocals]/next song.mp3")
+        val state = mutableStateOf(PlaybackState(track = track, queue = listOf(track, next), position = 42_000))
+        val downloads = mutableListOf<Pair<String, String>>()
+        compose.setContent {
+            MusicTheme { NowPlayingScreen(model, state.value) { path, name -> downloads.add(path to name) } }
+        }
+        compose.onNodeWithContentDescription("Save file").performClick()
+        compose.runOnIdle {
+            assertEquals(listOf("/api/custom/download" to track.name), downloads)
+            assertEquals(track, state.value.track)
+            assertEquals(42_000L, state.value.position)
+            state.value = state.value.copy(track = next, index = 1)
+        }
+        compose.onNodeWithText("Queue").performClick()
+        compose.onNodeWithContentDescription("Save file").performClick()
+        compose.runOnIdle {
+            assertEquals(listOf("/api/custom/download" to track.name,
+                "/api/jobs/job%20id/download/%5BNoVocals%5D%2Fnext%20song.mp3" to next.name), downloads)
+            assertEquals(1, state.value.index)
+        }
+    }
+
     @Test fun noVocalsOnlyHidesOtherOptionsAndRestoresItsSelection() {
         var submitted: TranscriptionOptions? = null
         val restoration = StateRestorationTester(compose)
