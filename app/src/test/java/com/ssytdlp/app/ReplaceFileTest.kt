@@ -81,7 +81,7 @@ class ReplaceFileTest {
         assertTrue(closed)
     }
 
-    @Test fun `streaming rejects empty documents when size is unknown`() = runBlocking {
+    @Test fun `streaming rejects empty documents when size is unknown`() = runBlocking<Unit> {
         shadowOf(context.contentResolver).registerInputStream(uri, ByteArrayInputStream(byteArrayOf()))
         val body = buildReplacementBody(context, track, uri) as MultipartBody
         assertEquals(-1L, body.parts.single().body.contentLength())
@@ -112,7 +112,7 @@ class ReplaceFileTest {
         }
     }
 
-    @Test fun `rejects non-picker resources and changed document sizes`() = runBlocking {
+    @Test fun `rejects non-picker resources and changed document sizes`() = runBlocking<Unit> {
         assertThrows(IllegalArgumentException::class.java) {
             selectedDocument(context, Uri.parse("file:///tmp/replacement.mp3"))
         }
@@ -123,7 +123,7 @@ class ReplaceFileTest {
     }
 
     @Test fun `confirmation requires selection and explains destructive effects`() {
-        var filename: String? by androidx.compose.runtime.mutableStateOf(null)
+        var filename by androidx.compose.runtime.mutableStateOf<String?>(null)
         var replacements = 0
         compose.setContent {
             MusicTheme {

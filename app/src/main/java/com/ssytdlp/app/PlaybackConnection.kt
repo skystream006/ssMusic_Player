@@ -123,26 +123,6 @@ class PlaybackConnection(
         mutableState.value = PlaybackState()
     }
 
-    internal fun Track.withReplacement(replacement: Track): Track = when {
-        key == replacement.key -> replacement.copy(playlistId = playlistId, playlistTitle = playlistTitle,
-            noVocalsVersion = replacement.noVocalsVersion ?: noVocalsVersion)
-        noVocalsVersion?.key == replacement.key -> copy(noVocalsVersion = noVocalsVersion.withReplacement(replacement))
-        else -> this
-    }
-
-    internal fun Player.replaceSongFile(replacement: Track, api: ServerApi) {
-        val replacingCurrent = currentMediaItem?.asTrack()?.key == replacement.key
-        for (index in 0 until mediaItemCount) {
-            val original = getMediaItemAt(index).asTrack() ?: continue
-            val updated = original.withReplacement(replacement)
-            if (updated != original) replaceMediaItem(index, updated.toMediaItem(api))
-        }
-        if (replacingCurrent) {
-            seekToDefaultPosition()
-            prepare()
-        }
-    }
-
     private fun snapshot() {
         val player = controller ?: return
         mutableState.value = PlaybackState(true, player.currentMediaItem?.asTrack(),
@@ -150,5 +130,28 @@ class PlaybackConnection(
             player.currentMediaItemIndex, player.isPlaying, player.playbackState == Player.STATE_BUFFERING,
             player.currentPosition.coerceAtLeast(0), player.duration.coerceAtLeast(0), player.shuffleModeEnabled,
             player.repeatMode, if (player.playerError != null) mutableState.value.error else null)
+    }
+}
+
+internal fun Track.withReplacement(replacement: Track): Track = when {
+    key == replacement.key -> replacement.copy(playlistId = playlistId, playlistTitle = playlistTitle,
+        noVocalsVersion = replacement.noVocalsVersion ?: noVocalsVersion)
+    noVocalsVersion?.key == replacement.key -> copy(noVocalsVersion = noVocalsVersion?.withReplacement(replacement))
+    else -> this
+}
+
+internal fun Player.replaceSongFile(replacement: Track, api: ServerApi) {
+    val replacingCurrent = currentMediaItem?.asTrack()?.key == replacement.key
+    val currentIndex = currentMediaItemIndex
+    val wasPlayWhenReady = playWhenReady
+    for (index in 0 until mediaItemCount) {
+        val original = getMediaItemAt(index).asTrack() ?: continue
+        val updated = original.withReplacement(replacement)
+        if (updated != original) replaceMediaItem(index, updated.toMediaItem(api))
+    }
+    if (replacingCurrent) {
+        seekToDefaultPosition(currentIndex)
+        prepare()
+        playWhenReady = wasPlayWhenReady
     }
 }

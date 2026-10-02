@@ -353,23 +353,13 @@ class AccountRefreshTest {
         assertEquals(next, model.playback.state.value.track)
     }
 
-    @Test fun replacementSupportsOwnedAudioAndRefreshesLibraryWithoutChangingItsIdentity() {
+    @Test fun replacementSupportsOwnedAudioButRejectsMismatchedFormatsLocally() {
         val track = Track("job", "song.flac", title = "Original", rating = 5, playlistId = "playlist",
             transcriptionLocked = true)
-        val replacement = track.copy(title = "Replacement", rating = 0, streamUrl = "/api/stream/song.flac?v=2")
-        val listed = AtomicReference(track)
-        val path = "/api/jobs/job/files/song.flac/replace"
         val model = startModel(track) { request ->
-            when (request.requestUrl!!.encodedPath) {
-                "/api/library" -> MockResponse().setBody(ApiJson.encodeToString(
-                    Library(jobs = listOf(Job("job", initiatedBy = account.user)))))
-                "/api/library/tracks" -> MockResponse().setBody(ApiJson.encodeToString(TrackPage(files = listOf(listed.get()))))
-                path -> {
-                    listed.set(replacement)
-                    MockResponse().setBody("""{"file":${ApiJson.encodeToString(replacement)},"metadata":{}}""")
-                }
-                else -> null
-            }
+            if (request.requestUrl!!.encodedPath == "/api/library") MockResponse().setBody(ApiJson.encodeToString(
+                Library(jobs = listOf(Job("job", initiatedBy = account.user)))))
+            else null
         }
         assertTrue(model.canReplaceFile(track))
         assertFalse(model.canReplaceFile(track.copy(mediaType = "video")))
@@ -380,7 +370,6 @@ class AccountRefreshTest {
         drainRequests()
         var saved = false
         var error: String? = null
-        // A mismatched format is rejected locally without changing library state.
         perform(model) { model.replaceFile(track, uri, { error = it }, { saved = true }) }
         assertFalse(saved)
         assertNotNull(error)
@@ -437,6 +426,22 @@ class AccountRefreshTest {
                 Library(jobs = listOf(Job("job", initiatedBy = account.user)))))
             else null
         }
+        assertFalse(model.canReplaceFile(track))
+    }
+
+    @Test fun replacementRequiresMembershipOrAdminAndAnInactiveJob() {
+        val track = Track("job", "song.mp3")
+        val job = AtomicReference(Job("job", initiatedBy = User("other")))
+        val model = startModel(track) { request ->
+            if (request.requestUrl!!.encodedPath == "/api/library") MockResponse().setBody(ApiJson.encodeToString(
+                Library(jobs = listOf(job.get()))))
+            else null
+        }
+        assertFalse(model.canReplaceFile(track))
+        compose.runOnUiThread { sessions.updateUser(sessions.account.value!!, account.user.copy(role = "admin")) }
+        assertTrue(model.canReplaceFile(track))
+        job.set(job.get().copy(status = "running"))
+        perform(model) { model.refresh() }
         assertFalse(model.canReplaceFile(track))
     }
 

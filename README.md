@@ -198,6 +198,21 @@ Track ratings remain visible even at zero; tap the star beside a track's menu
 or queue controls to open **Rate song**. Saving uses the existing MP3 editing
 permissions. Tap the selected star again to clear a rating, then **Save**.
 
+**Replace File** is available in a song's Library menu and Now Playing's header
+for owners, contributors, and administrators. Choose one non-empty audio file in
+the same format (up to 512 MB), then confirm the overwrite. Convert other formats
+first; renaming the extension does not convert audio. This requires a server with
+the song replacement endpoint.
+
+Replacement overwrites audio and embedded tags, artwork, ratings, and lyrics in
+every linked playlist. The server filename, playlist links and order,
+transcription lock, and other files (including existing NoVocals versions) stay
+unchanged. The library and queued copies refresh, and the current song reloads
+from the start without resuming paused playback. Server validation or conflicting
+operations can reject the upload; the dialog displays the error. Backgrounding
+cancels the request without replaying it; refresh before retrying because the
+server may already have completed the replacement.
+
 **Transcribe lyrics** opens the server-compatible **Transcribe Song** options:
 auto-detect or a supported language, Multilingual, a no-vocals karaoke version,
 Viet Lyrics Fallback (locks the language to Vietnamese), and optional supplied
