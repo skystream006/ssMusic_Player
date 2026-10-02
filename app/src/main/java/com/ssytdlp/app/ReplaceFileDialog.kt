@@ -27,7 +27,8 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 
 internal fun canReplaceFile(user: User?, job: Job?, track: Track): Boolean =
-    user != null && !user.isShared && job?.id == track.jobId && job.canModify(user) && !job.active && track.mediaType == "audio"
+    user != null && !user.isShared && job != null && job.id == track.jobId &&
+        job.canModify(user) && !job.active && track.mediaType == "audio"
 
 @Composable
 internal fun ReplaceFileDialog(model: MusicViewModel, track: Track, dismiss: () -> Unit) {
