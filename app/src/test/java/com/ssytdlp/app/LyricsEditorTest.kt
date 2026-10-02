@@ -7,6 +7,7 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.ui.test.*
 import androidx.compose.ui.test.junit4.StateRestorationTester
 import androidx.compose.ui.test.junit4.createAndroidComposeRule
+import androidx.compose.ui.unit.dp
 import com.ssytdlp.app.core.LyricLine
 import com.ssytdlp.app.core.SongMetadata
 import kotlinx.serialization.json.JsonArray
@@ -138,6 +139,47 @@ class LyricsEditorDialogTest {
     private val requests = mutableListOf<JsonObject>()
     private var dismissals = 0
 
+    @Test fun dialogFillsScreenAndBothEditorsUseAvailableHeight() {
+        show()
+        assertDialogFillsScreen()
+        compose.onNodeWithTag("sylt-editor").assertHeightIsAtLeast(300.dp)
+        compose.onNodeWithText("USLT").assertIsDisplayed().performClick()
+        compose.onNodeWithTag("uslt-editor").assertHeightIsAtLeast(300.dp)
+        compose.onNodeWithText("Cancel").assertIsDisplayed()
+        compose.onNodeWithText("Save").assertIsDisplayed()
+    }
+
+    @Test
+    @Config(qualifiers = "w800dp-h360dp-land")
+    fun landscapeKeepsTabsAndActionsVisibleWhileErrorsScroll() {
+        show()
+        assertDialogFillsScreen()
+        compose.onNodeWithTag("sylt-editor").performTextReplacement("[00:60:00.000] Invalid")
+        compose.onNodeWithText("SYLT line 1: minutes and seconds must be 00–59.")
+            .performScrollTo().assertIsDisplayed()
+        compose.onNodeWithText("Save").assertIsDisplayed().assertIsNotEnabled()
+        compose.onNodeWithText("USLT").assertIsDisplayed().performClick()
+        compose.onNodeWithText("SYLT").assertIsDisplayed().performClick()
+        compose.onNodeWithTag("sylt-editor").performTextReplacement("[00:01:00.000] Corrected")
+        compose.onNodeWithText("Cancel").assertIsDisplayed()
+        compose.onNodeWithText("Save").assertIsDisplayed().assertIsEnabled().performClick()
+        compose.runOnIdle { assertEquals(setOf("sylt"), requests.single().keys) }
+    }
+
+    @Test
+    @Config(qualifiers = "w360dp-h320dp")
+    fun shortViewportAllowsScrollingWithoutHidingSaveAndCancel() {
+        show()
+        assertDialogFillsScreen()
+        compose.onNodeWithText("Clear SYLT").performScrollTo().assertIsDisplayed().performClick()
+        compose.onNodeWithText("USLT").assertIsDisplayed().performClick()
+        compose.onNodeWithText("Clear USLT").performScrollTo().assertIsDisplayed().performClick()
+        compose.onNodeWithText("Save").assertIsDisplayed().assertIsEnabled()
+        compose.onNodeWithText("Cancel").assertIsDisplayed().performClick()
+        compose.onNode(isDialog()).assertDoesNotExist()
+        compose.runOnIdle { assertTrue(requests.isEmpty()) }
+    }
+
     @Test fun unchangedDraftCannotSaveAndCancelDoesNotSave() {
         show()
         compose.onNodeWithText("Save").assertIsNotEnabled()
@@ -152,11 +194,11 @@ class LyricsEditorDialogTest {
     @Test fun switchingModesRetainsBothEditsAndSaveWaitsForParentToDismiss() {
         show()
         compose.onNodeWithTag("sylt-editor").performTextReplacement("[00:00:02.345] Changed\n[00:00:03.001] Added")
-        compose.onNodeWithText("USLT").performScrollTo().performClick()
+        compose.onNodeWithText("USLT").performClick()
         compose.onNodeWithTag("uslt-editor").performTextReplacement("Changed plain")
-        compose.onNodeWithText("SYLT").performScrollTo().performClick()
+        compose.onNodeWithText("SYLT").performClick()
         compose.onNodeWithTag("sylt-editor").assertTextContains("[00:00:02.345] Changed\n[00:00:03.001] Added")
-        compose.onNodeWithText("USLT").performScrollTo().performClick()
+        compose.onNodeWithText("USLT").performClick()
         compose.onNodeWithTag("uslt-editor").assertTextContains("Changed plain")
         compose.onNodeWithText("Save").assertIsEnabled().performClick()
         compose.onNode(isDialog()).assertIsDisplayed()
@@ -186,11 +228,11 @@ class LyricsEditorDialogTest {
         show()
         compose.onNodeWithTag("sylt-editor").performTextReplacement("[00:60:00.000] Invalid")
         compose.onNodeWithText("Save").assertIsNotEnabled()
-        compose.onNodeWithText("USLT").performScrollTo().performClick()
+        compose.onNodeWithText("USLT").performClick()
         compose.onNodeWithTag("uslt-editor").performTextReplacement("Valid plain")
         compose.onNodeWithText("Save").assertIsNotEnabled()
         compose.onNodeWithText("SYLT line 1: minutes and seconds must be 00–59.").performScrollTo().assertIsDisplayed()
-        compose.onNodeWithText("SYLT", substring = false).performScrollTo().performClick()
+        compose.onNodeWithText("SYLT", substring = false).performClick()
         compose.onNodeWithTag("sylt-editor").performTextReplacement("[00:01:00.000] Corrected")
         compose.onNodeWithText("Save").assertIsEnabled()
     }
@@ -198,7 +240,7 @@ class LyricsEditorDialogTest {
     @Test fun clearBothModesSendsExplicitEmptyValues() {
         show()
         compose.onNodeWithText("Clear SYLT").performScrollTo().performClick()
-        compose.onNodeWithText("USLT").performScrollTo().performClick()
+        compose.onNodeWithText("USLT").performClick()
         compose.onNodeWithText("Clear USLT").performScrollTo().performClick()
         compose.onNodeWithText("Save").performClick()
         compose.runOnIdle {
@@ -233,12 +275,19 @@ class LyricsEditorDialogTest {
             MaterialTheme { LyricsEditorDialog(original, false, dismiss = {}, save = {}) }
         }
         compose.onNodeWithTag("sylt-editor").performTextReplacement("[00:00:04.001] Draft")
-        compose.onNodeWithText("USLT").performScrollTo().performClick()
+        compose.onNodeWithText("USLT").performClick()
         compose.onNodeWithTag("uslt-editor").performTextReplacement("Plain draft")
         restoration.emulateSavedInstanceStateRestore()
         compose.onNodeWithTag("uslt-editor").assertTextContains("Plain draft")
-        compose.onNodeWithText("SYLT").performScrollTo().performClick()
+        compose.onNodeWithText("SYLT").performClick()
         compose.onNodeWithTag("sylt-editor").assertTextContains("[00:00:04.001] Draft")
+    }
+
+    private fun assertDialogFillsScreen() {
+        val bounds = compose.onNode(isDialog()).assertIsDisplayed().fetchSemanticsNode().boundsInRoot
+        val screen = compose.activity.resources.displayMetrics
+        assertEquals(screen.widthPixels.toFloat(), bounds.width, 1f)
+        assertEquals(screen.heightPixels.toFloat(), bounds.height, 1f)
     }
 
     private fun show(preferUslt: Boolean = false) {

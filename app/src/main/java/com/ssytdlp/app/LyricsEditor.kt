@@ -1,14 +1,22 @@
 package com.ssytdlp.app
 
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.IntrinsicSize
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
+import androidx.compose.foundation.layout.imePadding
+import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.safeDrawingPadding
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
-import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.Surface
 import androidx.compose.material3.Tab
 import androidx.compose.material3.TabRow
 import androidx.compose.material3.Text
@@ -24,6 +32,8 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.window.Dialog
+import androidx.compose.ui.window.DialogProperties
 import com.ssytdlp.app.core.LyricLine
 import com.ssytdlp.app.core.SongMetadata
 import java.math.BigDecimal
@@ -124,44 +134,54 @@ fun LyricsEditorDialog(value: SongMetadata, preferUslt: Boolean, busy: Boolean =
     val request = result.getOrNull()?.takeIf { it.isNotEmpty() }
     val error = result.exceptionOrNull()?.message
     val mode = if (editUslt) "USLT" else "SYLT"
-    AlertDialog(onDismissRequest = { if (!busy) dismiss() }, title = { Text("Edit lyrics") }, text = {
-        Column(Modifier.heightIn(max = 420.dp).verticalScroll(rememberScrollState()),
-            verticalArrangement = Arrangement.spacedBy(8.dp)) {
-            TabRow(selectedTabIndex = if (editUslt) 1 else 0) {
-                Tab(selected = !editUslt, enabled = !busy, onClick = { editUslt = false }, text = { Text("SYLT") })
-                Tab(selected = editUslt, enabled = !busy, onClick = { editUslt = true }, text = { Text("USLT") })
+    Dialog(onDismissRequest = { if (!busy) dismiss() },
+        properties = DialogProperties(usePlatformDefaultWidth = false, decorFitsSystemWindows = false)) {
+        Surface(Modifier.fillMaxSize()) {
+            Column(Modifier.fillMaxSize().safeDrawingPadding().imePadding().padding(16.dp),
+                verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                Text("Edit lyrics", style = MaterialTheme.typography.headlineSmall)
+                TabRow(selectedTabIndex = if (editUslt) 1 else 0) {
+                    Tab(selected = !editUslt, enabled = !busy, onClick = { editUslt = false }, text = { Text("SYLT") })
+                    Tab(selected = editUslt, enabled = !busy, onClick = { editUslt = true }, text = { Text("USLT") })
+                }
+                BoxWithConstraints(Modifier.weight(1f).fillMaxWidth()) {
+                    Column(Modifier.fillMaxWidth().verticalScroll(rememberScrollState())
+                        .heightIn(min = maxHeight).height(IntrinsicSize.Min),
+                        verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                        Text(if (editUslt) "Plain lyrics, up to 100,000 characters. Clear to remove USLT."
+                            else "One [HH:MM:SS.mmm] text per line; edit times/text, add or delete lines. " +
+                                "Blank rows are ignored; a timestamp alone keeps an empty lyric. " +
+                                "Use \\n for a line break and \\\\ for a backslash. " +
+                                "Up to 10,000 lines / 100,000 text characters. Clear to remove SYLT.",
+                            style = MaterialTheme.typography.bodySmall)
+                        key(editUslt) {
+                            OutlinedTextField(
+                                value = if (editUslt) uslt else syltText,
+                                onValueChange = { if (editUslt) uslt = it else syltText = it },
+                                enabled = !busy,
+                                label = { Text("$mode lyrics") },
+                                minLines = 4,
+                                textStyle = MaterialTheme.typography.bodyMedium.let {
+                                    if (editUslt) it else it.copy(fontFamily = FontFamily.Monospace)
+                                },
+                                modifier = Modifier.fillMaxWidth().weight(1f)
+                                    .testTag(if (editUslt) "uslt-editor" else "sylt-editor")
+                            )
+                        }
+                        TextButton(enabled = !busy, onClick = { if (editUslt) uslt = "" else syltText = "" }) {
+                            Text("Clear $mode")
+                        }
+                        if (error != null) Text(error, color = MaterialTheme.colorScheme.error,
+                            style = MaterialTheme.typography.bodySmall)
+                    }
+                }
+                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
+                    TextButton(enabled = !busy, onClick = { if (!busy) dismiss() }) { Text("Cancel") }
+                    TextButton(enabled = !busy && request != null, onClick = { if (!busy) request?.let(save) }) {
+                        Text(if (busy) "Saving..." else "Save")
+                    }
+                }
             }
-            Text(if (editUslt) "Plain lyrics, up to 100,000 characters. Clear to remove USLT."
-                else "One [HH:MM:SS.mmm] text per line; edit times/text, add or delete lines. " +
-                    "Blank rows are ignored; a timestamp alone keeps an empty lyric. " +
-                    "Use \\n for a line break and \\\\ for a backslash. " +
-                    "Up to 10,000 lines / 100,000 text characters. Clear to remove SYLT.",
-                style = MaterialTheme.typography.bodySmall)
-            key(editUslt) {
-                OutlinedTextField(
-                    value = if (editUslt) uslt else syltText,
-                    onValueChange = { if (editUslt) uslt = it else syltText = it },
-                    enabled = !busy,
-                    label = { Text("$mode lyrics") },
-                    minLines = 4, maxLines = 8,
-                    textStyle = MaterialTheme.typography.bodyMedium.let {
-                        if (editUslt) it else it.copy(fontFamily = FontFamily.Monospace)
-                    },
-                    modifier = Modifier.fillMaxWidth().heightIn(max = 240.dp)
-                        .testTag(if (editUslt) "uslt-editor" else "sylt-editor")
-                )
-            }
-            TextButton(enabled = !busy, onClick = { if (editUslt) uslt = "" else syltText = "" }) {
-                Text("Clear $mode")
-            }
-            if (error != null) Text(error, color = MaterialTheme.colorScheme.error,
-                style = MaterialTheme.typography.bodySmall)
         }
-    }, confirmButton = {
-        TextButton(enabled = !busy && request != null, onClick = { if (!busy) request?.let(save) }) {
-            Text(if (busy) "Saving..." else "Save")
-        }
-    }, dismissButton = {
-        TextButton(enabled = !busy, onClick = { if (!busy) dismiss() }) { Text("Cancel") }
-    })
+    }
 }
