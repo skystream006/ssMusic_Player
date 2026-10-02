@@ -4,6 +4,7 @@ import com.ssytdlp.app.core.ApiJson
 import com.ssytdlp.app.core.Account
 import com.ssytdlp.app.core.AuthProtocol
 import com.ssytdlp.app.core.ServerResource
+import com.ssytdlp.app.core.Track
 import java.io.IOException
 import java.time.Instant
 import java.util.concurrent.TimeUnit
@@ -111,12 +112,17 @@ class ServerApi(
         ))
     }
 
-    suspend fun upload(body: RequestBody): JsonElement {
+    suspend fun upload(body: RequestBody): JsonElement = upload("/api/jobs/import", body)
+
+    suspend fun replaceFile(track: Track, body: RequestBody): JsonElement =
+        upload("/api/jobs/${encode(track.jobId)}/files/${encode(track.name)}/replace", body)
+
+    private suspend fun upload(path: String, body: RequestBody): JsonElement {
         val owner = currentAccount() ?: throw ApiException(401, "Sign in with your passkey.")
         return mutationWhileResumed {
             requireOwner(owner)
             executeJson(authenticatedClient.newBuilder().readTimeout(30, TimeUnit.MINUTES).build().newCall(
-                Request.Builder().url(ServerResource.resolve(owner.origin, "/api/jobs/import"))
+                Request.Builder().url(ServerResource.resolve(owner.origin, path))
                     .tag(RequestOwner::class.java, RequestOwner(owner)).post(body).build()
             )).also { requireOwner(owner) }
         }

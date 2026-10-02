@@ -1,6 +1,7 @@
 package com.ssytdlp.app
 
 import android.content.Context
+import android.net.Uri
 import android.os.Looper
 import androidx.activity.ComponentActivity
 import androidx.compose.runtime.collectAsState
@@ -22,6 +23,7 @@ import com.ssytdlp.app.core.TrackPage
 import com.ssytdlp.app.core.User
 import com.ssytdlp.app.core.UserResponse
 import java.io.InputStream
+import java.io.ByteArrayInputStream
 import java.io.OutputStream
 import java.net.InetAddress
 import java.security.Key
@@ -60,6 +62,7 @@ import org.robolectric.RobolectricTestRunner
 import org.robolectric.Shadows.shadowOf
 import org.robolectric.annotation.Config
 import org.robolectric.util.ReflectionHelpers
+import org.robolectric.shadows.ShadowContentResolver
 
 @RunWith(RobolectricTestRunner::class)
 @Config(sdk = [34], application = MusicApplication::class)
@@ -348,6 +351,110 @@ class AccountRefreshTest {
             """{"title":"Edited song","artist":"Artist","album":"Album","genre":"Pop","year":"2026","rating":3}""")
         assertEquals(nextMetadata, model.metadata)
         assertEquals(next, model.playback.state.value.track)
+    }
+
+    @Test fun replacementSupportsOwnedAudioAndRefreshesLibraryWithoutChangingItsIdentity() {
+        val track = Track("job", "song.flac", title = "Original", rating = 5, playlistId = "playlist",
+            transcriptionLocked = true)
+        val replacement = track.copy(title = "Replacement", rating = 0, streamUrl = "/api/stream/song.flac?v=2")
+        val listed = AtomicReference(track)
+        val path = "/api/jobs/job/files/song.flac/replace"
+        val model = startModel(track) { request ->
+            when (request.requestUrl!!.encodedPath) {
+                "/api/library" -> MockResponse().setBody(ApiJson.encodeToString(
+                    Library(jobs = listOf(Job("job", initiatedBy = account.user)))))
+                "/api/library/tracks" -> MockResponse().setBody(ApiJson.encodeToString(TrackPage(files = listOf(listed.get()))))
+                path -> {
+                    listed.set(replacement)
+                    MockResponse().setBody("""{"file":${ApiJson.encodeToString(replacement)},"metadata":{}}""")
+                }
+                else -> null
+            }
+        }
+        assertTrue(model.canReplaceFile(track))
+        assertFalse(model.canReplaceFile(track.copy(mediaType = "video")))
+        assertFalse(model.canReplaceFile(track.copy(jobId = "unrelated")))
+        val uri = Uri.parse("content://replacement/song")
+        ShadowContentResolver.registerProviderInternal("replacement", ReplacementDocumentProvider())
+        shadowOf(context.contentResolver).registerInputStream(uri, ByteArrayInputStream(byteArrayOf(1, 2)))
+        drainRequests()
+        var saved = false
+        var error: String? = null
+        // A mismatched format is rejected locally without changing library state.
+        perform(model) { model.replaceFile(track, uri, { error = it }, { saved = true }) }
+        assertFalse(saved)
+        assertNotNull(error)
+        assertEquals(track, model.library.tracks.files.single())
+        assertTrue(drainRequests().isEmpty())
+    }
+
+    @Test fun replacementRefreshesSongStateOnlyAfterServerSuccess() {
+        val track = Track("job", "song.mp3", title = "Original", rating = 5, transcriptionLocked = true)
+        val replacement = track.copy(title = "Replacement", rating = 0, streamUrl = "/api/stream/song.mp3?v=2")
+        val listed = AtomicReference(track)
+        var reject = true
+        val model = startModel(track) { request ->
+            when (request.requestUrl!!.encodedPath) {
+                "/api/library" -> MockResponse().setBody(ApiJson.encodeToString(
+                    Library(jobs = listOf(Job("job", contributors = listOf(account.user))))))
+                "/api/library/tracks" -> MockResponse().setBody(ApiJson.encodeToString(TrackPage(files = listOf(listed.get()))))
+                "/api/jobs/job/files/song.mp3/replace" -> if (reject)
+                    MockResponse().setResponseCode(409).setBody("""{"error":"Song is being transcribed"}""")
+                else {
+                    listed.set(replacement)
+                    MockResponse().setBody("""{"file":${ApiJson.encodeToString(replacement)},"metadata":{}}""")
+                }
+                else -> null
+            }
+        }
+        assertTrue(model.canReplaceFile(track))
+        val uri = Uri.parse("content://replacement/song")
+        ShadowContentResolver.registerProviderInternal("replacement", ReplacementDocumentProvider())
+        shadowOf(context.contentResolver).registerInputStream(uri, ByteArrayInputStream(byteArrayOf(1, 2)))
+        drainRequests()
+        var saved = false
+        var error: String? = null
+        perform(model) { model.replaceFile(track, uri, { error = it }, { saved = true }) }
+        assertFalse(saved)
+        assertEquals("Song is being transcribed", error)
+        assertEquals(track, model.library.tracks.files.single())
+        assertEquals(1, drainRequests().size)
+
+        reject = false
+        shadowOf(context.contentResolver).registerInputStream(uri, ByteArrayInputStream(byteArrayOf(1, 2)))
+        perform(model) { model.replaceFile(track, uri, { error = it }, { saved = true }) }
+        assertTrue(saved)
+        assertEquals(replacement, model.library.tracks.files.single())
+        assertEquals(0, model.library.rating(track))
+        assertTrue(model.library.transcriptionLocked(track))
+        assertTrue(drainRequests().any { it.path!!.startsWith("/api/library/tracks?") })
+    }
+
+    @Test fun sharedOwnersCannotReplaceFiles() {
+        val track = Track("job", "song.mp3")
+        val model = startModel(track, user = account.user.copy(role = "shared")) { request ->
+            if (request.requestUrl!!.encodedPath == "/api/library") MockResponse().setBody(ApiJson.encodeToString(
+                Library(jobs = listOf(Job("job", initiatedBy = account.user)))))
+            else null
+        }
+        assertFalse(model.canReplaceFile(track))
+    }
+
+    @Test fun replacementStreamVersionReloadsLyricsEvenWhenSongKeyDoesNotChange() {
+        val track = Track("job", "song.mp3", streamUrl = "/api/stream/song.mp3?v=1")
+        val original = SongMetadata(uslt = "Old lyrics", canEdit = true)
+        val updated = original.copy(uslt = "Replacement lyrics", artwork = "new artwork")
+        val metadata = AtomicReference(original)
+        val model = startModel(track) { request ->
+            if (request.path == songPath(track, "lyrics")) MockResponse().setBody(ApiJson.encodeToString(metadata.get()))
+            else null
+        }
+        showTrack(model, track)
+        assertEquals(original, model.metadata)
+        metadata.set(updated)
+        showTrack(model, track.copy(streamUrl = "/api/stream/song.mp3?v=2"))
+        waitFor { model.metadata == updated }
+        assertEquals(updated, model.metadata)
     }
 
     @Test fun unlockingTranscriptionPatchesOnlyTheLockEvenWhenServiceIsInactive() {

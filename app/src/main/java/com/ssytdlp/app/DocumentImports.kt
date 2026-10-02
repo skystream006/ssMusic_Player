@@ -3,6 +3,7 @@ package com.ssytdlp.app
 import android.content.Context
 import android.net.Uri
 import android.provider.OpenableColumns
+import com.ssytdlp.app.core.Track
 import java.io.IOException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
@@ -12,6 +13,45 @@ import okhttp3.RequestBody
 import okio.BufferedSink
 
 data class SelectedDocument(val uri: Uri, val name: String, val size: Long?)
+
+internal const val REPLACEMENT_LIMIT = 512L * 1024 * 1024
+
+internal fun validateReplacement(track: Track, document: SelectedDocument) {
+    val extension = track.name.substringAfterLast('.', "")
+    require(track.mediaType == "audio" && extension.isNotEmpty() &&
+        document.name.substringAfterLast('.', "").equals(extension, ignoreCase = true)) {
+        "Choose a .$extension song file. Convert other formats before uploading."
+    }
+    require(document.size == null || document.size in 1..REPLACEMENT_LIMIT) {
+        "Choose a non-empty file no larger than 512 MB."
+    }
+}
+
+internal suspend fun buildReplacementBody(context: Context, track: Track, uri: Uri): RequestBody = withContext(Dispatchers.IO) {
+    val document = selectedDocument(context, uri)
+    validateReplacement(track, document)
+    MultipartBody.Builder().setType(MultipartBody.FORM).addFormDataPart("file", document.name, object : RequestBody() {
+        override fun contentType() = "application/octet-stream".toMediaType()
+        override fun contentLength() = document.size ?: -1L
+        override fun isOneShot() = true
+        override fun writeTo(sink: BufferedSink) {
+            val input = context.contentResolver.openInputStream(uri) ?: throw IOException("Cannot read ${document.name}.")
+            input.use {
+                val buffer = ByteArray(64 * 1024)
+                var bytesSent = 0L
+                while (true) {
+                    val count = it.read(buffer)
+                    if (count < 0) break
+                    bytesSent += count
+                    if (bytesSent > REPLACEMENT_LIMIT) throw IOException("Replacement exceeds the 512 MB limit.")
+                    sink.write(buffer, 0, count)
+                }
+                if (bytesSent == 0L) throw IOException("The replacement file is empty.")
+                if (document.size != null && bytesSent != document.size) throw IOException("The selected file changed. Choose it again.")
+            }
+        }
+    }).build()
+}
 
 fun selectedDocument(context: Context, uri: Uri): SelectedDocument {
     require(uri.scheme == "content") { "Choose a document from the Android file picker." }

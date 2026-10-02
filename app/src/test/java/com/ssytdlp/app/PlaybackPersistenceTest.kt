@@ -111,6 +111,37 @@ class PlaybackPersistenceTest {
         assertTrue(player.playWhenReady)
     }
 
+    @Test fun `replacement updates every queued copy while retaining paused state order and modes`() {
+        attach()
+        val replacement = first.copy(title = "Replacement", streamUrl = "/api/stream/first.mp3?v=2")
+        player.setMediaItems(listOf(first, second, first).map { it.toMediaItem(api) }, 2, 12_345)
+        player.shuffleModeEnabled = true
+        player.repeatMode = Player.REPEAT_MODE_ONE
+        player.replaceSongFile(replacement, api)
+        flushEvents()
+        assertEquals(listOf(replacement, second, replacement),
+            (0 until player.mediaItemCount).map { player.getMediaItemAt(it).asTrack() })
+        assertEquals(2, player.currentMediaItemIndex)
+        assertEquals(0L, player.currentPosition)
+        assertFalse(player.playWhenReady)
+        assertTrue(player.shuffleModeEnabled)
+        assertEquals(Player.REPEAT_MODE_ONE, player.repeatMode)
+        assertEquals(listOf(replacement, second, replacement), store.playback(account)!!.queue)
+    }
+
+    @Test fun `replacement preserves playback intent and leaves unrelated current audio alone`() {
+        player.setMediaItems(listOf(first, second).map { it.toMediaItem(api) }, 1, 12_345)
+        player.playWhenReady = true
+        player.replaceSongFile(first.copy(streamUrl = "/api/stream/first.mp3?v=2"), api)
+        assertEquals(second, player.currentMediaItem!!.asTrack())
+        assertEquals(12_345L, player.currentPosition)
+        assertEquals(Player.STATE_IDLE, player.playbackState)
+        assertTrue(player.playWhenReady)
+        player.replaceSongFile(second.copy(streamUrl = "/api/stream/second.mp4?v=2"), api)
+        assertEquals(0L, player.currentPosition)
+        assertTrue(player.playWhenReady)
+    }
+
     @Test fun `unplayable and foreign resources are skipped while retaining the selected item position`() {
         val foreign = first.copy(streamUrl = "https://other.example/api/stream/first.mp3")
         store.savePlayback(account, SavedPlayback(listOf(first.copy(streamUrl = null), foreign, second),

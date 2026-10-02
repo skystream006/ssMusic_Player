@@ -6,6 +6,7 @@ import com.ssytdlp.app.core.ApiJson
 import com.ssytdlp.app.core.Job
 import com.ssytdlp.app.core.Library
 import com.ssytdlp.app.core.Session
+import com.ssytdlp.app.core.Track
 import com.ssytdlp.app.core.User
 import java.io.ByteArrayOutputStream
 import java.io.IOException
@@ -20,6 +21,8 @@ import kotlinx.serialization.json.decodeFromJsonElement
 import kotlinx.serialization.json.put
 import okhttp3.OkHttpClient
 import okhttp3.Request
+import okhttp3.MultipartBody
+import okhttp3.RequestBody.Companion.toRequestBody
 import okhttp3.mockwebserver.MockResponse
 import okhttp3.mockwebserver.MockWebServer
 import okhttp3.tls.HandshakeCertificates
@@ -174,6 +177,37 @@ class ServerApiTest {
         api.download("/api/jobs/123/download/song.mp3") { it.copyTo(output) }
         assertArrayEquals(bytes, output.toByteArray())
         assertEquals("Bearer $token", server.takeRequest(2, TimeUnit.SECONDS)!!.getHeader("Authorization"))
+    }
+
+    @Test fun `replacement uploads exactly one file with encoded identity and authenticated transport`() = runBlocking {
+        val track = Track("job / 1", "[NoVocals]/song #1.mp3")
+        server.enqueue(MockResponse().setBody("""{"file":{"name":"[NoVocals]/song #1.mp3",
+            "streamUrl":"/api/stream/song.mp3?v=2"},"metadata":{"rating":0}}"""))
+        val body = MultipartBody.Builder().setType(MultipartBody.FORM)
+            .addFormDataPart("file", "replacement.mp3", "new audio".toRequestBody()).build()
+        val result = api.replaceFile(track, body)
+        val request = server.takeRequest(2, TimeUnit.SECONDS)!!
+        assertEquals("POST", request.method)
+        assertEquals(listOf("api", "jobs", track.jobId, "files", track.name, "replace"), request.requestUrl!!.pathSegments)
+        assertEquals(listOf("Bearer", token).joinToString(" "), request.getHeader("Authorization"))
+        assertTrue(request.getHeader("Content-Type")!!.startsWith("multipart/form-data; boundary="))
+        val upload = request.body.readUtf8()
+        assertTrue(upload.contains("name=\"file\"; filename=\"replacement.mp3\""))
+        assertTrue(upload.contains("new audio"))
+        assertEquals(1, Regex("Content-Disposition:").findAll(upload).count())
+        assertTrue(result.toString().contains("?v=2"))
+    }
+
+    @Test fun `replacement surfaces server validation permission conflict and size errors`() = runBlocking {
+        for (status in listOf(400, 403, 409, 413)) {
+            server.enqueue(MockResponse().setResponseCode(status).setBody("""{"error":"Replacement rejected $status"}"""))
+            val failure = runCatching { api.replaceFile(Track("job", "song.mp3"), "audio".toRequestBody()) }
+                .exceptionOrNull() as ApiException
+            assertEquals(status, failure.status)
+            assertEquals("Replacement rejected $status", failure.message)
+            assertNotNull(account)
+        }
+        assertEquals(4, server.requestCount)
     }
 
     @Test fun `library conflicts preserve their response payload for the UI`() = runBlocking {

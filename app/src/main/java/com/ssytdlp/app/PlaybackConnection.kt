@@ -108,6 +108,11 @@ class PlaybackConnection(
     fun repeat() { controller?.let { it.repeatMode = (it.repeatMode + 1) % 3 } }
     fun select(index: Int) { controller?.let { it.seekToDefaultPosition(index); if (it.playbackState == Player.STATE_IDLE) it.prepare(); it.play() } }
     fun remove(index: Int) { controller?.removeMediaItem(index) }
+    fun replaceFile(track: Track) {
+        controller?.replaceSongFile(track, api)
+        snapshot()
+    }
+
     fun disconnect(stop: Boolean = false) {
         DebugLog.event(DebugEvent.PLAYBACK_DISCONNECTED)
         positionJob?.cancel()
@@ -116,6 +121,26 @@ class PlaybackConnection(
         future = null
         controller = null
         mutableState.value = PlaybackState()
+    }
+
+    internal fun Track.withReplacement(replacement: Track): Track = when {
+        key == replacement.key -> replacement.copy(playlistId = playlistId, playlistTitle = playlistTitle,
+            noVocalsVersion = replacement.noVocalsVersion ?: noVocalsVersion)
+        noVocalsVersion?.key == replacement.key -> copy(noVocalsVersion = noVocalsVersion.withReplacement(replacement))
+        else -> this
+    }
+
+    internal fun Player.replaceSongFile(replacement: Track, api: ServerApi) {
+        val replacingCurrent = currentMediaItem?.asTrack()?.key == replacement.key
+        for (index in 0 until mediaItemCount) {
+            val original = getMediaItemAt(index).asTrack() ?: continue
+            val updated = original.withReplacement(replacement)
+            if (updated != original) replaceMediaItem(index, updated.toMediaItem(api))
+        }
+        if (replacingCurrent) {
+            seekToDefaultPosition()
+            prepare()
+        }
     }
 
     private fun snapshot() {

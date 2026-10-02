@@ -2,6 +2,7 @@ package com.ssytdlp.app
 
 import com.ssytdlp.app.core.Account
 import com.ssytdlp.app.core.Session
+import com.ssytdlp.app.core.Track
 import com.ssytdlp.app.core.User
 import java.io.IOException
 import java.util.concurrent.TimeUnit
@@ -176,6 +177,25 @@ class BackgroundApiTest {
         withTimeout(5_000) { failures.receive() }
         assertTrue(withTimeout(5_000) { failure.await() } is CancellationException)
         gate.activityPaused(activity)
+        gate.activityResumed(activity)
+        assertNull(server.takeRequest(150, TimeUnit.MILLISECONDS))
+        assertEquals(1, server.requestCount)
+    }
+
+    @Test fun `replacement upload waits for resume and cancels without replay on pause`() = runBlocking {
+        server.enqueue(MockResponse().setSocketPolicy(SocketPolicy.NO_RESPONSE))
+        val upload = async(Dispatchers.IO, start = CoroutineStart.UNDISPATCHED) {
+            runCatching { api.replaceFile(Track("job", "[NoVocals]/song.mp3"), "audio".toRequestBody()) }
+        }
+        assertNull(server.takeRequest(150, TimeUnit.MILLISECONDS))
+        gate.activityResumed(activity)
+        assertEquals("/api/jobs/job/files/%5BNoVocals%5D%2Fsong.mp3/replace",
+            server.takeRequest(5, TimeUnit.SECONDS)!!.path)
+        gate.activityPaused(activity)
+        withTimeout(5_000) { failures.receive() }
+        val failure = withTimeout(5_000) { upload.await() }.exceptionOrNull()
+        assertTrue(failure is IOException)
+        assertTrue(failure!!.message!!.contains("refresh before retrying"))
         gate.activityResumed(activity)
         assertNull(server.takeRequest(150, TimeUnit.MILLISECONDS))
         assertEquals(1, server.requestCount)

@@ -47,6 +47,44 @@ class LibraryStateTest {
         assertNull(state.transcription(track.copy(name = "missing.mp3")))
     }
 
+    @Test fun `replacement preserves playlist identity and clears stale ratings and transcription`() {
+        val original = track.copy(playlistId = "playlist", playlistTitle = "Playlist", rating = 5,
+            transcription = done, transcriptionLocked = true,
+            noVocalsVersion = track.copy(name = "[NoVocals]/song.mp3"))
+        val initial = LibraryState(selectedId = "playlist", search = "song", page = 2,
+            library = Library(jobs = listOf(Job(track.jobId, transcriptions = mapOf(track.name to done)))),
+            pendingTranscriptions = mapOf(track.key to sent))
+            .withTrackPage(TrackPage(files = listOf(original), page = 2))
+        val replacement = track.copy(title = "New title", streamUrl = "/api/stream/song.mp3?v=2",
+            transcriptionLocked = true)
+        val refreshed = initial.withReplacement(replacement)
+        assertEquals("playlist", refreshed.selectedId)
+        assertEquals(2, refreshed.page)
+        assertEquals("song", refreshed.search)
+        assertEquals("playlist", refreshed.tracks.files.single().playlistId)
+        assertEquals("Playlist", refreshed.tracks.files.single().playlistTitle)
+        assertEquals(original.noVocalsVersion, refreshed.tracks.files.single().noVocalsVersion)
+        assertEquals("New title", refreshed.tracks.files.single().title)
+        assertEquals(0, refreshed.rating(original))
+        assertTrue(refreshed.transcriptionLocked(original))
+        assertNull(refreshed.transcription(original))
+        assertTrue(refreshed.pendingTranscriptions.isEmpty())
+        val otherPage = refreshed.withTrackPage(TrackPage(files = listOf(Track("other", "other.mp3"))))
+        assertEquals(0, otherPage.rating(original))
+        assertNull(otherPage.transcription(original))
+    }
+
+    @Test fun `replacing NoVocals updates nested references but not the original song`() {
+        val noVocals = track.copy(name = "[NoVocals]/song.mp3")
+        val original = track.copy(noVocalsVersion = noVocals, transcription = done)
+        val updated = noVocals.copy(streamUrl = "/api/stream/karaoke.mp3?v=2")
+        val refreshed = LibraryState(tracks = TrackPage(files = listOf(original, noVocals)))
+            .withReplacement(updated)
+        assertEquals(original.copy(noVocalsVersion = updated), refreshed.tracks.files[0])
+        assertEquals(updated, refreshed.tracks.files[1])
+        assertEquals(track.copy(jobId = "other"), track.copy(jobId = "other").withReplacement(updated))
+    }
+
     @Test fun `lock refresh overrides stale tracks and keeps explicit unlocks across pages`() {
         val locked = track.copy(transcriptionLocked = true)
         assertTrue(LibraryState().transcriptionLocked(locked))
