@@ -941,6 +941,7 @@ class MusicUiTest {
         }
         compose.onNodeWithText("View song metadata").assertIsDisplayed()
         compose.waitUntil(5_000) {
+            compose.runOnIdle { Snapshot.sendApplyNotifications() }
             compose.mainClock.advanceTimeByFrame()
             compose.onAllNodesWithContentDescription("Album artwork").fetchSemanticsNodes().isNotEmpty()
         }
@@ -957,6 +958,11 @@ class MusicUiTest {
         }
         compose.mainClock.advanceTimeByFrame()
         compose.onNodeWithContentDescription("Transcription unlocked").assertIsDisplayed().assertHasNoClickAction()
+        compose.waitUntil(5_000) {
+            compose.runOnIdle { Snapshot.sendApplyNotifications() }
+            compose.mainClock.advanceTimeByFrame()
+            compose.onAllNodesWithContentDescription("Album artwork unavailable").fetchSemanticsNodes().isNotEmpty()
+        }
         compose.onNodeWithContentDescription("Album artwork unavailable").performScrollTo().assertIsDisplayed()
         compose.onNode(hasSetTextAction()).assertDoesNotExist()
         compose.onNode(isToggleable()).assertDoesNotExist()
