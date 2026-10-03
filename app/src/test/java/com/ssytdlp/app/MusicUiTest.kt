@@ -923,6 +923,7 @@ class MusicUiTest {
     }
 
     @Test fun metadataViewerShowsFieldsArtworkRatingAndLockWithoutMutationControls() {
+        compose.mainClock.autoAdvance = false
         val image = java.io.ByteArrayOutputStream().also {
             Bitmap.createBitmap(1, 1, Bitmap.Config.ARGB_8888).compress(Bitmap.CompressFormat.PNG, 100, it)
         }.toByteArray()
@@ -940,6 +941,8 @@ class MusicUiTest {
         }
         compose.onNodeWithText("View song metadata").assertIsDisplayed()
         compose.waitUntil(5_000) {
+            compose.runOnIdle { Snapshot.sendApplyNotifications() }
+            compose.mainClock.advanceTimeByFrame()
             compose.onAllNodesWithContentDescription("Album artwork").fetchSemanticsNodes().isNotEmpty()
         }
         compose.onNodeWithContentDescription("Album artwork").assertIsDisplayed()
@@ -949,8 +952,17 @@ class MusicUiTest {
             }
         compose.onNodeWithText("Rating: 3 / 5").performScrollTo().assertIsDisplayed()
         compose.onNodeWithContentDescription("Transcription locked").assertIsDisplayed().assertHasNoClickAction()
-        compose.runOnIdle { value.value = value.value.copy(transcriptionLocked = false, artwork = null) }
+        compose.runOnIdle {
+            value.value = value.value.copy(transcriptionLocked = false, artwork = null)
+            Snapshot.sendApplyNotifications()
+        }
+        compose.mainClock.advanceTimeByFrame()
         compose.onNodeWithContentDescription("Transcription unlocked").assertIsDisplayed().assertHasNoClickAction()
+        compose.waitUntil(5_000) {
+            compose.runOnIdle { Snapshot.sendApplyNotifications() }
+            compose.mainClock.advanceTimeByFrame()
+            compose.onAllNodesWithContentDescription("Album artwork unavailable").fetchSemanticsNodes().isNotEmpty()
+        }
         compose.onNodeWithContentDescription("Album artwork unavailable").performScrollTo().assertIsDisplayed()
         compose.onNode(hasSetTextAction()).assertDoesNotExist()
         compose.onNode(isToggleable()).assertDoesNotExist()
@@ -961,11 +973,14 @@ class MusicUiTest {
             compose.onNodeWithContentDescription(it).assertDoesNotExist()
         }
         compose.onNodeWithText("Close").performClick()
+        compose.runOnIdle { Snapshot.sendApplyNotifications() }
+        compose.mainClock.advanceTimeByFrame()
         compose.onNode(isDialog()).assertDoesNotExist()
         compose.runOnIdle { assertEquals(0, changes); assertEquals(0, saves) }
     }
 
     @Test fun metadataEditorRetainsFieldRatingLockAndSaveActions() {
+        compose.mainClock.autoAdvance = false
         val original = SongMetadata(title = "Song", artist = "Artist", album = "Album", genre = "Pop", year = "2026")
         val value = mutableStateOf(original)
         var saved: SongMetadata? = null
@@ -975,8 +990,14 @@ class MusicUiTest {
         compose.onNodeWithText("Song information").assertIsDisplayed()
         compose.onAllNodes(hasSetTextAction()).assertCountEquals(5)
         compose.onNodeWithText("Title").performTextReplacement("Updated")
+        compose.runOnIdle { Snapshot.sendApplyNotifications() }
+        compose.mainClock.advanceTimeByFrame()
         compose.onNodeWithContentDescription("Lock transcription").performClick()
+        compose.runOnIdle { Snapshot.sendApplyNotifications() }
+        compose.mainClock.advanceTimeByFrame()
         compose.onNodeWithContentDescription("4 stars").performScrollTo().performClick()
+        compose.runOnIdle { Snapshot.sendApplyNotifications() }
+        compose.mainClock.advanceTimeByFrame()
         compose.onNodeWithText("Save").performClick()
         compose.runOnIdle {
             assertEquals(original.copy(title = "Updated", rating = 4, transcriptionLocked = true), saved)
