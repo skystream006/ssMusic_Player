@@ -111,7 +111,7 @@ fun MiniPlayer(state: PlaybackState, artwork: String?, expand: () -> Unit, toggl
                             onValueChange = { seeking = it },
                             onValueChangeFinished = { seeking?.let { onSeek(it.toLong()) }; seeking = null },
                             valueRange = 0f..state.duration.toFloat().coerceAtLeast(1f), enabled = state.duration > 0,
-                            modifier = Modifier.weight(1f).semantics { contentDescription = "Playback position" })
+                            modifier = Modifier.weight(1f).padding(horizontal = 12.dp).semantics { contentDescription = "Playback position" })
                     }
                 }
             }
