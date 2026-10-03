@@ -3,6 +3,9 @@
 package com.ssytdlp.app
 
 import android.graphics.BitmapFactory
+import android.content.ClipData
+import android.content.ClipboardManager
+import android.content.Context
 import android.util.Base64
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.snap
@@ -45,6 +48,7 @@ import androidx.compose.ui.input.nestedscroll.NestedScrollConnection
 import androidx.compose.ui.input.nestedscroll.NestedScrollSource
 import androidx.compose.ui.input.nestedscroll.nestedScroll
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.semantics.contentDescription
@@ -67,8 +71,11 @@ import com.ssytdlp.app.core.*
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.collectLatest
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import kotlinx.serialization.json.decodeFromJsonElement
+import kotlinx.serialization.json.jsonObject
+import kotlinx.serialization.json.jsonPrimitive
 import kotlin.math.roundToInt
 import java.util.Locale
 
@@ -149,6 +156,7 @@ fun NowPlayingScreen(model: MusicViewModel, state: PlaybackState, download: (Str
     var tab by rememberSaveable { mutableIntStateOf(0) }
     var ratingTrack by remember { mutableStateOf<Track?>(null) }
     var editingTrack by remember { mutableStateOf<Track?>(null) }
+    var sharingTrack by remember { mutableStateOf<Track?>(null) }
     val account by model.sessions.account.collectAsStateWithLifecycle()
     var replacingTrack by remember(account?.origin, account?.user?.id, account?.user?.role) { mutableStateOf<Track?>(null) }
     var preferUslt by rememberSaveable(state.track?.key) { mutableStateOf(false) }
@@ -170,6 +178,11 @@ fun NowPlayingScreen(model: MusicViewModel, state: PlaybackState, download: (Str
                     maxLines = 1, overflow = TextOverflow.Ellipsis)
             }
             state.track?.let { track ->
+                val job = model.library.library.jobs.find { it.id == track.jobId }
+                    ?: model.jobs.find { it.id == track.jobId }
+                val canShare = track.mediaType == "audio" && account?.user?.let { user ->
+                    !user.isShared && job?.canModify(user) == true
+                } == true
                 val canEdit = track.name.endsWith(".mp3", true) && account?.user?.let { user ->
                     !user.isShared && model.library.library.jobs.find { it.id == track.jobId }?.canModify(user) == true
                 } == true
@@ -188,8 +201,11 @@ fun NowPlayingScreen(model: MusicViewModel, state: PlaybackState, download: (Str
                     if (transcribe) TranscribeDialog(model, track) { transcribe = false }
                 }
                 if (canReplaceFile(account?.user,
-                    model.library.library.jobs.find { it.id == track.jobId } ?: model.jobs.find { it.id == track.jobId }, track)) {
+                    job, track)) {
                     ToolButton(Icons.Rounded.UploadFile, "Replace File", enabled = !model.busy) { replacingTrack = track }
+                }
+                if (canShare) {
+                    ToolButton(Icons.Rounded.Share, "Share Media", enabled = !model.busy) { sharingTrack = track }
                 }
                 ToolButton(Icons.Rounded.Download, "Save file", enabled = !model.busy) {
                     download(track.downloadUrl ?: songPath(track, "download"), track.name)
@@ -242,6 +258,13 @@ fun NowPlayingScreen(model: MusicViewModel, state: PlaybackState, download: (Str
     }
     ratingTrack?.let { track -> MetadataDialog(model, track, ratingOnly = true) { ratingTrack = null } }
     editingTrack?.let { track -> MetadataDialog(model, track) { editingTrack = null } }
+    sharingTrack?.let { track ->
+        val job = model.library.library.jobs.find { it.id == track.jobId } ?: model.jobs.find { it.id == track.jobId }
+        val canShare = track.mediaType == "audio" && account?.user?.let { user ->
+            !user.isShared && job?.canModify(user) == true
+        } == true
+        if (canShare) ShareMediaDialog(model, track) { sharingTrack = null }
+    }
     replacingTrack?.let { track ->
         if (canReplaceFile(account?.user,
             model.library.library.jobs.find { it.id == track.jobId } ?: model.jobs.find { it.id == track.jobId }, track)) {
@@ -564,6 +587,7 @@ fun TrackMenu(model: MusicViewModel, track: Track, index: Int, download: (String
     var open by remember { mutableStateOf(false) }
     var edit by remember { mutableStateOf(false) }
     var remove by remember { mutableStateOf(false) }
+    var share by remember { mutableStateOf(false) }
     val account by model.sessions.account.collectAsStateWithLifecycle()
     val user = account?.user
     val canTransfer = user?.isShared == false && track.playlistId != null
@@ -579,6 +603,8 @@ fun TrackMenu(model: MusicViewModel, track: Track, index: Int, download: (String
         DropdownMenu(open, { open = false }) {
             DropdownMenuItem(text = { Text("Add to queue") }, leadingIcon = { Icon(Icons.AutoMirrored.Rounded.PlaylistAdd, null) }, onClick = { open = false; model.playback.enqueue(track) })
             DropdownMenuItem(text = { Text("Save file") }, leadingIcon = { Icon(Icons.Rounded.Download, null) }, onClick = { open = false; download(track.downloadUrl ?: songPath(track, "download"), track.name) })
+            if (canModify && track.mediaType == "audio") DropdownMenuItem(text = { Text("Share Media") },
+                leadingIcon = { Icon(Icons.Rounded.Share, null) }, onClick = { open = false; share = true })
             if (canTransfer) {
                 DropdownMenuItem(text = { Text("Add to playlist") }, leadingIcon = { Icon(Icons.Rounded.LibraryAdd, null) }, onClick = { open = false; transfer = "link" })
                 DropdownMenuItem(text = { Text("Move to playlist") }, leadingIcon = { Icon(Icons.AutoMirrored.Rounded.DriveFileMove, null) }, onClick = { open = false; transfer = "move" })
@@ -602,6 +628,7 @@ fun TrackMenu(model: MusicViewModel, track: Track, index: Int, download: (String
         }
     }
     if (edit) MetadataDialog(model, track) { edit = false }
+    if (share && canModify && track.mediaType == "audio") ShareMediaDialog(model, track) { share = false }
     if (canReplace && replace) ReplaceFileDialog(model, track) { replace = false }
     if (transcribe) TranscribeDialog(model, track) { transcribe = false }
     if (remove) ConfirmDialog("Remove this song?", "This removes its playlist membership. If no other links remain, the server deletes the media file. This cannot be undone.", { remove = false }) { model.remove(track); remove = false }
@@ -611,6 +638,67 @@ fun TrackMenu(model: MusicViewModel, track: Track, index: Int, download: (String
         transfer = null
     }
 }
+
+@Composable
+internal fun ShareMediaDialog(model: MusicViewModel, track: Track, dismiss: () -> Unit) {
+    val context = LocalContext.current
+    val account by model.sessions.account.collectAsStateWithLifecycle()
+    var generating by remember(track.key) { mutableStateOf(false) }
+    var url by remember(track.key) { mutableStateOf<String?>(null) }
+    var copied by remember(track.key) { mutableStateOf(false) }
+    var error by remember(track.key) { mutableStateOf<String?>(null) }
+    val scope = rememberCoroutineScope()
+    AlertDialog(onDismissRequest = { if (!generating) dismiss() }, title = { Text("Share Media") }, text = {
+        Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+            Text("${track.displayTitle}\n\nAnyone with this link can listen, read lyrics and metadata, and save this file without signing in. They cannot edit it. Only share content you have permission to share.")
+            url?.let {
+                OutlinedTextField(value = it, onValueChange = {}, readOnly = true, label = { Text("Public media link") })
+            }
+            error?.let { Text(it, color = MaterialTheme.colorScheme.error) }
+        }
+    }, confirmButton = {
+        TextButton(enabled = !generating, onClick = {
+            val link = url
+            if (link != null) {
+                val clipboard = context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
+                clipboard.setPrimaryClip(ClipData.newPlainText("Public media link", link))
+                copied = true
+            } else {
+                scope.launch {
+                    generating = true
+                    error = null
+                    try {
+                        val owner = requireNotNull(account) { "Sign in to share media." }
+                        val response = model.api.request(shareMediaPath(track), method = "POST").jsonObject
+                        val path = response["url"]?.jsonPrimitive?.content
+                            ?: throw IllegalStateException("The server did not return a share link.")
+                        require(Regex("^/share/[A-Za-z0-9_-]{43}$").matches(path)) {
+                            "The server returned an invalid share link."
+                        }
+                        url = "${AuthProtocol.normalizeOrigin(owner.origin)}$path"
+                    } catch (failure: Exception) {
+                        if (failure is kotlinx.coroutines.CancellationException) throw failure
+                        error = failure.message ?: "Unable to create a public link."
+                    } finally {
+                        generating = false
+                    }
+                }
+            }
+        }) {
+            Text(when {
+                generating -> "Generating..."
+                url == null -> "Generate public link"
+                copied -> "Copied"
+                else -> "Copy link"
+            })
+        }
+    }, dismissButton = {
+        TextButton(enabled = !generating, onClick = dismiss) { Text(if (url == null) "Cancel" else "Done") }
+    })
+}
+
+internal fun shareMediaPath(track: Track) =
+    "/api/jobs/${encode(track.jobId)}/files/${encode(track.name)}/share"
 
 internal fun trackReorderNeighbors(files: List<Track>, index: Int): Pair<Track?, Track?> {
     val track = files.getOrNull(index) ?: return null to null
