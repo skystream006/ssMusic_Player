@@ -191,9 +191,12 @@ Artwork, song information, and playback controls stay on one row even on narrow
 foldable cover screens; long titles and artist names scroll automatically.
 Its previous, play/pause, next, and repeat controls work without opening Now Playing;
 repeat cycles through off, one song, and the entire queue.
-Now Playing's header offers **Edit metadata** for MP3 files you can edit and
-**Save file** to download the current song to a location chosen with Android's
-document picker. These actions remain available on the Player, Lyrics, and Queue tabs.
+Now Playing's header offers **Edit metadata** and **Transcribe lyrics** for MP3
+files you can edit, plus **Save file** to download the current song to a location
+chosen with Android's document picker. **Transcribe lyrics** opens the same
+transcription options as the Library menu, including no-vocals generation for
+locked songs, and is disabled while the service is inactive or an action is busy.
+These actions remain available on the Player, Lyrics, and Queue tabs.
 Track ratings remain visible even at zero; tap the star beside a track's menu
 or queue controls to open **Rate song**. Saving uses the existing MP3 editing
 permissions. Tap the selected star again to clear a rating, then **Save**.

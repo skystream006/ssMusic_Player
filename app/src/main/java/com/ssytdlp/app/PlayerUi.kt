@@ -173,7 +173,20 @@ fun NowPlayingScreen(model: MusicViewModel, state: PlaybackState, download: (Str
                 val canEdit = track.name.endsWith(".mp3", true) && account?.user?.let { user ->
                     !user.isShared && model.library.library.jobs.find { it.id == track.jobId }?.canModify(user) == true
                 } == true
-                if (canEdit) ToolButton(Icons.Rounded.Edit, "Edit metadata", enabled = !model.busy) { editingTrack = track }
+                if (canEdit) {
+                    ToolButton(Icons.Rounded.Edit, "Edit metadata", enabled = !model.busy) { editingTrack = track }
+                    var transcribe by remember(track.key, account?.origin, account?.user?.id) { mutableStateOf(false) }
+                    val available = model.transcriptionAvailable
+                    TooltipBox(positionProvider = TooltipDefaults.rememberPlainTooltipPositionProvider(),
+                        tooltip = { PlainTooltip { Text(if (available) "Transcribe lyrics" else INACTIVE_TRANSCRIPTION_MESSAGE) } },
+                        state = rememberTooltipState()) {
+                        IconButton(onClick = { transcribe = true }, enabled = available && !model.busy) {
+                            Icon(if (model.library.transcriptionLocked(track)) Icons.Rounded.MicOff else Icons.Rounded.Lyrics,
+                                "Transcribe lyrics")
+                        }
+                    }
+                    if (transcribe) TranscribeDialog(model, track) { transcribe = false }
+                }
                 if (canReplaceFile(account?.user,
                     model.library.library.jobs.find { it.id == track.jobId } ?: model.jobs.find { it.id == track.jobId }, track)) {
                     ToolButton(Icons.Rounded.UploadFile, "Replace File", enabled = !model.busy) { replacingTrack = track }
