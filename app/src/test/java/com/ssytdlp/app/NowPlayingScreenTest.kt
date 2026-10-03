@@ -31,10 +31,17 @@ import com.ssytdlp.app.core.SongMetadata
 import com.ssytdlp.app.core.Transcription
 import java.security.Provider
 import java.security.Security
+import java.util.Collections
 import kotlinx.coroutines.cancel
 import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.serialization.encodeToString
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.jsonObject
+import okhttp3.OkHttpClient
+import okhttp3.Protocol
+import okhttp3.Request
+import okhttp3.Response
+import okhttp3.ResponseBody.Companion.toResponseBody
 import org.junit.After
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
@@ -81,6 +88,7 @@ class NowPlayingScreenTest {
         compose.onNodeWithContentDescription("Play").assertDoesNotExist()
         compose.onNodeWithContentDescription("Close player").assertDoesNotExist()
         compose.onNodeWithContentDescription("Edit metadata").assertDoesNotExist()
+        compose.onNodeWithContentDescription("View song metadata").assertDoesNotExist()
         compose.onNodeWithContentDescription("Transcribe lyrics").assertDoesNotExist()
         compose.onNodeWithContentDescription("Save file").assertDoesNotExist()
     }
@@ -132,6 +140,8 @@ class NowPlayingScreenTest {
             compose.onNodeWithContentDescription("Edit metadata").assertDoesNotExist()
             compose.onNodeWithContentDescription("Transcribe lyrics").assertDoesNotExist()
             compose.onNodeWithContentDescription("Save file").assertIsEnabled()
+            if (user.isShared) compose.onNodeWithContentDescription("View song metadata").assertIsEnabled()
+            else compose.onNodeWithContentDescription("View song metadata").assertDoesNotExist()
         }
         compose.runOnIdle {
             account.value = account.value!!.copy(user = User(id = "owner"))
@@ -140,8 +150,11 @@ class NowPlayingScreenTest {
         compose.onNodeWithContentDescription("Edit metadata").assertDoesNotExist()
         compose.onNodeWithContentDescription("Transcribe lyrics").assertDoesNotExist()
         compose.onNodeWithContentDescription("Save file").assertIsEnabled()
+        compose.runOnIdle { account.value = account.value!!.copy(user = User(role = "Shared")) }
+        compose.onNodeWithContentDescription("View song metadata").assertDoesNotExist()
         compose.runOnIdle { account.value = null; state.value = state.value.copy(track = track) }
         compose.onNodeWithContentDescription("Edit metadata").assertDoesNotExist()
+        compose.onNodeWithContentDescription("View song metadata").assertDoesNotExist()
         compose.onNodeWithContentDescription("Transcribe lyrics").assertDoesNotExist()
     }
 
@@ -475,7 +488,115 @@ class NowPlayingScreenTest {
             compose.onNodeWithText("Add to queue").assertIsDisplayed()
             compose.onNodeWithText("Save file").assertIsDisplayed()
             compose.onNodeWithText("Share Media").assertDoesNotExist()
+            compose.onNodeWithText("View song metadata").assertIsDisplayed()
+            compose.onNodeWithText("Edit song / rating").assertDoesNotExist()
+            compose.onNodeWithText("Transcribe lyrics").assertDoesNotExist()
         }
+    }
+
+    @Test fun sharedMetadataActionsReadAudioIncludingNoVocalsAndNonMp3WithoutWriting() {
+        val track = mutableStateOf(Track(jobId = "source job", name = "song.mp3", playlistId = "shared"))
+        val showMenu = mutableStateOf(true)
+        val account = ReflectionHelpers.getField<MutableStateFlow<Account?>>(model.sessions, "mutableAccount")
+        val requests = metadataResponses { 200 to ApiJson.encodeToString(
+            SongMetadata(title = "Fetched title", rating = 3, transcriptionLocked = true, canEdit = true)) }
+        compose.runOnIdle {
+            account.value = Account("https://music.example", User(id = "reader", role = "Shared"),
+                Session("test", "2099-01-01T00:00:00Z"))
+        }
+        compose.setContent {
+            MusicTheme {
+                if (showMenu.value) TrackMenu(model, track.value, 0) { _, _ -> }
+                else NowPlayingScreen(model, PlaybackState(track = track.value)) { _, _ -> }
+            }
+        }
+        val expectedPaths = mutableListOf<String>()
+        for (menu in listOf(true, false)) {
+            compose.runOnIdle { showMenu.value = menu }
+            for (name in listOf("song.mp3", "[NoVocals]/song.MP3", "song.flac")) {
+                compose.runOnIdle { track.value = track.value.copy(name = name) }
+                if (menu) {
+                    compose.onNodeWithContentDescription("Options for ${track.value.displayTitle}").performClick()
+                    compose.onNodeWithText("View song metadata").performClick()
+                } else compose.onNodeWithContentDescription("View song metadata").performClick()
+                compose.waitUntil(5_000) { compose.onAllNodesWithText("Fetched title").fetchSemanticsNodes().isNotEmpty() }
+                compose.onNode(isDialog()).assertIsDisplayed()
+                compose.onNodeWithText("Title").assertTextContains("Fetched title")
+                compose.onNodeWithContentDescription("Transcription locked").assertHasNoClickAction()
+                compose.onNode(hasSetTextAction()).assertDoesNotExist()
+                compose.onNodeWithText("Save").assertDoesNotExist()
+                compose.onNodeWithContentDescription("3 stars").assertDoesNotExist()
+                compose.onNodeWithText("Close").performClick()
+                compose.onNode(isDialog()).assertDoesNotExist()
+                expectedPaths += songPath(track.value, "lyrics")
+            }
+        }
+        compose.runOnIdle {
+            assertEquals(expectedPaths, requests.map { it.url.encodedPath })
+            assertTrue(requests.all { it.method == "GET" })
+            showMenu.value = true
+            track.value = track.value.copy(name = "movie.mp4", mediaType = "video")
+        }
+        compose.onNodeWithContentDescription("Options for movie").performClick()
+        compose.onNodeWithText("View song metadata").assertDoesNotExist()
+    }
+
+    @Test fun metadataViewerClearsPriorAccountDataAndShowsDeniedAccessWithoutSave() {
+        val track = Track(jobId = "source", name = "song.mp3")
+        val account = ReflectionHelpers.getField<MutableStateFlow<Account?>>(model.sessions, "mutableAccount")
+        val requests = metadataResponses {
+            if (model.sessions.account.value?.user?.id == "reader")
+                200 to ApiJson.encodeToString(SongMetadata(title = "Granted song"))
+            else 403 to """{"error":"Access denied"}"""
+        }
+        compose.runOnIdle {
+            account.value = Account("https://music.example", User(id = "reader", role = "Shared"),
+                Session("test", "2099-01-01T00:00:00Z"))
+        }
+        compose.setContent { MusicTheme { MetadataDialog(model, track) {} } }
+        compose.waitUntil(5_000) { compose.onAllNodesWithText("Granted song").fetchSemanticsNodes().isNotEmpty() }
+        compose.runOnIdle { account.value = account.value!!.copy(user = User(id = "other", role = "shared")) }
+        compose.waitUntil(5_000) { compose.onAllNodesWithText("Access denied").fetchSemanticsNodes().isNotEmpty() }
+        compose.onNodeWithText("Granted song").assertDoesNotExist()
+        compose.onNodeWithText("Save").assertDoesNotExist()
+        compose.onNode(hasSetTextAction()).assertDoesNotExist()
+        compose.onNodeWithText("Close").assertIsEnabled()
+        compose.runOnIdle {
+            assertEquals(2, requests.size)
+            assertTrue(requests.all { it.method == "GET" && it.url.encodedPath == songPath(track, "lyrics") })
+        }
+    }
+
+    @Test fun metadataDialogHonorsServerEditingPermissionForLocalOwner() {
+        val track = Track(jobId = "source", name = "song.mp3")
+        val account = ReflectionHelpers.getField<MutableStateFlow<Account?>>(model.sessions, "mutableAccount")
+        val library = ReflectionHelpers.getField<MutableState<LibraryState>>(model, "library\$delegate")
+        metadataResponses { 200 to ApiJson.encodeToString(SongMetadata(title = "Read-only song", canEdit = false)) }
+        compose.runOnIdle {
+            account.value = Account("https://music.example", User(id = "owner"), Session("test", "2099-01-01T00:00:00Z"))
+            library.value = LibraryState(library = Library(jobs = listOf(Job("source", initiatedBy = account.value!!.user))))
+        }
+        compose.setContent { MusicTheme { MetadataDialog(model, track) {} } }
+        compose.waitUntil(5_000) { compose.onAllNodesWithText("Read-only song").fetchSemanticsNodes().isNotEmpty() }
+        compose.onNodeWithText("View song metadata").assertIsDisplayed()
+        compose.onNodeWithText("Save").assertDoesNotExist()
+        compose.onNode(hasSetTextAction()).assertDoesNotExist()
+    }
+
+    private fun metadataResponses(response: (Request) -> Pair<Int, String>): MutableList<Request> {
+        val requests = Collections.synchronizedList(mutableListOf<Request>())
+        val client = OkHttpClient.Builder().addInterceptor { chain ->
+            val request = chain.request()
+            requests.add(request)
+            val (status, body) = response(request)
+            Response.Builder().request(request).protocol(Protocol.HTTP_1_1).code(status).message("Test response")
+                .body(body.toResponseBody()).build()
+        }.build()
+        compose.runOnIdle {
+            model.viewModelScope.cancel()
+            ReflectionHelpers.setField(model, "api", ServerApi({ model.sessions.account.value }, {}, client))
+        }
+        return requests
     }
 
     @Test fun nonSharedUsersKeepPlaylistTransferActionsOnlyForPlaylistTracks() {
@@ -599,8 +720,8 @@ class NowPlayingScreenTest {
         compose.setContent { MusicTheme { LibraryScreen(model, PlaybackState(), {}, { _, _ -> }) } }
         compose.onNodeWithContentDescription("Rating: 0 out of 5").assertIsDisplayed().performClick()
         compose.onNode(isDialog()).assertIsDisplayed()
-        compose.onNodeWithText("Rate song").assertIsDisplayed()
-        compose.onNodeWithText("Cancel").performClick()
+        compose.onNodeWithText("Song rating").assertIsDisplayed()
+        compose.onNodeWithText("Close").performClick()
         compose.onNode(isDialog()).assertDoesNotExist()
         compose.onNodeWithContentDescription("Rating: 0 out of 5").assertIsDisplayed()
     }
@@ -614,8 +735,8 @@ class NowPlayingScreenTest {
         compose.onNodeWithText("Queue").performClick()
         compose.onNodeWithContentDescription("Rating: 4 out of 5").performClick()
         compose.onAllNodes(isDialog()).assertCountEquals(1)
-        compose.onNodeWithText("Rate song").assertIsDisplayed()
-        compose.onNodeWithText("Cancel").performClick()
+        compose.onNodeWithText("Song rating").assertIsDisplayed()
+        compose.onNodeWithText("Close").performClick()
         compose.onNode(isDialog()).assertDoesNotExist()
         compose.onAllNodesWithContentDescription("Remove from queue").assertCountEquals(2)
     }

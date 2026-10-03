@@ -204,6 +204,14 @@ Track ratings remain visible even at zero; tap the star beside a track's menu
 or queue controls to open **Rate song**. Saving uses the existing MP3 editing
 permissions. Tap the selected star again to clear a rating, then **Save**.
 
+Shared accounts can choose **View song metadata** (the info icon) from a Library
+song's options or the Now Playing header. For audio in their granted libraries,
+including non-MP3 and `[NoVocals]/` files, the dialog displays title, artist, album,
+genre, year, artwork, rating, and transcription-lock status read-only. It has a
+**Close** button and no save, rating, artwork, or lock editing controls. Tapping a
+track's rating also shows its value read-only; existing MP3 editing permissions
+remain unchanged, and the server still enforces library grants.
+
 Choose **Replace File** from a Library song's options or the Now Playing header
 to upload one non-empty audio file in the same format, up to 512 MB. Selecting
 a file does not upload it: confirm **Replace File** to overwrite the song.
