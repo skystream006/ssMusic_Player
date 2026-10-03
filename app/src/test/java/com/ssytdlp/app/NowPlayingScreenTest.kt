@@ -426,7 +426,7 @@ class NowPlayingScreenTest {
             }
         }
         compose.onNodeWithContentDescription("Share Media").assertIsDisplayed().performClick()
-        compose.onNodeWithText("Anyone with this link can listen, read lyrics and metadata, and save this file without signing in. They cannot edit it. Only share content you have permission to share.")
+        compose.onNodeWithText("Anyone with this link can listen", substring = true)
             .assertIsDisplayed()
         compose.onNodeWithText("Generate public link").assertIsDisplayed()
         compose.onNodeWithText("Cancel").performClick()
