@@ -535,6 +535,8 @@ class MusicUiTest {
         compose.onNodeWithContentDescription("Playback position").assertIsEnabled()
         compose.runOnIdle { state.value = PlaybackState() }
         compose.onNodeWithContentDescription("Playback position").assertDoesNotExist()
+        compose.onNodeWithContentDescription("Shuffle").assertDoesNotExist()
+        compose.onNodeWithContentDescription("Repeat: off").assertDoesNotExist()
     }
 
     @Test
@@ -551,7 +553,8 @@ class MusicUiTest {
             MusicTheme {
                 MiniPlayer(state.value, null, { expanded++ }, { toggled++ }, {}, {},
                     previous = { previous++ },
-                    repeat = { state.value = state.value.copy(repeat = (state.value.repeat + 1) % 3) })
+                    repeat = { state.value = state.value.copy(repeat = (state.value.repeat + 1) % 3) },
+                    shuffle = { state.value = state.value.copy(shuffle = !state.value.shuffle) })
             }
         }
         val title = compose.onNodeWithText(titleText).assertIsDisplayed().getUnclippedBoundsInRoot()
@@ -567,12 +570,58 @@ class MusicUiTest {
             assertEquals(pause.top, bounds.top)
             previousRight = bounds.right
         }
+        val shuffle = compose.onNodeWithContentDescription("Shuffle").assertIsDisplayed().getUnclippedBoundsInRoot()
+        val slider = compose.onNodeWithContentDescription("Playback position").getUnclippedBoundsInRoot()
+        assertTrue(shuffle.right - shuffle.left >= 48.dp && shuffle.bottom - shuffle.top >= 48.dp)
+        assertTrue(shuffle.left >= 0.dp && shuffle.right <= slider.left && slider.right <= 320.dp)
+        assertTrue("Shuffle must fit beside the slider without crowding song information", shuffle.top >= pause.bottom)
+        compose.onNodeWithContentDescription("Shuffle").assertIsOff().performClick().assertIsOn()
         compose.onNodeWithContentDescription("Previous track").performClick()
         compose.onNodeWithContentDescription("Repeat: off").assertIsOff().performClick()
         compose.onNodeWithContentDescription("Repeat: one").assertIsOn().performClick()
         compose.onNodeWithContentDescription("Repeat: all").assertIsOn().performClick()
         compose.onNodeWithContentDescription("Repeat: off").assertIsOff()
+        compose.onNodeWithContentDescription("Shuffle").assertIsOn().performClick().assertIsOff()
         compose.runOnIdle { assertEquals(1, previous); assertEquals(0, toggled); assertEquals(0, expanded) }
+    }
+
+    @Test fun miniPlayerAndFullPlayerShareShuffleAndRepeatOneWithoutChangingPausedSong() {
+        val track = Track("job", "song.mp3")
+        val initial = PlaybackState(track = track, queue = listOf(track), position = 42_000, duration = 120_000)
+        val state = mutableStateOf(initial)
+        var transportActions = 0
+        val shuffle = { state.value = state.value.copy(shuffle = !state.value.shuffle) }
+        val repeat = { state.value = state.value.copy(repeat = (state.value.repeat + 1) % 3) }
+        compose.setContent {
+            MusicTheme {
+                Column {
+                    MiniPlayer(state.value, null, { transportActions++ }, { transportActions++ },
+                        { transportActions++ }, { transportActions++ }, { transportActions++ }, repeat, shuffle)
+                    PlayerTransport(state.value, { transportActions++ }, { transportActions++ },
+                        { transportActions++ }, { transportActions++ }, shuffle, repeat)
+                }
+            }
+        }
+        compose.onAllNodesWithContentDescription("Shuffle").assertCountEquals(2)
+        compose.onAllNodesWithContentDescription("Repeat: off").assertCountEquals(2)
+        compose.onAllNodesWithContentDescription("Repeat: off")[0].assertIsOff().performClick()
+        compose.onAllNodesWithContentDescription("Repeat: one").assertCountEquals(2)
+        compose.onAllNodesWithContentDescription("Repeat: one").fetchSemanticsNodes().forEach {
+            assertEquals("Repeat current song", it.config[SemanticsProperties.StateDescription])
+        }
+        compose.onAllNodesWithContentDescription("Shuffle")[1].assertIsOff().performClick()
+        compose.onAllNodesWithContentDescription("Shuffle")[0].assertIsOn()
+        compose.onAllNodesWithContentDescription("Shuffle")[1].assertIsOn()
+        compose.runOnIdle {
+            assertEquals(initial.copy(shuffle = true, repeat = Player.REPEAT_MODE_ONE), state.value)
+            assertEquals(0, transportActions)
+        }
+        compose.onAllNodesWithContentDescription("Repeat: one")[1].assertIsOn().performClick()
+        compose.onAllNodesWithContentDescription("Repeat: all")[0].assertIsOn().performClick()
+        compose.onAllNodesWithContentDescription("Repeat: off").assertCountEquals(2)
+        compose.onAllNodesWithContentDescription("Shuffle")[0].performClick()
+        compose.onAllNodesWithContentDescription("Shuffle")[1].assertIsOff()
+        compose.runOnIdle { assertEquals(initial, state.value); assertEquals(0, transportActions) }
     }
 
     @Test
