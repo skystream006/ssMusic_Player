@@ -286,7 +286,8 @@ until the app resumes; new mutations wait for the foreground. In-flight mutation
 and imports are canceled on backgrounding, never replayed, and report that server
 changes may already have completed; refresh before retrying. Song streams and song information remain available
 for background playback. UI position polling, edge animation, and PCM metering
-stop in the background; metering also stays off when edge lighting is disabled.
+stop in the background; metering also stays off when edge lighting is disabled
+and no audio visualizer is displayed.
 These changes reduce background network traffic, CPU work, and storage writes
 without stopping the playback service.
 Use the bottom navigation to switch between **Library** and the dedicated
@@ -300,8 +301,17 @@ with the original page indices.
 Open **Settings** from the upper-right gear, to the right of **Refresh**, and
 select **Jobs** there to add downloads or manage server jobs.
 In **Now Playing**, the Player, Lyrics, and Queue tabs retain all playback controls.
+On the audio **Player** tab, use the **Audio visualizer** switch to replace album
+artwork with visuals driven by the decoded music. While enabled, the dropdown
+offers **Waveform**, **Amplitude bars**, and **Radial pulse**. Switching back
+restores the artwork and hides the dropdown. Your choices survive tab changes,
+song changes, and rotation; video playback keeps its video display.
+Visuals stop animating when paused, buffering, or in the background, and respect
+disabled system animations. They work independently of edge lighting, require no
+microphone permission, and do not change the sound. Outputs that bypass decoded
+PCM processing show a stationary visual instead.
 On **Player** only, swipe left for the next song or right for the previous song;
-the album artwork follows your finger and settles back when the gesture ends.
+the artwork or visualizer follows your finger and settles back when the gesture ends.
 Lyrics and Queue gestures never skip songs. When both lyric sources are available,
 tap the selected **Lyrics** tab again to alternate between **SYLT** (synchronized)
 and **USLT** (plain) lyrics. Each new song starts with SYLT when available.

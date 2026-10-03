@@ -11,6 +11,7 @@ import androidx.compose.runtime.snapshots.Snapshot
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.semantics.SemanticsProperties
 import androidx.compose.ui.test.*
 import androidx.compose.ui.test.junit4.StateRestorationTester
 import androidx.compose.ui.test.junit4.createAndroidComposeRule
@@ -91,6 +92,77 @@ class NowPlayingScreenTest {
         compose.onNodeWithContentDescription("View song metadata").assertDoesNotExist()
         compose.onNodeWithContentDescription("Transcribe lyrics").assertDoesNotExist()
         compose.onNodeWithContentDescription("Save file").assertDoesNotExist()
+        compose.onNodeWithContentDescription("Audio visualizer").assertDoesNotExist()
+        compose.onNodeWithContentDescription("Visualizer style").assertDoesNotExist()
+    }
+
+    @Test fun visualizerSwitchAndDropdownRetainSelectionWithoutChangingPlayback() {
+        val track = Track(jobId = "preview", name = "song.mp3")
+        val playback = PlaybackState(track = track, queue = listOf(track), position = 42_000)
+        val restoration = StateRestorationTester(compose)
+        restoration.setContent { MusicTheme { NowPlayingScreen(model, playback) { _, _ -> } } }
+        compose.onNodeWithContentDescription("Audio visualizer").assertIsOff()
+        compose.onNodeWithContentDescription("Album artwork unavailable").assertIsDisplayed()
+        compose.onNodeWithContentDescription("Visualizer style").assertDoesNotExist()
+        compose.onNodeWithContentDescription("Audio visualizer").performClick().assertIsOn()
+        compose.onNodeWithContentDescription("Album artwork unavailable").assertDoesNotExist()
+        AudioVisualizerStyle.entries.forEach { style ->
+            compose.onNodeWithContentDescription("Visualizer style").performClick()
+            compose.onAllNodesWithText(style.label).onLast().performClick()
+            compose.onNodeWithContentDescription("${style.label} audio visualizer").assertIsDisplayed()
+            compose.onNodeWithContentDescription("Play").assertIsDisplayed()
+            compose.onNodeWithContentDescription("Playback position").assertIsDisplayed()
+        }
+        restoration.emulateSavedInstanceStateRestore()
+        compose.onNodeWithContentDescription("Audio visualizer").assertIsOn()
+        compose.onNodeWithContentDescription("Radial pulse audio visualizer").assertIsDisplayed()
+        listOf("Lyrics", "Queue").forEach { tab ->
+            compose.onNodeWithText(tab).performClick()
+            compose.onNodeWithContentDescription("Visualizer style").assertDoesNotExist()
+            compose.onNodeWithContentDescription("Radial pulse audio visualizer").assertDoesNotExist()
+            compose.onNodeWithText("Player").performClick()
+            compose.onNodeWithContentDescription("Radial pulse audio visualizer").assertIsDisplayed()
+        }
+        compose.onNodeWithContentDescription("Audio visualizer").performClick().assertIsOff()
+        compose.onNodeWithContentDescription("Visualizer style").assertDoesNotExist()
+        compose.onNodeWithContentDescription("Album artwork unavailable").assertIsDisplayed()
+        compose.onNodeWithContentDescription("Audio visualizer").performClick()
+        compose.onNodeWithContentDescription("Radial pulse audio visualizer").assertIsDisplayed()
+        compose.runOnIdle { assertEquals(42_000L, playback.position); assertEquals(track, playback.track) }
+    }
+
+    @Test fun visualizerFollowsPlaybackAndLeavesVideoUnchanged() {
+        val track = Track(jobId = "preview", name = "song.mp3")
+        val playback = mutableStateOf(PlaybackState(track = track, queue = listOf(track)))
+        compose.mainClock.autoAdvance = false
+        compose.setContent { MusicTheme { NowPlayingScreen(model, playback.value) { _, _ -> } } }
+        compose.onNodeWithContentDescription("Audio visualizer").performClick()
+        fun assertVisualizerState(description: String) {
+            compose.mainClock.advanceTimeBy(100)
+            compose.onNodeWithContentDescription("Waveform audio visualizer")
+                .assert(SemanticsMatcher.expectValue(SemanticsProperties.StateDescription, description))
+        }
+        fun update(value: PlaybackState) = compose.runOnIdle {
+            playback.value = value
+            Snapshot.sendApplyNotifications()
+        }
+        assertVisualizerState("Idle")
+        update(playback.value.copy(playing = true))
+        assertVisualizerState("Playing")
+        update(playback.value.copy(buffering = true))
+        assertVisualizerState("Idle")
+        update(playback.value.copy(buffering = false, error = "Playback failed"))
+        assertVisualizerState("Idle")
+        update(playback.value.copy(error = null, track = track.copy(name = "next.mp3")))
+        assertVisualizerState("Playing")
+        update(playback.value.copy(track = track.copy(name = "video.mp4", mediaType = "video")))
+        compose.mainClock.advanceTimeBy(100)
+        compose.onNodeWithContentDescription("Audio visualizer").assertDoesNotExist()
+        compose.onNodeWithContentDescription("Visualizer style").assertDoesNotExist()
+        compose.onNodeWithContentDescription("Waveform audio visualizer").assertDoesNotExist()
+        update(playback.value.copy(track = track, playing = false))
+        assertVisualizerState("Idle")
+        compose.onNodeWithContentDescription("Audio visualizer").assertIsOn()
     }
 
     @Test fun nowPlayingActionsRespectEditingPermissionsAndBusyStateAcrossTabs() {

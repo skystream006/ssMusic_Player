@@ -186,6 +186,8 @@ fun NowPlayingScreen(model: MusicViewModel, state: PlaybackState, download: (Str
     val account by model.sessions.account.collectAsStateWithLifecycle()
     var replacingTrack by remember(account?.origin, account?.user?.id, account?.user?.role) { mutableStateOf<Track?>(null) }
     var preferUslt by rememberSaveable(state.track?.key) { mutableStateOf(false) }
+    var showVisualizer by rememberSaveable { mutableStateOf(false) }
+    var visualizerStyle by rememberSaveable { mutableStateOf(AudioVisualizerStyle.WAVEFORM) }
     var artworkDrag by remember(state.track?.key, tab) { mutableFloatStateOf(0f) }
     val artworkOffset by key(state.track?.key, tab) {
         animateFloatAsState(artworkDrag, animationSpec = if (artworkDrag == 0f) spring() else snap(),
@@ -264,7 +266,9 @@ fun NowPlayingScreen(model: MusicViewModel, state: PlaybackState, download: (Str
             }
             when (tab) {
                 0 -> PlayerArtwork(state, model.metadata, Modifier.weight(1f), model.playback.controller,
-                    artworkOffset = { artworkOffset }, transcription = model.library.transcription(state.track)) {
+                    artworkOffset = { artworkOffset }, transcription = model.library.transcription(state.track),
+                    showVisualizer = showVisualizer, onShowVisualizer = { showVisualizer = it },
+                    visualizerStyle = visualizerStyle, onVisualizerStyle = { visualizerStyle = it }) {
                     model.playback.play(listOfNotNull(state.track?.noVocalsVersion))
                 }
                 1 -> Lyrics(model, state, Modifier.weight(1f), showUslt,
@@ -335,16 +339,52 @@ internal fun Modifier.playerTrackSwipes(enabled: Boolean, nextEnabled: Boolean,
 
 @androidx.annotation.OptIn(UnstableApi::class)
 @Composable
-fun PlayerArtwork(state: PlaybackState, metadata: SongMetadata?, modifier: Modifier = Modifier,
+internal fun PlayerArtwork(state: PlaybackState, metadata: SongMetadata?, modifier: Modifier = Modifier,
     controller: MediaController? = null, artworkOffset: () -> Float = { 0f },
-    transcription: Transcription? = null, onInstrumental: () -> Unit = {}) {
+    transcription: Transcription? = null, showVisualizer: Boolean = false,
+    onShowVisualizer: (Boolean) -> Unit = {}, visualizerStyle: AudioVisualizerStyle = AudioVisualizerStyle.WAVEFORM,
+    onVisualizerStyle: (AudioVisualizerStyle) -> Unit = {}, onInstrumental: () -> Unit = {}) {
     val track = state.track
     Column(modifier.fillMaxWidth().verticalScroll(rememberScrollState()).padding(horizontal = 28.dp, vertical = 24.dp),
         horizontalAlignment = Alignment.CenterHorizontally) {
         if (track?.mediaType == "video") AndroidView(factory = { context -> PlayerView(context).apply { useController = false; player = controller } },
             update = { it.player = controller }, onRelease = { it.player = null }, modifier = Modifier.fillMaxWidth().aspectRatio(16f / 9f))
-        else AlbumArtwork(metadata?.artwork, Modifier.absoluteOffset { IntOffset(artworkOffset().roundToInt(), 0) }
-            .widthIn(max = 320.dp).fillMaxWidth().aspectRatio(1f))
+        else {
+            if (track != null) {
+                Row(Modifier.widthIn(max = 320.dp).fillMaxWidth()
+                    .semantics { contentDescription = "Audio visualizer" }
+                    .toggleable(value = showVisualizer, role = Role.Switch, onValueChange = onShowVisualizer)
+                    .padding(bottom = 8.dp), verticalAlignment = Alignment.CenterVertically) {
+                    Text(if (showVisualizer) "Audio visualizer" else "Album artwork", Modifier.weight(1f),
+                        style = MaterialTheme.typography.labelLarge)
+                    Switch(checked = showVisualizer, onCheckedChange = null)
+                }
+                if (showVisualizer) {
+                    var expanded by remember { mutableStateOf(false) }
+                    Box(Modifier.padding(bottom = 12.dp)) {
+                        OutlinedButton(onClick = { expanded = true },
+                            modifier = Modifier.semantics { contentDescription = "Visualizer style" }) {
+                            Text(visualizerStyle.label)
+                            Icon(Icons.Rounded.ArrowDropDown, null)
+                        }
+                        DropdownMenu(expanded = expanded, onDismissRequest = { expanded = false }) {
+                            AudioVisualizerStyle.entries.forEach { style ->
+                                DropdownMenuItem(text = { Text(style.label) },
+                                    trailingIcon = {
+                                        if (style == visualizerStyle) Icon(Icons.Rounded.Check, "Selected")
+                                    }, onClick = { onVisualizerStyle(style); expanded = false })
+                            }
+                        }
+                    }
+                }
+            }
+            val visualModifier = Modifier.absoluteOffset { IntOffset(artworkOffset().roundToInt(), 0) }
+                .widthIn(max = 320.dp).fillMaxWidth().aspectRatio(1f)
+            if (showVisualizer && track != null) key(track.key) {
+                PlaybackAudioVisualizer(state.playing && !state.buffering && state.error == null,
+                    visualizerStyle, visualModifier)
+            } else AlbumArtwork(metadata?.artwork, visualModifier)
+        }
         Spacer(Modifier.height(28.dp))
         Text(metadata?.title?.ifBlank { null } ?: track?.displayTitle.orEmpty(), style = MaterialTheme.typography.headlineSmall,
             textAlign = TextAlign.Center, maxLines = 3, overflow = TextOverflow.Ellipsis)
