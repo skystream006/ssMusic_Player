@@ -180,7 +180,7 @@ it does not prove an installed app's identity. Authorize only sign-ins you start
 | Library | All Music, server-side search and 50-track pages, folder navigation, playlist counts, linked tracks |
 | Organization | Create/rename/remove/move folders, move playlists, add/move/remove song memberships, reorder complete unfiltered playlists |
 | Playback | Authenticated audio/video streams, persistent mini-player, full player, seek, next/previous, queue editing, shuffle, repeat, instrumental companions |
-| Lyrics and tags | Album artwork, timestamp-highlighted seekable SYLT lyrics, plain USLT lyrics, editing both lyric formats and MP3 tags/ratings, transcription requests and locking |
+| Lyrics and tags | Album artwork, expandable full-screen SYLT/USLT lyrics, timestamp-highlighted seekable SYLT lyrics, plain USLT lyrics, editing both lyric formats and MP3 tags/ratings, transcription requests and locking |
 | Jobs | Add audio/video YouTube jobs, metadata-only jobs, status polling, search, owner filter, rerun, rename, delete, contributors, add existing files to playlists, save ZIPs |
 | Import | Android document picker for media files or iTunes XML + ZIP; server-local XML + ZIP imports; server upload limits enforced while streaming |
 | Backup | Android/iTunes exports, progress, download latest ZIP, daily/weekly UTC schedules |
@@ -291,6 +291,10 @@ the album artwork follows your finger and settles back when the gesture ends.
 Lyrics and Queue gestures never skip songs. When both lyric sources are available,
 tap the selected **Lyrics** tab again to alternate between **SYLT** (synchronized)
 and **USLT** (plain) lyrics. Each new song starts with SYLT when available.
+Tap **Expand lyrics to full screen** to hide the app navigation and playback controls
+while reading. Use the **SYLT/USLT** button to switch available sources; synchronized
+lyrics still follow playback and support tap-to-seek. Tap **Exit full screen lyrics**
+or press Android Back to return to the Lyrics tab without interrupting playback.
 Pinch in or out on either lyrics display to resize the text (75%–200%).
 The size is remembered on this device across songs, tab changes, and app restarts.
 The playback position slider still seeks within the current song.

@@ -14,6 +14,7 @@ import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.test.*
 import androidx.compose.ui.test.junit4.StateRestorationTester
 import androidx.compose.ui.test.junit4.createAndroidComposeRule
+import androidx.compose.ui.unit.dp
 import androidx.lifecycle.ViewModelStore
 import androidx.lifecycle.viewModelScope
 import androidx.test.core.app.ApplicationProvider
@@ -43,6 +44,7 @@ import org.junit.Test
 import org.junit.runner.RunWith
 import org.robolectric.RobolectricTestRunner
 import org.robolectric.annotation.Config
+import org.robolectric.shadows.ShadowDialog
 import org.robolectric.util.ReflectionHelpers
 import org.robolectric.util.ReflectionHelpers.ClassParameter
 
@@ -567,6 +569,118 @@ class NowPlayingScreenTest {
             assertEquals(savedScale, restored.lyricsTextScale, 0f)
         }
     }
+
+    @Test fun lyricsExpandToFullScreenAndCollapseToTheSelectedSource() {
+        val track = Track(jobId = "preview", name = "song.mp3", title = "Blue hour", artist = "Northbound")
+        val state = PlaybackState(track = track, queue = listOf(track), position = 42_000, playing = true)
+        val metadata = ReflectionHelpers.getField<MutableState<SongMetadata?>>(model, "metadata\$delegate")
+        compose.runOnIdle {
+            metadata.value = SongMetadata(sylt = listOf(LyricLine(0.0, "Timed lyrics")), uslt = "Plain lyrics")
+        }
+        compose.setContent { MusicTheme { NowPlayingScreen(model, state) { _, _ -> } } }
+        compose.onNodeWithContentDescription("Expand lyrics to full screen").assertDoesNotExist()
+        compose.onNodeWithText("SYLT Lyrics").performClick()
+        compose.onNodeWithContentDescription("Expand lyrics to full screen").assertIsDisplayed().performClick()
+        compose.onNode(isDialog()).assertIsDisplayed().assertWidthIsAtLeast(360.dp).assertHeightIsAtLeast(700.dp)
+        fullScreenText("Blue hour").assertIsDisplayed()
+        fullScreenText("Northbound").assertIsDisplayed()
+        fullScreenText("Timed lyrics").assertIsDisplayed().assertHasClickAction()
+        compose.onNode(hasContentDescription("Pause") and hasAnyAncestor(isDialog())).assertDoesNotExist()
+        compose.onNodeWithContentDescription("Switch to USLT lyrics").performClick()
+        fullScreenText("Plain lyrics").assertIsDisplayed().assertHasNoClickAction()
+        compose.onNodeWithContentDescription("Exit full screen lyrics").performClick()
+        compose.onNode(isDialog()).assertDoesNotExist()
+        compose.onNodeWithText("USLT Lyrics").assertIsSelected()
+        compose.onNodeWithText("Plain lyrics").assertIsDisplayed()
+        compose.onNodeWithContentDescription("Pause").assertIsDisplayed()
+        compose.runOnIdle {
+            assertEquals(42_000L, state.position)
+            assertTrue(state.playing)
+        }
+    }
+
+    @Test fun fullScreenLyricsRestoreAndBackReturnsToLyricsWithoutLeavingNowPlaying() {
+        val track = Track(jobId = "preview", name = "song.mp3")
+        val metadata = ReflectionHelpers.getField<MutableState<SongMetadata?>>(model, "metadata\$delegate")
+        compose.runOnIdle { metadata.value = SongMetadata(uslt = "Plain lyrics") }
+        val restoration = StateRestorationTester(compose)
+        restoration.setContent { MusicTheme { NowPlayingScreen(model, PlaybackState(track = track)) { _, _ -> } } }
+        compose.onNodeWithText("USLT Lyrics").performClick()
+        compose.onNodeWithContentDescription("Expand lyrics to full screen").performClick()
+        restoration.emulateSavedInstanceStateRestore()
+        fullScreenText("Plain lyrics").assertIsDisplayed()
+        compose.onNodeWithContentDescription("Switch to SYLT lyrics").assertDoesNotExist()
+        compose.runOnUiThread { ShadowDialog.getLatestDialog().onBackPressed() }
+        compose.onNode(isDialog()).assertDoesNotExist()
+        compose.onNodeWithText("USLT Lyrics").assertIsSelected()
+        compose.onNodeWithContentDescription("Playback position").assertIsDisplayed()
+    }
+
+    @Test fun fullScreenLyricsFollowPlaybackAndUpdateWhenTheTrackChangesOrIsCleared() {
+        val track = Track(jobId = "preview", name = "song.mp3", title = "First song")
+        val state = mutableStateOf(PlaybackState(track = track, position = 200_000))
+        val metadata = ReflectionHelpers.getField<MutableState<SongMetadata?>>(model, "metadata\$delegate")
+        compose.runOnIdle {
+            metadata.value = SongMetadata(sylt = List(80) { LyricLine(it * 10.0, "Line $it") }, uslt = "Plain lyrics")
+        }
+        compose.setContent { MusicTheme { NowPlayingScreen(model, state.value) { _, _ -> } } }
+        compose.onNodeWithText("SYLT Lyrics").performClick()
+        compose.onNodeWithContentDescription("Expand lyrics to full screen").performClick()
+        fullScreenText("Line 20").assertIsDisplayed()
+        compose.runOnIdle { state.value = state.value.copy(position = 600_000) }
+        fullScreenText("Line 60").assertIsDisplayed().performClick()
+        compose.onNodeWithContentDescription("Switch to USLT lyrics").performClick()
+        fullScreenText("Plain lyrics").assertIsDisplayed()
+        compose.runOnIdle {
+            state.value = state.value.copy(track = track.copy(name = "next.mp3", title = "Next song"), position = 0)
+            metadata.value = SongMetadata(sylt = listOf(LyricLine(0.0, "Next timed lyrics")), uslt = "Next plain lyrics")
+        }
+        fullScreenText("Next song").assertIsDisplayed()
+        fullScreenText("Next timed lyrics").assertIsDisplayed()
+        fullScreenText("Plain lyrics").assertDoesNotExist()
+        compose.runOnIdle { state.value = PlaybackState() }
+        compose.onNode(isDialog()).assertDoesNotExist()
+        compose.onNodeWithText("Choose a song from Library to start playing.").assertIsDisplayed()
+    }
+
+    @Test fun fullScreenLyricsPinchSharesTheSavedTextScaleWithTheInlineView() {
+        val track = Track(jobId = "preview", name = "song.mp3")
+        val metadata = ReflectionHelpers.getField<MutableState<SongMetadata?>>(model, "metadata\$delegate")
+        compose.runOnIdle {
+            metadata.value = SongMetadata(uslt = List(80) { "Plain lyric $it" }.joinToString("\n"))
+        }
+        compose.setContent { MusicTheme { NowPlayingScreen(model, PlaybackState(track = track)) { _, _ -> } } }
+        compose.onNodeWithText("USLT Lyrics").performClick()
+        compose.onNodeWithContentDescription("Expand lyrics to full screen").performClick()
+        compose.onNode(isDialog()).performTouchInput {
+            pinch(start0 = center - Offset(20f, 0f), end0 = center - Offset(60f, 0f),
+                start1 = center + Offset(20f, 0f), end1 = center + Offset(60f, 0f), durationMillis = 600)
+        }
+        val scale = compose.runOnIdle { model.lyricsTextScale }
+        assertTrue(scale > 1f)
+        compose.onNode(isDialog()).performTouchInput { swipeUp(durationMillis = 1_000) }
+        compose.onNodeWithContentDescription("Exit full screen lyrics").performClick()
+        compose.onNodeWithText("USLT Lyrics").assertIsSelected()
+        compose.runOnIdle { assertEquals(scale, model.lyricsTextScale, 0f) }
+    }
+
+    @Test fun fullScreenLyricsShowLoadingErrorAndEmptyStates() {
+        val track = Track(jobId = "preview", name = "song.mp3")
+        val metadata = ReflectionHelpers.getField<MutableState<SongMetadata?>>(model, "metadata\$delegate")
+        val error = ReflectionHelpers.getField<MutableState<String?>>(model, "metadataError\$delegate")
+        compose.setContent { MusicTheme { NowPlayingScreen(model, PlaybackState(track = track)) { _, _ -> } } }
+        compose.onNodeWithText("Lyrics").performClick()
+        compose.onNodeWithContentDescription("Expand lyrics to full screen").performClick()
+        fullScreenText("Loading lyrics...").assertIsDisplayed()
+        compose.runOnIdle { error.value = "Lyrics request failed" }
+        fullScreenText("Lyrics request failed").assertIsDisplayed()
+        compose.runOnIdle { error.value = null; metadata.value = SongMetadata() }
+        fullScreenText("No lyrics available").assertIsDisplayed()
+        compose.onNodeWithContentDescription("Exit full screen lyrics").assertIsDisplayed().performClick()
+        compose.onNode(isDialog()).assertDoesNotExist()
+    }
+
+    private fun fullScreenText(text: String) = compose.onNode(hasText(text) and hasAnyAncestor(isDialog()))
 
     @Test fun lyricsZoomAccumulatesChangesAndClampsToReadableBounds() {
         compose.runOnIdle {
