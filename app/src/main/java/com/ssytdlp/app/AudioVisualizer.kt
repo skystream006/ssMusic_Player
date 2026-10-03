@@ -34,7 +34,11 @@ import kotlin.math.sqrt
 internal enum class AudioVisualizerStyle(val label: String) {
     WAVEFORM("Waveform"),
     BARS("Amplitude bars"),
-    RADIAL("Radial pulse")
+    RADIAL("Radial pulse");
+
+    companion object {
+        fun fromPreference(value: String?): AudioVisualizerStyle = entries.firstOrNull { it.name == value } ?: WAVEFORM
+    }
 }
 
 private data class VisualizerFrame(val level: Float = 0f, val waveform: FloatArray = floatArrayOf())

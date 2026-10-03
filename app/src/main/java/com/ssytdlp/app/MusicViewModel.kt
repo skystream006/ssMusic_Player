@@ -87,6 +87,12 @@ class MusicViewModel @JvmOverloads constructor(application: Application, private
     var edgeLightingStyle by mutableStateOf(EdgeLightingStyle.fromPreference(
         application.getSharedPreferences("settings", 0).getString("edge_lighting_style", null)))
         private set
+    internal var audioVisualizerEnabled by mutableStateOf(
+        application.getSharedPreferences("settings", 0).getBoolean("audio_visualizer", false))
+        private set
+    internal var audioVisualizerStyle by mutableStateOf(AudioVisualizerStyle.fromPreference(
+        application.getSharedPreferences("settings", 0).getString("audio_visualizer_style", null)))
+        private set
     var lyricsTextScale by mutableFloatStateOf(normalizeLyricsTextScale(
         application.getSharedPreferences("settings", 0).getFloat("lyrics_text_scale", 1f)))
         private set
@@ -486,6 +492,16 @@ class MusicViewModel @JvmOverloads constructor(application: Application, private
     fun chooseEdgeLightingStyle(style: EdgeLightingStyle) {
         edgeLightingStyle = style
         getApplication<Application>().getSharedPreferences("settings", 0).edit().putString("edge_lighting_style", style.name).apply()
+    }
+
+    internal fun chooseAudioVisualizer(enabled: Boolean) {
+        audioVisualizerEnabled = enabled
+        getApplication<Application>().getSharedPreferences("settings", 0).edit().putBoolean("audio_visualizer", enabled).apply()
+    }
+
+    internal fun chooseAudioVisualizerStyle(style: AudioVisualizerStyle) {
+        audioVisualizerStyle = style
+        getApplication<Application>().getSharedPreferences("settings", 0).edit().putString("audio_visualizer_style", style.name).apply()
     }
 
     fun zoomLyrics(zoomChange: Float) {

@@ -304,8 +304,9 @@ In **Now Playing**, the Player, Lyrics, and Queue tabs retain all playback contr
 On the audio **Player** tab, use the **Audio visualizer** switch to replace album
 artwork with visuals driven by the decoded music. While enabled, the dropdown
 offers **Waveform**, **Amplitude bars**, and **Radial pulse**. Switching back
-restores the artwork and hides the dropdown. Your choices survive tab changes,
-song changes, and rotation; video playback keeps its video display.
+restores the artwork and hides the dropdown. Your choices are saved on this device
+across navigation, song changes, rotation, and app restarts; video playback keeps
+its video display.
 Visuals stop animating when paused, buffering, or in the background, and respect
 disabled system animations. They work independently of edge lighting, require no
 microphone permission, and do not change the sound. Outputs that bypass decoded

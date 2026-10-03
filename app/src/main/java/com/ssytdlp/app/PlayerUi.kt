@@ -186,8 +186,6 @@ fun NowPlayingScreen(model: MusicViewModel, state: PlaybackState, download: (Str
     val account by model.sessions.account.collectAsStateWithLifecycle()
     var replacingTrack by remember(account?.origin, account?.user?.id, account?.user?.role) { mutableStateOf<Track?>(null) }
     var preferUslt by rememberSaveable(state.track?.key) { mutableStateOf(false) }
-    var showVisualizer by rememberSaveable { mutableStateOf(false) }
-    var visualizerStyle by rememberSaveable { mutableStateOf(AudioVisualizerStyle.WAVEFORM) }
     var artworkDrag by remember(state.track?.key, tab) { mutableFloatStateOf(0f) }
     val artworkOffset by key(state.track?.key, tab) {
         animateFloatAsState(artworkDrag, animationSpec = if (artworkDrag == 0f) spring() else snap(),
@@ -267,8 +265,8 @@ fun NowPlayingScreen(model: MusicViewModel, state: PlaybackState, download: (Str
             when (tab) {
                 0 -> PlayerArtwork(state, model.metadata, Modifier.weight(1f), model.playback.controller,
                     artworkOffset = { artworkOffset }, transcription = model.library.transcription(state.track),
-                    showVisualizer = showVisualizer, onShowVisualizer = { showVisualizer = it },
-                    visualizerStyle = visualizerStyle, onVisualizerStyle = { visualizerStyle = it }) {
+                    showVisualizer = model.audioVisualizerEnabled, onShowVisualizer = model::chooseAudioVisualizer,
+                    visualizerStyle = model.audioVisualizerStyle, onVisualizerStyle = model::chooseAudioVisualizerStyle) {
                     model.playback.play(listOfNotNull(state.track?.noVocalsVersion))
                 }
                 1 -> Lyrics(model, state, Modifier.weight(1f), showUslt,

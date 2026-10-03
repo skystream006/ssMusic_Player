@@ -99,8 +99,9 @@ class NowPlayingScreenTest {
     @Test fun visualizerSwitchAndDropdownRetainSelectionWithoutChangingPlayback() {
         val track = Track(jobId = "preview", name = "song.mp3")
         val playback = PlaybackState(track = track, queue = listOf(track), position = 42_000)
+        val visible = mutableStateOf(true)
         val restoration = StateRestorationTester(compose)
-        restoration.setContent { MusicTheme { NowPlayingScreen(model, playback) { _, _ -> } } }
+        restoration.setContent { MusicTheme { if (visible.value) NowPlayingScreen(model, playback) { _, _ -> } } }
         compose.onNodeWithContentDescription("Audio visualizer").assertIsOff()
         compose.onNodeWithContentDescription("Album artwork unavailable").assertIsDisplayed()
         compose.onNodeWithContentDescription("Visualizer style").assertDoesNotExist()
@@ -128,7 +129,36 @@ class NowPlayingScreenTest {
         compose.onNodeWithContentDescription("Album artwork unavailable").assertIsDisplayed()
         compose.onNodeWithContentDescription("Audio visualizer").performClick()
         compose.onNodeWithContentDescription("Radial pulse audio visualizer").assertIsDisplayed()
-        compose.runOnIdle { assertEquals(42_000L, playback.position); assertEquals(track, playback.track) }
+        compose.runOnIdle { visible.value = false }
+        compose.onNodeWithContentDescription("Radial pulse audio visualizer").assertDoesNotExist()
+        compose.runOnIdle { visible.value = true }
+        compose.onNodeWithContentDescription("Audio visualizer").assertIsOn()
+        compose.onNodeWithContentDescription("Radial pulse audio visualizer").assertIsDisplayed()
+        compose.onNodeWithText("0:42").assertIsDisplayed()
+    }
+
+    @Test fun visualizerPreferencesSurviveModelRecreationAndUnknownStylesFallBack() {
+        val application = model.getApplication<MusicApplication>()
+        val preferences = application.getSharedPreferences("settings", 0)
+        compose.runOnIdle {
+            assertEquals(false, model.audioVisualizerEnabled)
+            assertEquals(AudioVisualizerStyle.WAVEFORM, model.audioVisualizerStyle)
+            model.chooseAudioVisualizer(true)
+            model.chooseAudioVisualizerStyle(AudioVisualizerStyle.RADIAL)
+            val restored = MusicViewModel(application, connectPlayback = false)
+            models.put("restored-visualizer", restored)
+            assertTrue(restored.audioVisualizerEnabled)
+            assertEquals(AudioVisualizerStyle.RADIAL, restored.audioVisualizerStyle)
+            restored.chooseAudioVisualizer(false)
+            val artwork = MusicViewModel(application, connectPlayback = false)
+            models.put("restored-artwork", artwork)
+            assertEquals(false, artwork.audioVisualizerEnabled)
+            assertEquals(AudioVisualizerStyle.RADIAL, artwork.audioVisualizerStyle)
+            preferences.edit().putString("audio_visualizer_style", "unknown").commit()
+            val fallback = MusicViewModel(application, connectPlayback = false)
+            models.put("fallback-visualizer", fallback)
+            assertEquals(AudioVisualizerStyle.WAVEFORM, fallback.audioVisualizerStyle)
+        }
     }
 
     @Test fun visualizerFollowsPlaybackAndLeavesVideoUnchanged() {
