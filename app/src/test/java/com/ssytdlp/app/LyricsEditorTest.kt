@@ -8,6 +8,7 @@ import androidx.compose.ui.test.*
 import androidx.compose.ui.test.junit4.StateRestorationTester
 import androidx.compose.ui.test.junit4.createAndroidComposeRule
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.height
 import com.ssytdlp.app.core.LyricLine
 import com.ssytdlp.app.core.SongMetadata
 import kotlinx.serialization.json.JsonArray
