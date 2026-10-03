@@ -913,12 +913,75 @@ class MusicUiTest {
         compose.onNodeWithText("Save").assertIsNotEnabled()
         compose.onNodeWithContentDescription("3 stars").assertIsNotEnabled()
         compose.runOnIdle { busy.value = false; canEdit.value = false }
-        compose.onNodeWithText("Rating changes require permission to edit an MP3 file.").assertIsDisplayed()
-        compose.onNodeWithText("Save").assertIsNotEnabled()
-        compose.onNodeWithContentDescription("3 stars").assertIsNotEnabled()
-        compose.onNodeWithText("Cancel").assertIsEnabled()
+        compose.onNodeWithText("Song rating").assertIsDisplayed()
+        compose.onNodeWithText("Rating: 2 / 5").assertIsDisplayed()
+        compose.onNodeWithText("Save").assertDoesNotExist()
+        compose.onNodeWithContentDescription("3 stars").assertDoesNotExist()
+        compose.onNodeWithText("Close").assertIsEnabled()
         compose.runOnIdle { canEdit.value = true }
         compose.onNodeWithText("Save").assertIsEnabled()
+    }
+
+    @Test fun metadataViewerShowsFieldsArtworkRatingAndLockWithoutMutationControls() {
+        val image = java.io.ByteArrayOutputStream().also {
+            Bitmap.createBitmap(1, 1, Bitmap.Config.ARGB_8888).compress(Bitmap.CompressFormat.PNG, 100, it)
+        }.toByteArray()
+        val value = mutableStateOf(SongMetadata(title = "Song", artist = "Artist", album = "Album",
+            genre = "Pop", year = "2026", rating = 3, transcriptionLocked = true,
+            artwork = "data:image/png;base64," + android.util.Base64.encodeToString(image, android.util.Base64.NO_WRAP)))
+        val open = mutableStateOf(true)
+        var changes = 0
+        var saves = 0
+        compose.setContent {
+            MusicTheme {
+                if (open.value) MetadataDialog(value.value, { changes++ }, canEdit = false,
+                    dismiss = { open.value = false }) { saves++ }
+            }
+        }
+        compose.onNodeWithText("View song metadata").assertIsDisplayed()
+        compose.waitUntil(5_000) {
+            compose.onAllNodesWithContentDescription("Album artwork").fetchSemanticsNodes().isNotEmpty()
+        }
+        compose.onNodeWithContentDescription("Album artwork").assertIsDisplayed()
+        listOf("Title" to "Song", "Artist" to "Artist", "Album" to "Album", "Genre" to "Pop", "Year" to "2026")
+            .forEach { (label, text) ->
+                compose.onNodeWithText(label).performScrollTo().assertTextContains(text)
+            }
+        compose.onNodeWithText("Rating: 3 / 5").performScrollTo().assertIsDisplayed()
+        compose.onNodeWithContentDescription("Transcription locked").assertIsDisplayed().assertHasNoClickAction()
+        compose.runOnIdle { value.value = value.value.copy(transcriptionLocked = false, artwork = null) }
+        compose.onNodeWithContentDescription("Transcription unlocked").assertIsDisplayed().assertHasNoClickAction()
+        compose.onNodeWithContentDescription("Album artwork unavailable").performScrollTo().assertIsDisplayed()
+        compose.onNode(hasSetTextAction()).assertDoesNotExist()
+        compose.onNode(isToggleable()).assertDoesNotExist()
+        listOf("Save", "Cancel", "Choose artwork", "Remove artwork").forEach {
+            compose.onNodeWithText(it).assertDoesNotExist()
+        }
+        listOf("Lock transcription", "Unlock transcription").forEach {
+            compose.onNodeWithContentDescription(it).assertDoesNotExist()
+        }
+        compose.onNodeWithText("Close").performClick()
+        compose.onNode(isDialog()).assertDoesNotExist()
+        compose.runOnIdle { assertEquals(0, changes); assertEquals(0, saves) }
+    }
+
+    @Test fun metadataEditorRetainsFieldRatingLockAndSaveActions() {
+        val original = SongMetadata(title = "Song", artist = "Artist", album = "Album", genre = "Pop", year = "2026")
+        val value = mutableStateOf(original)
+        var saved: SongMetadata? = null
+        compose.setContent {
+            MusicTheme { MetadataDialog(value.value, { value.value = it }, dismiss = {}) { saved = it } }
+        }
+        compose.onNodeWithText("Song information").assertIsDisplayed()
+        compose.onAllNodes(hasSetTextAction()).assertCountEquals(5)
+        compose.onNodeWithText("Title").performTextReplacement("Updated")
+        compose.onNodeWithContentDescription("Lock transcription").performClick()
+        compose.onNodeWithContentDescription("4 stars").performScrollTo().performClick()
+        compose.onNodeWithText("Save").performClick()
+        compose.runOnIdle {
+            assertEquals(original.copy(title = "Updated", rating = 4, transcriptionLocked = true), saved)
+        }
+        compose.onNodeWithText("Cancel").assertIsEnabled()
     }
 
     @Test
