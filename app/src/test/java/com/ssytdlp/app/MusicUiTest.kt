@@ -922,6 +922,8 @@ class MusicUiTest {
         compose.onNodeWithText("Save").assertIsEnabled()
     }
 
+    // Robolectric #8460: text fields in dialogs loop at widths above the default 320dp.
+    @Config(qualifiers = "w320dp-h800dp")
     @Test fun metadataViewerShowsFieldsArtworkRatingAndLockWithoutMutationControls() {
         compose.mainClock.autoAdvance = false
         val image = java.io.ByteArrayOutputStream().also {
@@ -979,6 +981,7 @@ class MusicUiTest {
         compose.runOnIdle { assertEquals(0, changes); assertEquals(0, saves) }
     }
 
+    @Config(qualifiers = "w320dp-h800dp")
     @Test fun metadataEditorRetainsFieldRatingLockAndSaveActions() {
         compose.mainClock.autoAdvance = false
         val original = SongMetadata(title = "Song", artist = "Artist", album = "Album", genre = "Pop", year = "2026")

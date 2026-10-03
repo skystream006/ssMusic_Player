@@ -597,6 +597,8 @@ class NowPlayingScreenTest {
         }
     }
 
+    // Robolectric #8460: text fields in dialogs loop at widths above the default 320dp.
+    @Config(qualifiers = "w320dp-h800dp")
     @Test fun sharedMetadataActionsReadAudioIncludingNoVocalsAndNonMp3WithoutWriting() {
         compose.mainClock.autoAdvance = false
         val track = mutableStateOf(Track(jobId = "source job", name = "song.mp3", playlistId = "shared"))
@@ -659,6 +661,7 @@ class NowPlayingScreenTest {
         compose.onNodeWithText("View song metadata").assertDoesNotExist()
     }
 
+    @Config(qualifiers = "w320dp-h800dp")
     @Test fun metadataViewerClearsPriorAccountDataAndShowsDeniedAccessWithoutSave() {
         compose.mainClock.autoAdvance = false
         val track = Track(jobId = "source", name = "song.mp3")
@@ -694,6 +697,7 @@ class NowPlayingScreenTest {
         }
     }
 
+    @Config(qualifiers = "w320dp-h800dp")
     @Test fun metadataDialogHonorsServerEditingPermissionForLocalOwner() {
         compose.mainClock.autoAdvance = false
         val track = Track(jobId = "source", name = "song.mp3")
