@@ -407,6 +407,39 @@ class NowPlayingScreenTest {
         }
     }
 
+    @Test fun shareMediaIsAvailableForAuthorizedAudioSongsFromLibraryAndNowPlaying() {
+        val track = Track(jobId = "preview", name = "song.mp3")
+        val state = mutableStateOf(PlaybackState(track = track, queue = listOf(track)))
+        val showMenu = mutableStateOf(false)
+        val account = ReflectionHelpers.getField<MutableStateFlow<Account?>>(model.sessions, "mutableAccount")
+        val library = ReflectionHelpers.getField<MutableState<LibraryState>>(model, "library\$delegate")
+        compose.runOnIdle {
+            model.viewModelScope.cancel()
+            account.value = Account("https://music.example", User(id = "owner"),
+                Session("test", "2099-01-01T00:00:00Z"))
+            library.value = LibraryState(library = Library(jobs = listOf(Job("preview", initiatedBy = account.value!!.user))))
+        }
+        compose.setContent {
+            MusicTheme {
+                if (showMenu.value) TrackMenu(model, track, 0) { _, _ -> }
+                else NowPlayingScreen(model, state.value) { _, _ -> }
+            }
+        }
+        compose.onNodeWithContentDescription("Share Media").assertIsDisplayed().performClick()
+        compose.onNodeWithText("Anyone with this link can listen", substring = true)
+            .assertIsDisplayed()
+        compose.onNodeWithText("Generate public link").assertIsDisplayed()
+        compose.onNodeWithText("Cancel").performClick()
+
+        compose.runOnIdle { state.value = state.value.copy(track = track.copy(mediaType = "video")) }
+        compose.onNodeWithContentDescription("Share Media").assertDoesNotExist()
+        compose.runOnIdle { state.value = state.value.copy(track = track) }
+        compose.runOnIdle { showMenu.value = true }
+        compose.onNodeWithContentDescription("Options for song").performClick()
+        compose.onNodeWithText("Share Media").assertIsDisplayed().performClick()
+        compose.onNodeWithText("Generate public link").assertIsDisplayed()
+    }
+
     private fun assertOrdinaryTranscriptionOptionsHidden() {
         listOf("Auto-detect", "Multilingual", "Create no-vocals version [Karaoke version]",
             "Viet Lyrics Fallback", "Add lyrics", "Lyrics mode", "Transcribe").forEach {
@@ -441,6 +474,7 @@ class NowPlayingScreenTest {
             compose.onNodeWithText("Move to playlist").assertDoesNotExist()
             compose.onNodeWithText("Add to queue").assertIsDisplayed()
             compose.onNodeWithText("Save file").assertIsDisplayed()
+            compose.onNodeWithText("Share Media").assertDoesNotExist()
         }
     }
 
