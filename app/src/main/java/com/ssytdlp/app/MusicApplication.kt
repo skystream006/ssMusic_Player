@@ -10,6 +10,7 @@ import com.ssytdlp.app.core.PendingLogin
 class MusicApplication : Application() {
     val uiActivity = UiActivityGate()
     val audioLevels = AudioLevelMeter().apply { enabled = false }
+    private val audioLevelObservers = mutableSetOf<Any>()
     private val settingsListener = SharedPreferences.OnSharedPreferenceChangeListener { _, key ->
         if (key == null || key == "edge_lighting") updateMeter()
     }
@@ -55,9 +56,20 @@ class MusicApplication : Application() {
         api = ServerApi(sessions, uiActivity)
     }
 
+    internal fun observeAudioLevels(): () -> Unit {
+        val observer = Any()
+        audioLevelObservers.add(observer)
+        updateMeter()
+        return {
+            audioLevelObservers.remove(observer)
+            updateMeter()
+        }
+    }
+
     private fun updateMeter() {
         audioLevels.enabled = uiActivity.resumed.value &&
-            getSharedPreferences("settings", MODE_PRIVATE).getBoolean("edge_lighting", true)
+            (audioLevelObservers.isNotEmpty() ||
+                getSharedPreferences("settings", MODE_PRIVATE).getBoolean("edge_lighting", true))
     }
 }
 
