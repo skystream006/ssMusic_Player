@@ -154,10 +154,10 @@ class LyricsEditorDialogTest {
             uslt = List(20_000) { "x" }.joinToString("\n"),
             sylt = List(10_000) { LyricLine(it.toDouble(), "x") })
         show(preferUslt = true, value = longLyrics)
-        compose.onNodeWithTag("uslt-editor").assertHeightIsAtMost(800.dp)
+        assertTrue(compose.onNodeWithTag("uslt-editor").getUnclippedBoundsInRoot().height <= 800.dp)
         compose.onNodeWithText("Clear USLT").performScrollTo().assertIsDisplayed().performClick()
         compose.onNodeWithText("SYLT").assertIsDisplayed().performClick()
-        compose.onNodeWithTag("sylt-editor").assertHeightIsAtMost(800.dp)
+        assertTrue(compose.onNodeWithTag("sylt-editor").getUnclippedBoundsInRoot().height <= 800.dp)
         compose.onNodeWithText("Clear SYLT").performScrollTo().assertIsDisplayed().performClick()
         compose.onNodeWithText("Save").assertIsDisplayed().assertIsEnabled().performClick()
         compose.runOnIdle {
