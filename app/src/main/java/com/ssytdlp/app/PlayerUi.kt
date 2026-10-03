@@ -56,6 +56,8 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.viewinterop.AndroidView
+import androidx.compose.ui.window.Dialog
+import androidx.compose.ui.window.DialogProperties
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.media3.common.Player
 import androidx.media3.common.util.UnstableApi
@@ -208,7 +210,8 @@ fun NowPlayingScreen(model: MusicViewModel, state: PlaybackState, download: (Str
                     artworkOffset = { artworkOffset }, transcription = model.library.transcription(state.track)) {
                     model.playback.play(listOfNotNull(state.track?.noVocalsVersion))
                 }
-                1 -> Lyrics(model, state, Modifier.weight(1f), showUslt)
+                1 -> Lyrics(model, state, Modifier.weight(1f), showUslt,
+                    toggleSource = if (hasSylt && hasUslt) ({ preferUslt = !preferUslt }) else null)
                 else -> LazyColumn(Modifier.weight(1f)) {
                     itemsIndexed(state.queue, key = { index, item -> "${item.key}:$index" }) { index, queued ->
                         TrackRow(queued.copy(rating = model.library.rating(queued)), active = index == state.index,
@@ -320,27 +323,59 @@ fun PlayerTransport(state: PlaybackState, onSeek: (Long) -> Unit, previous: () -
 }
 
 @Composable
-fun Lyrics(model: MusicViewModel, state: PlaybackState, modifier: Modifier, preferUslt: Boolean = false) {
+fun Lyrics(model: MusicViewModel, state: PlaybackState, modifier: Modifier, preferUslt: Boolean = false,
+    toggleSource: (() -> Unit)? = null) {
     val account by model.sessions.account.collectAsStateWithLifecycle()
     val track = state.track
     val metadata = model.metadata
+    var expanded by rememberSaveable { mutableStateOf(false) }
     var editing by remember(account?.origin, account?.user?.id, account?.session) {
         mutableStateOf<Triple<Track, SongMetadata, Boolean>?>(null)
     }
     val canEdit = track?.name?.endsWith(".mp3", true) == true && metadata?.canEdit == true &&
         account?.user?.let { !it.isShared } == true
     Column(modifier) {
-        if (canEdit) Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
-            TextButton(onClick = {
+        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End,
+            verticalAlignment = Alignment.CenterVertically) {
+            if (canEdit) TextButton(onClick = {
                 if (track != null && metadata != null) editing = Triple(track, metadata, preferUslt)
             }, enabled = !model.busy) {
                 Icon(Icons.Rounded.Edit, null)
                 Spacer(Modifier.width(8.dp))
                 Text("Edit lyrics")
             }
+            ToolButton(Icons.Rounded.Fullscreen, "Expand lyrics to full screen") { expanded = true }
         }
         LyricsContent(metadata, state.position, track?.key, model.playback::seek, Modifier.weight(1f),
             model.metadataError, track?.mediaType == "video", preferUslt, model.lyricsTextScale, model::zoomLyrics)
+    }
+    if (expanded) Dialog(onDismissRequest = { expanded = false },
+        properties = DialogProperties(usePlatformDefaultWidth = false, decorFitsSystemWindows = false)) {
+        Surface(Modifier.fillMaxSize()) {
+            Column(Modifier.fillMaxSize().safeDrawingPadding()) {
+                Row(Modifier.fillMaxWidth().padding(start = 20.dp, end = 8.dp),
+                    verticalAlignment = Alignment.CenterVertically) {
+                    Column(Modifier.weight(1f).padding(vertical = 12.dp)) {
+                        Text(track?.displayTitle ?: "Lyrics", style = MaterialTheme.typography.titleMedium,
+                            maxLines = 1, overflow = TextOverflow.Ellipsis)
+                        track?.let {
+                            Text(it.displayArtist, style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                maxLines = 1, overflow = TextOverflow.Ellipsis)
+                        }
+                    }
+                    if (toggleSource != null) TextButton(onClick = toggleSource,
+                        modifier = Modifier.semantics {
+                            contentDescription = if (preferUslt) "Switch to SYLT lyrics" else "Switch to USLT lyrics"
+                        }) {
+                        Text(if (preferUslt) "USLT" else "SYLT")
+                    }
+                    ToolButton(Icons.Rounded.FullscreenExit, "Exit full screen lyrics") { expanded = false }
+                }
+                LyricsContent(metadata, state.position, track?.key, model.playback::seek, Modifier.weight(1f),
+                    model.metadataError, track?.mediaType == "video", preferUslt, model.lyricsTextScale, model::zoomLyrics)
+            }
+        }
     }
     editing?.takeIf { account?.user?.isShared == false }?.let { (editTrack, editMetadata, editUslt) ->
         key(editTrack.key) {
