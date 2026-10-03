@@ -225,6 +225,8 @@ fun NowPlayingScreen(model: MusicViewModel, state: PlaybackState, download: (Str
                         }
                     }
                     if (transcribe) TranscribeDialog(model, track) { transcribe = false }
+                } else if (account?.user?.isShared == true && track.mediaType == "audio") {
+                    ToolButton(Icons.Rounded.Info, "View song metadata", enabled = !model.busy) { editingTrack = track }
                 }
                 if (canReplaceFile(account?.user,
                     job, track)) {
@@ -646,6 +648,9 @@ fun TrackMenu(model: MusicViewModel, track: Track, index: Int, download: (String
                 TranscribeMenuItem(model.library.transcriptionLocked(track), model.transcriptionAvailable, model.busy) {
                     open = false; transcribe = true
                 }
+            } else if (user?.isShared == true && track.mediaType == "audio") {
+                DropdownMenuItem(text = { Text("View song metadata") }, leadingIcon = { Icon(Icons.Rounded.Info, null) },
+                    onClick = { open = false; edit = true })
             }
             if (canReplace) DropdownMenuItem(text = { Text("Replace File") },
                 leadingIcon = { Icon(Icons.Rounded.UploadFile, null) }, enabled = !model.busy,
@@ -751,14 +756,14 @@ internal fun TranscribeMenuItem(locked: Boolean, available: Boolean, busy: Boole
 
 @Composable
 fun MetadataDialog(model: MusicViewModel, track: Track, ratingOnly: Boolean = false, dismiss: () -> Unit) {
-    var value by remember(track.key) { mutableStateOf<SongMetadata?>(null) }
-    var originalLock by remember(track.key) { mutableStateOf(false) }
-    var error by remember(track.key) { mutableStateOf<String?>(null) }
     val account by model.sessions.account.collectAsStateWithLifecycle()
+    var value by remember(track.key, account) { mutableStateOf<SongMetadata?>(null) }
+    var originalLock by remember(track.key, account) { mutableStateOf(false) }
+    var error by remember(track.key, account) { mutableStateOf<String?>(null) }
     val canEdit = track.name.endsWith(".mp3", true) && account?.user?.let { user ->
         !user.isShared && model.library.library.jobs.find { it.id == track.jobId }?.canModify(user) == true
-    } == true
-    LaunchedEffect(track.key) {
+    } == true && value?.canEdit != false
+    LaunchedEffect(track.key, account) {
         try {
             value = ApiJson.decodeFromJsonElement(model.api.request(songPath(track, "lyrics")))
             originalLock = value?.transcriptionLocked == true
@@ -767,8 +772,10 @@ fun MetadataDialog(model: MusicViewModel, track: Track, ratingOnly: Boolean = fa
     }
     MetadataDialog(value, { value = it }, error = error, busy = model.busy, ratingOnly = ratingOnly,
         canEdit = canEdit, dismiss = dismiss) { song ->
-        model.saveMetadata(track, song, song.transcriptionLocked.takeIf { !ratingOnly && it != originalLock })
-        dismiss()
+        if (canEdit) {
+            model.saveMetadata(track, song, song.transcriptionLocked.takeIf { !ratingOnly && it != originalLock })
+            dismiss()
+        }
     }
 }
 
@@ -778,25 +785,29 @@ fun MetadataDialog(value: SongMetadata?, onValueChange: (SongMetadata) -> Unit, 
     dismiss: () -> Unit, save: (SongMetadata) -> Unit) {
     AlertDialog(onDismissRequest = dismiss, title = {
         Row(verticalAlignment = Alignment.CenterVertically) {
-            Text(if (ratingOnly) "Rate song" else "Song information", Modifier.weight(1f))
-            if (!ratingOnly && value != null) TranscriptionLockButton(value.transcriptionLocked, canEdit && !busy) {
-                onValueChange(value.copy(transcriptionLocked = it))
+            Text(if (ratingOnly) { if (canEdit) "Rate song" else "Song rating" }
+                else if (canEdit) "Song information" else "View song metadata", Modifier.weight(1f))
+            if (!ratingOnly && value != null) {
+                if (canEdit) TranscriptionLockButton(value.transcriptionLocked, !busy) {
+                    onValueChange(value.copy(transcriptionLocked = it))
+                } else Icon(if (value.transcriptionLocked) Icons.Rounded.Lock else Icons.Rounded.LockOpen,
+                    if (value.transcriptionLocked) "Transcription locked" else "Transcription unlocked")
             }
         }
     }, text = {
         Column(Modifier.verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(10.dp)) {
-            if (!canEdit) Text("Rating changes require permission to edit an MP3 file.")
             if (value == null) Text(error ?: "Loading...")
             value?.let { song ->
                 if (!ratingOnly) {
-                    OutlinedTextField(song.title, { onValueChange(song.copy(title = it.take(500))) }, label = { Text("Title") })
-                    OutlinedTextField(song.artist, { onValueChange(song.copy(artist = it.take(500))) }, label = { Text("Artist") })
-                    OutlinedTextField(song.album, { onValueChange(song.copy(album = it.take(500))) }, label = { Text("Album") })
-                    OutlinedTextField(song.genre, { onValueChange(song.copy(genre = it.take(500))) }, label = { Text("Genre") })
-                    OutlinedTextField(song.year, { onValueChange(song.copy(year = it.take(4))) }, label = { Text("Year") })
+                    if (!canEdit) AlbumArtwork(song.artwork, Modifier.size(120.dp).align(Alignment.CenterHorizontally))
+                    OutlinedTextField(song.title, { if (canEdit) onValueChange(song.copy(title = it.take(500))) }, readOnly = !canEdit, label = { Text("Title") })
+                    OutlinedTextField(song.artist, { if (canEdit) onValueChange(song.copy(artist = it.take(500))) }, readOnly = !canEdit, label = { Text("Artist") })
+                    OutlinedTextField(song.album, { if (canEdit) onValueChange(song.copy(album = it.take(500))) }, readOnly = !canEdit, label = { Text("Album") })
+                    OutlinedTextField(song.genre, { if (canEdit) onValueChange(song.copy(genre = it.take(500))) }, readOnly = !canEdit, label = { Text("Genre") })
+                    OutlinedTextField(song.year, { if (canEdit) onValueChange(song.copy(year = it.take(4))) }, readOnly = !canEdit, label = { Text("Year") })
                 }
                 Text("Rating: ${song.rating} / 5")
-                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceEvenly) {
+                if (canEdit) Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceEvenly) {
                     (1..5).forEach { rating ->
                         IconToggleButton(checked = song.rating >= rating, enabled = canEdit && !busy,
                             onCheckedChange = { onValueChange(song.copy(rating = if (song.rating == rating) 0 else rating)) }, modifier = Modifier.size(44.dp)) {
@@ -806,8 +817,9 @@ fun MetadataDialog(value: SongMetadata?, onValueChange: (SongMetadata) -> Unit, 
                 }
             }
         }
-    }, confirmButton = { TextButton(onClick = { value?.let(save) }, enabled = value != null && canEdit && !busy) { Text("Save") } },
-        dismissButton = { TextButton(onClick = dismiss) { Text("Cancel") } })
+    }, confirmButton = {
+        if (canEdit) TextButton(onClick = { if (canEdit && !busy) value?.let(save) }, enabled = value != null && !busy) { Text("Save") }
+    }, dismissButton = { TextButton(onClick = dismiss) { Text(if (canEdit) "Cancel" else "Close") } })
 }
 
 @Composable
