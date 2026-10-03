@@ -115,7 +115,7 @@ internal class ReplacementDocumentProvider(val file: File) : ContentProvider() {
     override fun query(uri: Uri, projection: Array<out String>?, selection: String?,
         selectionArgs: Array<out String>?, sortOrder: String?) =
         MatrixCursor(arrayOf(OpenableColumns.DISPLAY_NAME, OpenableColumns.SIZE)).apply {
-            addRow(arrayOf("replacement.MP3", size))
+            addRow(arrayOf<Any?>("replacement.MP3", size))
         }
     override fun openFile(uri: Uri, mode: String) =
         ParcelFileDescriptor.open(file, ParcelFileDescriptor.MODE_READ_ONLY)
