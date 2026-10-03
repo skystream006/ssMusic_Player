@@ -189,8 +189,11 @@ it does not prove an installed app's identity. Authorize only sign-ins you start
 Drag the bottom mini-player's progress slider to seek without leaving Library.
 Artwork, song information, and playback controls stay on one row even on narrow
 foldable cover screens; long titles and artist names scroll automatically.
-Its previous, play/pause, next, and repeat controls work without opening Now Playing;
-repeat cycles through off, one song, and the entire queue.
+Its previous, play/pause, next, and repeat controls work without opening Now Playing.
+The shuffle button beside the mini-player's progress slider toggles random queue
+playback without changing the current song. Shuffle and repeat are also available
+in Now Playing. Tap repeat once from off to repeat the current song (the **1**
+icon), again to repeat the entire queue, and again to turn repeat off.
 Now Playing's header offers **Edit metadata** and **Transcribe lyrics** for MP3
 files you can edit, plus **Save file** to download the current song to a location
 chosen with Android's document picker. **Transcribe lyrics** opens the same

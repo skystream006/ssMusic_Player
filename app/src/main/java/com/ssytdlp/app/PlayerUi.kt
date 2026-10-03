@@ -54,6 +54,7 @@ import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.semantics.stateDescription
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
@@ -82,12 +83,14 @@ import java.util.Locale
 @Composable
 fun PlayerDock(state: PlaybackState, model: MusicViewModel, expand: () -> Unit, requestNotifications: () -> Unit) {
     MiniPlayer(state, model.metadata?.artwork, expand, { requestNotifications(); model.playback.toggle() },
-        model.playback::next, model.playback::seek, model.playback::previous, model.playback::repeat)
+        model.playback::next, model.playback::seek, model.playback::previous, model.playback::repeat,
+        model.playback::shuffle)
 }
 
 @Composable
 fun MiniPlayer(state: PlaybackState, artwork: String?, expand: () -> Unit, toggle: () -> Unit,
-    next: () -> Unit, onSeek: (Long) -> Unit, previous: () -> Unit = {}, repeat: () -> Unit = {}) {
+    next: () -> Unit, onSeek: (Long) -> Unit, previous: () -> Unit = {}, repeat: () -> Unit = {},
+    shuffle: () -> Unit = {}) {
     val track = state.track ?: return
     Surface(color = MaterialTheme.colorScheme.surfaceContainerLow) {
         BoxWithConstraints(Modifier.fillMaxWidth()) {
@@ -100,13 +103,16 @@ fun MiniPlayer(state: PlaybackState, artwork: String?, expand: () -> Unit, toggl
                     }
                     MiniPlayerControls(state, previous, toggle, next, repeat)
                 }
-                key(track.key) {
-                    var seeking by remember(state.duration) { mutableStateOf<Float?>(null) }
-                    Slider(value = seeking ?: state.position.toFloat().coerceIn(0f, state.duration.toFloat().coerceAtLeast(1f)),
-                        onValueChange = { seeking = it },
-                        onValueChangeFinished = { seeking?.let { onSeek(it.toLong()) }; seeking = null },
-                        valueRange = 0f..state.duration.toFloat().coerceAtLeast(1f), enabled = state.duration > 0,
-                        modifier = Modifier.fillMaxWidth().padding(horizontal = 12.dp).semantics { contentDescription = "Playback position" })
+                Row(Modifier.fillMaxWidth().padding(horizontal = 8.dp), verticalAlignment = Alignment.CenterVertically) {
+                    ShuffleButton(state.shuffle, shuffle)
+                    key(track.key) {
+                        var seeking by remember(state.duration) { mutableStateOf<Float?>(null) }
+                        Slider(value = seeking ?: state.position.toFloat().coerceIn(0f, state.duration.toFloat().coerceAtLeast(1f)),
+                            onValueChange = { seeking = it },
+                            onValueChangeFinished = { seeking?.let { onSeek(it.toLong()) }; seeking = null },
+                            valueRange = 0f..state.duration.toFloat().coerceAtLeast(1f), enabled = state.duration > 0,
+                            modifier = Modifier.weight(1f).padding(horizontal = 12.dp).semantics { contentDescription = "Playback position" })
+                    }
                 }
             }
         }
@@ -143,10 +149,30 @@ private fun MiniPlayerControls(state: PlaybackState, previous: () -> Unit, toggl
 }
 
 @Composable
+private fun ShuffleButton(shuffled: Boolean, shuffle: () -> Unit) {
+    TooltipBox(positionProvider = TooltipDefaults.rememberPlainTooltipPositionProvider(),
+        tooltip = { PlainTooltip { Text(if (shuffled) "Turn shuffle off" else "Turn shuffle on") } },
+        state = rememberTooltipState()) {
+        IconToggleButton(checked = shuffled, onCheckedChange = { shuffle() }, modifier = Modifier.size(48.dp)) {
+            Icon(Icons.Rounded.Shuffle, "Shuffle", Modifier.size(20.dp))
+        }
+    }
+}
+
+@Composable
 private fun RepeatButton(mode: Int, repeat: () -> Unit) {
-    IconToggleButton(checked = mode != Player.REPEAT_MODE_OFF, onCheckedChange = { repeat() }, modifier = Modifier.size(48.dp)) {
-        Icon(if (mode == Player.REPEAT_MODE_ONE) Icons.Rounded.RepeatOne else Icons.Rounded.Repeat,
-            "Repeat: ${if (mode == Player.REPEAT_MODE_OFF) "off" else if (mode == Player.REPEAT_MODE_ONE) "one" else "all"}", Modifier.size(20.dp))
+    val description = when (mode) {
+        Player.REPEAT_MODE_ONE -> "Repeat current song"
+        Player.REPEAT_MODE_ALL -> "Repeat entire queue"
+        else -> "Repeat off"
+    }
+    TooltipBox(positionProvider = TooltipDefaults.rememberPlainTooltipPositionProvider(),
+        tooltip = { PlainTooltip { Text(description) } }, state = rememberTooltipState()) {
+        IconToggleButton(checked = mode != Player.REPEAT_MODE_OFF, onCheckedChange = { repeat() },
+            modifier = Modifier.size(48.dp).semantics { stateDescription = description }) {
+            Icon(if (mode == Player.REPEAT_MODE_ONE) Icons.Rounded.RepeatOne else Icons.Rounded.Repeat,
+                "Repeat: ${if (mode == Player.REPEAT_MODE_OFF) "off" else if (mode == Player.REPEAT_MODE_ONE) "one" else "all"}", Modifier.size(20.dp))
+        }
     }
 }
 
@@ -347,7 +373,7 @@ fun PlayerTransport(state: PlaybackState, onSeek: (Long) -> Unit, previous: () -
             Text(timestamp(state.duration), style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
         }
         Row(Modifier.fillMaxWidth().padding(top = 14.dp), horizontalArrangement = Arrangement.SpaceEvenly, verticalAlignment = Alignment.CenterVertically) {
-            IconToggleButton(checked = state.shuffle, onCheckedChange = { shuffle() }) { Icon(Icons.Rounded.Shuffle, "Shuffle", Modifier.size(20.dp)) }
+            ShuffleButton(state.shuffle, shuffle)
             ToolButton(Icons.Rounded.SkipPrevious, "Previous track", onClick = previous)
             FilledIconButton(onClick = toggle, modifier = Modifier.size(64.dp), shape = CircleShape) {
                 Icon(if (state.playing) Icons.Rounded.Pause else Icons.Rounded.PlayArrow, if (state.playing) "Pause" else "Play", Modifier.size(32.dp))
