@@ -676,7 +676,8 @@ class MusicUiTest {
                     shuffle = { state.value = state.value.copy(shuffle = !state.value.shuffle) },
                     previousTrack = { swipePrevious++ },
                     actions = {
-                        if (showActions.value) ToolButton(Icons.Rounded.MoreVert, "More song actions") { actions++ }
+                        if (showActions.value) ToolButton(Icons.Rounded.MoreVert, "More song actions",
+                            modifier = Modifier.size(48.dp)) { actions++ }
                     })
             }
         }

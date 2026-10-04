@@ -2,6 +2,10 @@ package com.ssytdlp.app
 
 import android.app.Application
 import android.content.Context
+import android.view.KeyEvent
+import android.view.MotionEvent
+import android.view.WindowManager
+import android.view.inspector.WindowInspector
 import androidx.activity.ComponentActivity
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
@@ -11,7 +15,6 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.snapshots.Snapshot
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.Offset
-import androidx.compose.ui.input.key.Key
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.semantics.SemanticsActions
@@ -603,18 +606,31 @@ class NowPlayingScreenTest {
         compose.runOnIdle { assertEquals(0, downloads) }
     }
 
-    @OptIn(ExperimentalTestApi::class)
     @Test fun songActionsDismissOnBackAndOutsideTapWithoutChangingPlayback() {
         val track = Track(jobId = "preview", name = "song.mp3")
         val state = PlaybackState(track = track, queue = listOf(track), position = 42_000)
         var downloads = 0
         compose.setContent { MusicTheme { NowPlayingScreen(model, state) { _, _ -> downloads++ } } }
         openSongActions()
-        compose.onNode(isPopup()).performKeyInput { pressKey(Key.Back) }
+        // Popup dismissal is handled by its Android window, not Compose's key/touch dispatcher.
+        compose.runOnUiThread {
+            val popup = songActionsWindow()
+            assertTrue(popup.dispatchKeyEvent(KeyEvent(KeyEvent.ACTION_DOWN, KeyEvent.KEYCODE_BACK)))
+            assertTrue(popup.dispatchKeyEvent(KeyEvent(KeyEvent.ACTION_UP, KeyEvent.KEYCODE_BACK)))
+        }
+        waitForPopupDismissal()
         compose.onNode(isPopup()).assertDoesNotExist()
         compose.onNodeWithText("Player").assertIsSelected()
         openSongActions()
-        compose.onNode(isPopup()).performTouchInput { click(Offset(-10f, -10f)) }
+        compose.runOnUiThread {
+            val event = MotionEvent.obtain(0, 0, MotionEvent.ACTION_OUTSIDE, -10f, -10f, 0)
+            try {
+                assertTrue(songActionsWindow().dispatchTouchEvent(event))
+            } finally {
+                event.recycle()
+            }
+        }
+        waitForPopupDismissal()
         compose.onNode(isPopup()).assertDoesNotExist()
         compose.onNodeWithContentDescription("More song actions").assertIsDisplayed()
         compose.onNodeWithText("0:42").assertIsDisplayed()
@@ -856,6 +872,18 @@ class NowPlayingScreenTest {
 
     private fun songAction(text: String) = compose.onNode(hasText(text) and hasAnyAncestor(isPopup()))
 
+    private fun songActionsWindow() = WindowInspector.getGlobalWindowViews().single {
+        (it.layoutParams as? WindowManager.LayoutParams)?.type == WindowManager.LayoutParams.TYPE_APPLICATION_SUB_PANEL
+    }
+
+    private fun waitForPopupDismissal() {
+        compose.waitUntil(5_000) {
+            compose.runOnIdle { Snapshot.sendApplyNotifications() }
+            compose.mainClock.advanceTimeByFrame()
+            compose.onAllNodes(isPopup()).fetchSemanticsNodes().isEmpty()
+        }
+    }
+
     private fun songHeading(title: String) = compose.onNode(hasText(title) and isSongHeading)
 
     private fun assertOnlySongOverflowBesideTitle(track: Track) {
@@ -943,8 +971,7 @@ class NowPlayingScreenTest {
             compose.mainClock.advanceTimeByFrame()
             openSongActions()
             songAction("Edit metadata").performClick()
-            compose.runOnIdle { Snapshot.sendApplyNotifications() }
-            compose.mainClock.advanceTimeBy(300)
+            waitForPopupDismissal()
             compose.onNode(isPopup()).assertDoesNotExist()
             compose.waitUntil(5_000) {
                 compose.runOnIdle { Snapshot.sendApplyNotifications() }
@@ -1001,8 +1028,7 @@ class NowPlayingScreenTest {
                     compose.mainClock.advanceTimeBy(300)
                 } else openSongActions()
                 songAction("View song metadata").performClick()
-                compose.runOnIdle { Snapshot.sendApplyNotifications() }
-                compose.mainClock.advanceTimeBy(300)
+                waitForPopupDismissal()
                 compose.onNode(isPopup()).assertDoesNotExist()
                 compose.waitUntil(5_000) {
                     compose.runOnIdle { Snapshot.sendApplyNotifications() }
@@ -1649,7 +1675,7 @@ class NowPlayingScreenTest {
         val track = Track(jobId = "source", name = "song.mp3", artist = "Northbound")
         val library = ReflectionHelpers.getField<MutableState<LibraryState>>(model, "library\$delegate")
         compose.setContent { MusicTheme { NowPlayingScreen(model, PlaybackState(track = track)) { _, _ -> } } }
-        compose.onNodeWithText("Northbound").assertIsDisplayed()
+        compose.onNodeWithText("Northbound").performScrollTo().assertIsDisplayed()
         compose.onNodeWithText("Not transcribed").assertDoesNotExist()
         compose.onNodeWithContentDescription("Transcription status unknown", substring = true).assertDoesNotExist()
 
