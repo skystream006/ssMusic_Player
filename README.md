@@ -251,6 +251,8 @@ prevent manual lyric editing.
 While viewing lyrics, permitted MP3 editors can choose **Edit lyrics** in the
 **Now Playing** bar to edit both SYLT timestamps/text and USLT text, including
 clearing either format. This action is hidden on the Player and Queue tabs.
+On narrow screens, **More song actions** keeps Replace File, Share Media, and
+Save file accessible without crowding the lyrics editing controls.
 Saving updates the displayed lyrics; canceling leaves them unchanged.
 
 Library and queue tracks show an icon-only transcription status to the left of

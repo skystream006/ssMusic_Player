@@ -849,6 +849,51 @@ class NowPlayingScreenTest {
         compose.onNodeWithContentDescription("Edit lyrics").assertDoesNotExist()
     }
 
+    @Test
+    @Config(qualifiers = "w320dp-h800dp")
+    fun compactLyricsBarKeepsPrimaryActionsVisibleAndFileActionsAccessible() {
+        val track = Track(jobId = "preview", name = "song.mp3")
+        val metadata = ReflectionHelpers.getField<MutableState<SongMetadata?>>(model, "metadata\$delegate")
+        val account = ReflectionHelpers.getField<MutableStateFlow<Account?>>(model.sessions, "mutableAccount")
+        val library = ReflectionHelpers.getField<MutableState<LibraryState>>(model, "library\$delegate")
+        val busy = ReflectionHelpers.getField<MutableState<Boolean>>(model, "busy\$delegate")
+        val downloads = mutableListOf<Pair<String, String>>()
+        compose.runOnIdle {
+            model.viewModelScope.cancel()
+            account.value = Account("https://music.example", User(id = "owner"), Session("test", "2099-01-01T00:00:00Z"))
+            library.value = LibraryState(library = Library(jobs = listOf(Job("preview", initiatedBy = account.value!!.user))))
+            metadata.value = SongMetadata(uslt = "Plain lyrics", canEdit = true)
+        }
+        compose.setContent {
+            MusicTheme { NowPlayingScreen(model, PlaybackState(track = track)) { path, name -> downloads.add(path to name) } }
+        }
+        compose.onNodeWithText("USLT Lyrics").performClick()
+        compose.onNodeWithText("NOW PLAYING").assertIsDisplayed()
+        val title = compose.onNodeWithText("Your queue").assertIsDisplayed().fetchSemanticsNode().boundsInRoot
+        val actions = listOf("Edit lyrics", "Edit metadata", "Transcribe lyrics", "More song actions").map {
+            compose.onNodeWithContentDescription(it).assertIsDisplayed().fetchSemanticsNode().boundsInRoot
+        }
+        assertTrue(title.right <= actions.first().left)
+        actions.zipWithNext().forEach { (left, right) ->
+            assertTrue(left.right <= right.left)
+            assertEquals(left.center.y, right.center.y, 1f)
+        }
+        compose.onNodeWithContentDescription("More song actions").performClick()
+        listOf("Replace File", "Share Media", "Save file").forEach {
+            compose.onNodeWithText(it).assertIsDisplayed().assertIsEnabled().assertHasClickAction()
+        }
+        compose.runOnIdle { busy.value = true }
+        listOf("Replace File", "Share Media", "Save file").forEach { compose.onNodeWithText(it).assertIsNotEnabled() }
+        compose.runOnIdle { busy.value = false }
+        compose.onNodeWithText("Save file").performClick()
+        compose.runOnIdle { assertEquals(listOf(songPath(track, "download") to track.name), downloads) }
+        compose.onNodeWithText("Save file").assertDoesNotExist()
+        compose.onNodeWithText("Player").performClick()
+        compose.onNodeWithContentDescription("Edit lyrics").assertDoesNotExist()
+        compose.onNodeWithContentDescription("More song actions").assertDoesNotExist()
+        compose.onNodeWithContentDescription("Save file").assertIsDisplayed()
+    }
+
     @Test fun advancingPlaybackKeepsOpenLyricsDraftBoundToOriginalSong() {
         val track = Track(jobId = "preview", name = "song.mp3")
         val state = mutableStateOf(PlaybackState(track = track))
@@ -978,6 +1023,7 @@ class NowPlayingScreenTest {
     @Test fun fullscreenButtonOverlaysLyricsWithoutReducingContentHeight() {
         val track = Track(jobId = "preview", name = "song.mp3")
         val metadata = ReflectionHelpers.getField<MutableState<SongMetadata?>>(model, "metadata\$delegate")
+        val text = "A long lyric line that wraps near the fullscreen button without being hidden underneath it"
         compose.setContent {
             MusicTheme {
                 Box(Modifier.fillMaxSize().testTag("lyrics-section")) {
@@ -985,8 +1031,8 @@ class NowPlayingScreenTest {
                 }
             }
         }
-        listOf(null, SongMetadata(), SongMetadata(uslt = "Plain lyrics"),
-            SongMetadata(sylt = listOf(LyricLine(0.0, "Timed lyrics")))).forEach { lyrics ->
+        listOf(null, SongMetadata(), SongMetadata(uslt = text),
+            SongMetadata(sylt = listOf(LyricLine(0.0, text)))).forEach { lyrics ->
             compose.runOnIdle { metadata.value = lyrics }
             val section = compose.onNodeWithTag("lyrics-section").fetchSemanticsNode().boundsInRoot
             val content = compose.onNode(hasScrollAction()).fetchSemanticsNode().boundsInRoot
@@ -995,10 +1041,15 @@ class NowPlayingScreenTest {
             assertEquals(section, content)
             assertEquals(section.top, fullscreen.top, 1f)
             assertEquals(section.right, fullscreen.right, 1f)
+            if (lyrics?.uslt == text || lyrics?.sylt?.isNotEmpty() == true) {
+                assertTrue(compose.onNodeWithText(text).fetchSemanticsNode().boundsInRoot.right <= fullscreen.left)
+            }
             compose.onNodeWithContentDescription("Edit lyrics").assertDoesNotExist()
         }
+        compose.onNodeWithText(text).performClick()
+        compose.onNode(isDialog()).assertDoesNotExist()
         compose.onNodeWithContentDescription("Expand lyrics to full screen").performClick()
-        fullScreenText("Timed lyrics").assertIsDisplayed()
+        fullScreenText(text).assertIsDisplayed()
         compose.onNodeWithContentDescription("Exit full screen lyrics").performClick()
         compose.onNode(isDialog()).assertDoesNotExist()
     }
