@@ -242,7 +242,7 @@ fun NowPlayingScreen(model: MusicViewModel, state: PlaybackState, download: (Str
                 hasSylt -> "SYLT Lyrics"
                 else -> "Lyrics"
             }
-            PrimaryTabRow(selectedTabIndex = tab, containerColor = Color.Transparent) {
+            PrimaryTabRow(selectedTabIndex = tab, containerColor = MaterialTheme.colorScheme.surface) {
                 listOf("Player", lyricsTabTitle, "Queue").forEachIndexed { index, title ->
                     Tab(selected = tab == index, onClick = {
                         if (index == 1 && tab == 1 && hasSylt && hasUslt) preferUslt = !preferUslt
@@ -488,7 +488,7 @@ fun Lyrics(model: MusicViewModel, state: PlaybackState, modifier: Modifier, pref
     val track = state.track
     val metadata = model.metadata
     var expanded by rememberSaveable { mutableStateOf(false) }
-    Box(modifier.fillMaxWidth()) {
+    Box(modifier.fillMaxWidth().background(MaterialTheme.colorScheme.surface)) {
         LyricsContent(metadata, state.position, track?.key, model.playback::seek, Modifier.fillMaxSize(),
             model.metadataError, track?.mediaType == "video", preferUslt, model.lyricsTextScale, model::zoomLyrics,
             endPadding = 56.dp)
