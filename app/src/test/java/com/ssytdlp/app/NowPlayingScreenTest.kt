@@ -10,6 +10,7 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.snapshots.Snapshot
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.input.key.Key
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.semantics.SemanticsProperties
 import androidx.compose.ui.test.*
@@ -88,11 +89,12 @@ class NowPlayingScreenTest {
         compose.onNodeWithText("Choose a song from Library to start playing.").assertIsDisplayed()
         compose.onNodeWithContentDescription("Play").assertDoesNotExist()
         compose.onNodeWithContentDescription("Close player").assertDoesNotExist()
-        compose.onNodeWithContentDescription("Edit metadata").assertDoesNotExist()
-        compose.onNodeWithContentDescription("Edit lyrics").assertDoesNotExist()
-        compose.onNodeWithContentDescription("View song metadata").assertDoesNotExist()
-        compose.onNodeWithContentDescription("Transcribe lyrics").assertDoesNotExist()
-        compose.onNodeWithContentDescription("Save file").assertDoesNotExist()
+        compose.onNodeWithContentDescription("More song actions").assertDoesNotExist()
+        compose.onNode(isPopup()).assertDoesNotExist()
+        listOf("Edit metadata", "Edit lyrics", "View song metadata", "Transcribe lyrics",
+            "Replace File", "Share Media", "Save file").forEach {
+            compose.onNodeWithText(it).assertDoesNotExist()
+        }
         compose.onNodeWithContentDescription("Audio visualizer").assertDoesNotExist()
         compose.onNodeWithContentDescription("Visualizer style").assertDoesNotExist()
     }
@@ -211,55 +213,70 @@ class NowPlayingScreenTest {
                 Job("preview", initiatedBy = User(id = "owner"), contributors = listOf(User(id = "contributor"))))))
         }
         compose.setContent { MusicTheme { NowPlayingScreen(model, state.value) { _, _ -> } } }
-        compose.onNodeWithContentDescription("Transcribe lyrics").assertIsDisplayed().assertIsNotEnabled()
+        openSongActions()
+        songAction("Transcribe lyrics").assertIsDisplayed().assertIsNotEnabled()
         compose.runOnIdle {
             health.value = ApiJson.parseToJsonElement("""{"transcription":{"status":"active"}}""").jsonObject
         }
-        listOf("Player", "Lyrics", "Queue").forEach { tab ->
+        val editableActions = listOf("Edit metadata", "Transcribe lyrics", "Replace File", "Share Media", "Save file")
+        listOf("Lyrics", "Queue", "Player").forEach { tab ->
             compose.onNodeWithText(tab).performClick()
-            compose.onNodeWithContentDescription("Edit metadata").assertIsDisplayed().assertIsEnabled()
-            compose.onNodeWithContentDescription("Transcribe lyrics").assertIsDisplayed().assertIsEnabled()
-            compose.onNodeWithContentDescription("Save file").assertIsDisplayed().assertIsEnabled()
+            compose.onNode(isPopup()).assertDoesNotExist()
+            openSongActions()
+            editableActions.forEach { songAction(it).assertIsDisplayed().assertIsEnabled() }
+            songAction("Edit lyrics").assertDoesNotExist()
         }
         compose.runOnIdle { busy.value = true }
-        compose.onNodeWithContentDescription("Edit metadata").assertIsNotEnabled()
-        compose.onNodeWithContentDescription("Transcribe lyrics").assertIsNotEnabled()
-        compose.onNodeWithContentDescription("Save file").assertIsNotEnabled()
+        editableActions.forEach { songAction(it).assertIsNotEnabled() }
         compose.runOnIdle { busy.value = false }
         compose.runOnIdle {
             health.value = ApiJson.parseToJsonElement("""{"transcription":{"status":"inactive"}}""").jsonObject
         }
-        compose.onNodeWithContentDescription("Transcribe lyrics").assertIsNotEnabled()
+        songAction("Transcribe lyrics").assertIsNotEnabled()
         compose.runOnIdle {
             health.value = ApiJson.parseToJsonElement("""{"transcription":{"status":"active"}}""").jsonObject
         }
         listOf(User(id = "contributor"), User(id = "admin", role = "admin")).forEach { user ->
             compose.runOnIdle { account.value = account.value!!.copy(user = user) }
-            compose.onNodeWithContentDescription("Edit metadata").assertIsEnabled()
-            compose.onNodeWithContentDescription("Transcribe lyrics").assertIsEnabled()
+            compose.onNode(isPopup()).assertDoesNotExist()
+            openSongActions()
+            editableActions.forEach { songAction(it).assertIsEnabled() }
         }
         listOf(User(id = "unrelated"), User(id = "owner", role = "Shared"),
             User(id = "owner", role = "SHARED")).forEach { user ->
             compose.runOnIdle { account.value = account.value!!.copy(user = user) }
-            compose.onNodeWithContentDescription("Edit metadata").assertDoesNotExist()
-            compose.onNodeWithContentDescription("Transcribe lyrics").assertDoesNotExist()
-            compose.onNodeWithContentDescription("Save file").assertIsEnabled()
-            if (user.isShared) compose.onNodeWithContentDescription("View song metadata").assertIsEnabled()
-            else compose.onNodeWithContentDescription("View song metadata").assertDoesNotExist()
+            compose.onNode(isPopup()).assertDoesNotExist()
+            openSongActions()
+            listOf("Edit metadata", "Transcribe lyrics", "Replace File", "Share Media").forEach {
+                songAction(it).assertDoesNotExist()
+            }
+            songAction("Save file").assertIsEnabled()
+            if (user.isShared) {
+                songAction("View song metadata").assertIsEnabled()
+                compose.runOnIdle { busy.value = true }
+                songAction("View song metadata").assertIsNotEnabled()
+                songAction("Save file").assertIsNotEnabled()
+                compose.runOnIdle { busy.value = false }
+            } else songAction("View song metadata").assertDoesNotExist()
         }
         compose.runOnIdle {
             account.value = account.value!!.copy(user = User(id = "owner"))
             state.value = state.value.copy(track = track.copy(name = "video.mp4", mediaType = "video"))
         }
-        compose.onNodeWithContentDescription("Edit metadata").assertDoesNotExist()
-        compose.onNodeWithContentDescription("Transcribe lyrics").assertDoesNotExist()
-        compose.onNodeWithContentDescription("Save file").assertIsEnabled()
+        openSongActions()
+        listOf("Edit metadata", "Transcribe lyrics", "Replace File", "Share Media").forEach {
+            songAction(it).assertDoesNotExist()
+        }
+        songAction("Save file").assertIsEnabled()
         compose.runOnIdle { account.value = account.value!!.copy(user = User(role = "Shared")) }
-        compose.onNodeWithContentDescription("View song metadata").assertDoesNotExist()
+        openSongActions()
+        songAction("View song metadata").assertDoesNotExist()
         compose.runOnIdle { account.value = null; state.value = state.value.copy(track = track) }
-        compose.onNodeWithContentDescription("Edit metadata").assertDoesNotExist()
-        compose.onNodeWithContentDescription("View song metadata").assertDoesNotExist()
-        compose.onNodeWithContentDescription("Transcribe lyrics").assertDoesNotExist()
+        openSongActions()
+        listOf("Edit metadata", "View song metadata", "Transcribe lyrics", "Replace File", "Share Media").forEach {
+            songAction(it).assertDoesNotExist()
+        }
+        songAction("Save file").assertIsEnabled()
     }
 
     @Test fun nowPlayingTranscribesCurrentTrackWithCachedLockAndClosesStaleDialogs() {
@@ -280,36 +297,43 @@ class NowPlayingScreenTest {
         compose.setContent { MusicTheme { NowPlayingScreen(model, state.value) { _, _ -> } } }
         listOf("Player", "Lyrics", "Queue").forEach { tab ->
             compose.onNodeWithText(tab).performClick()
-            compose.onNodeWithContentDescription("Transcribe lyrics").performClick()
+            openSongActions()
+            songAction("Transcribe lyrics").performClick()
+            compose.onNode(isPopup()).assertDoesNotExist()
             compose.onNodeWithText("Transcribe Song").assertIsDisplayed()
             compose.onNodeWithText("Transcribe").assertIsEnabled()
             compose.onNodeWithText("Generate NoVocals Only").assertIsOff()
             compose.onNodeWithText("Cancel").performClick()
             compose.onNode(isDialog()).assertDoesNotExist()
         }
-        compose.onNodeWithContentDescription("Transcribe lyrics").performClick()
+        openSongActions()
+        songAction("Transcribe lyrics").performClick()
         compose.runOnIdle {
             assertEquals(track, state.value.track)
             assertEquals(42_000L, state.value.position)
             state.value = state.value.copy(track = next, index = 1)
         }
         compose.onNode(isDialog()).assertDoesNotExist()
-        compose.onNodeWithContentDescription("Transcribe lyrics").assertIsEnabled().performClick()
+        openSongActions()
+        songAction("Transcribe lyrics").assertIsEnabled().performClick()
         compose.onNodeWithText("Generate NoVocals Only").assertIsOn().assertIsNotEnabled()
         compose.onNodeWithText("Generate").assertIsEnabled()
         compose.onNodeWithContentDescription("Unlock transcription").assertIsEnabled()
         assertOrdinaryTranscriptionOptionsHidden()
         compose.runOnIdle { account.value = account.value!!.copy(user = User(id = "owner", role = "shared")) }
         compose.onNode(isDialog()).assertDoesNotExist()
-        compose.onNodeWithContentDescription("Transcribe lyrics").assertDoesNotExist()
+        openSongActions()
+        songAction("Transcribe lyrics").assertDoesNotExist()
         compose.runOnIdle { account.value = account.value!!.copy(user = User(id = "owner")) }
-        compose.onNodeWithContentDescription("Transcribe lyrics").performClick()
+        openSongActions()
+        songAction("Transcribe lyrics").performClick()
         compose.runOnIdle { account.value = account.value!!.copy(origin = "https://other.example") }
         compose.onNode(isDialog()).assertDoesNotExist()
-        compose.onNodeWithContentDescription("Transcribe lyrics").performClick()
+        openSongActions()
+        songAction("Transcribe lyrics").performClick()
         compose.runOnIdle { state.value = PlaybackState() }
         compose.onNode(isDialog()).assertDoesNotExist()
-        compose.onNodeWithContentDescription("Transcribe lyrics").assertDoesNotExist()
+        compose.onNodeWithContentDescription("More song actions").assertDoesNotExist()
     }
 
     @Test fun saveFileUsesCurrentTracksDownloadUrlOrEncodedFallbackWithoutChangingPlayback() {
@@ -320,7 +344,9 @@ class NowPlayingScreenTest {
         compose.setContent {
             MusicTheme { NowPlayingScreen(model, state.value) { path, name -> downloads.add(path to name) } }
         }
-        compose.onNodeWithContentDescription("Save file").performClick()
+        openSongActions()
+        songAction("Save file").performClick()
+        compose.onNode(isPopup()).assertDoesNotExist()
         compose.runOnIdle {
             assertEquals(listOf("/api/custom/download" to track.name), downloads)
             assertEquals(track, state.value.track)
@@ -328,12 +354,70 @@ class NowPlayingScreenTest {
             state.value = state.value.copy(track = next, index = 1)
         }
         compose.onNodeWithText("Queue").performClick()
-        compose.onNodeWithContentDescription("Save file").performClick()
+        openSongActions()
+        songAction("Save file").performClick()
+        compose.onNode(isPopup()).assertDoesNotExist()
         compose.runOnIdle {
             assertEquals(listOf("/api/custom/download" to track.name,
                 "/api/jobs/job%20id/download/%5BNoVocals%5D%2Fnext%20song.mp3" to next.name), downloads)
             assertEquals(1, state.value.index)
         }
+    }
+
+    @Test fun songActionsDismissWhenTrackTabOrAccountIdentityChanges() {
+        val track = Track(jobId = "preview", name = "first.mp3")
+        val state = mutableStateOf(PlaybackState(track = track, position = 42_000))
+        val account = ReflectionHelpers.getField<MutableStateFlow<Account?>>(model.sessions, "mutableAccount")
+        var downloads = 0
+        compose.runOnIdle {
+            model.viewModelScope.cancel()
+            account.value = Account("https://music.example", User(id = "owner"), Session("test", "2099-01-01T00:00:00Z"))
+        }
+        compose.setContent { MusicTheme { NowPlayingScreen(model, state.value) { _, _ -> downloads++ } } }
+        openSongActions()
+        compose.runOnIdle { state.value = state.value.copy(position = 43_000) }
+        songAction("Save file").assertIsDisplayed()
+        compose.runOnIdle { state.value = state.value.copy(track = track.copy(name = "next.mp3")) }
+        compose.onNode(isPopup()).assertDoesNotExist()
+        listOf("Lyrics", "Queue", "Player").forEach { tab ->
+            openSongActions()
+            compose.onNodeWithText(tab).performClick()
+            compose.onNode(isPopup()).assertDoesNotExist()
+            compose.onNodeWithText(tab).assertIsSelected()
+        }
+        val original = account.value!!
+        listOf(original.copy(origin = "https://other.example"),
+            original.copy(origin = "https://other.example", user = User(id = "other")),
+            original.copy(origin = "https://other.example", user = User(id = "other", role = "admin")),
+            null).forEach { changed ->
+            openSongActions()
+            compose.runOnIdle { account.value = changed }
+            compose.onNode(isPopup()).assertDoesNotExist()
+        }
+        openSongActions()
+        compose.runOnIdle { state.value = PlaybackState() }
+        compose.onNode(isPopup()).assertDoesNotExist()
+        compose.onNodeWithContentDescription("More song actions").assertDoesNotExist()
+        compose.runOnIdle { assertEquals(0, downloads) }
+    }
+
+    @OptIn(ExperimentalTestApi::class)
+    @Test fun songActionsDismissOnBackAndOutsideTapWithoutChangingPlayback() {
+        val track = Track(jobId = "preview", name = "song.mp3")
+        val state = PlaybackState(track = track, queue = listOf(track), position = 42_000)
+        var downloads = 0
+        compose.setContent { MusicTheme { NowPlayingScreen(model, state) { _, _ -> downloads++ } } }
+        openSongActions()
+        compose.onNode(isPopup()).performKeyInput { pressKey(Key.Back) }
+        compose.onNode(isPopup()).assertDoesNotExist()
+        compose.onNodeWithText("Player").assertIsSelected()
+        openSongActions()
+        compose.onNode(isPopup()).performTouchInput { click(Offset(-10f, -10f)) }
+        compose.onNode(isPopup()).assertDoesNotExist()
+        compose.onNodeWithContentDescription("More song actions").assertIsDisplayed()
+        compose.onNodeWithText("0:42").assertIsDisplayed()
+        compose.onNode(isDialog()).assertDoesNotExist()
+        compose.runOnIdle { assertEquals(0, downloads) }
     }
 
     @Test fun noVocalsOnlyHidesOtherOptionsAndRestoresItsSelection() {
@@ -542,19 +626,48 @@ class NowPlayingScreenTest {
                 else NowPlayingScreen(model, state.value) { _, _ -> }
             }
         }
-        compose.onNodeWithContentDescription("Share Media").assertIsDisplayed().performClick()
+        openSongActions()
+        songAction("Share Media").assertIsDisplayed().performClick()
+        compose.onNode(isPopup()).assertDoesNotExist()
         compose.onNodeWithText("Anyone with this link can listen", substring = true)
             .assertIsDisplayed()
         compose.onNodeWithText("Generate public link").assertIsDisplayed()
         compose.onNodeWithText("Cancel").performClick()
 
         compose.runOnIdle { state.value = state.value.copy(track = track.copy(mediaType = "video")) }
-        compose.onNodeWithContentDescription("Share Media").assertDoesNotExist()
+        openSongActions()
+        songAction("Share Media").assertDoesNotExist()
         compose.runOnIdle { state.value = state.value.copy(track = track) }
         compose.runOnIdle { showMenu.value = true }
         compose.onNodeWithContentDescription("Options for song").performClick()
         compose.onNodeWithText("Share Media").assertIsDisplayed().performClick()
         compose.onNodeWithText("Generate public link").assertIsDisplayed()
+    }
+
+    private fun openSongActions() {
+        compose.onNode(isPopup()).assertDoesNotExist()
+        compose.onNodeWithContentDescription("More song actions").assertIsDisplayed().assertIsEnabled().performClick()
+        compose.runOnIdle { Snapshot.sendApplyNotifications() }
+        compose.mainClock.advanceTimeBy(300)
+        compose.onNode(isPopup()).assertIsDisplayed()
+    }
+
+    private fun songAction(text: String) = compose.onNode(hasText(text) and hasAnyAncestor(isPopup()))
+
+    private fun assertOnlySongOverflowBesideTitle(title: String) {
+        compose.onNodeWithText("NOW PLAYING").assertIsDisplayed()
+        compose.onAllNodesWithContentDescription("More song actions").assertCountEquals(1)
+        val titleBounds = compose.onNodeWithText(title).assertIsDisplayed().fetchSemanticsNode().boundsInRoot
+        val overflow = compose.onNodeWithContentDescription("More song actions")
+            .assertIsDisplayed().fetchSemanticsNode().boundsInRoot
+        assertTrue(titleBounds.width > 0f)
+        assertTrue(titleBounds.right <= overflow.left)
+        assertTrue(titleBounds.center.y in overflow.top..overflow.bottom)
+        listOf("Edit lyrics", "Edit metadata", "View song metadata", "Transcribe lyrics",
+            "Replace File", "Share Media", "Save file").forEach {
+            compose.onNodeWithContentDescription(it).assertDoesNotExist()
+            compose.onNodeWithText(it).assertDoesNotExist()
+        }
     }
 
     private fun assertOrdinaryTranscriptionOptionsHidden() {
@@ -600,6 +713,44 @@ class NowPlayingScreenTest {
 
     // Robolectric #8460: text fields in dialogs loop at widths above the default 320dp.
     @Config(qualifiers = "w320dp-h800dp")
+    @Test fun nowPlayingMetadataActionOpensEditorAfterClosingMenu() {
+        compose.mainClock.autoAdvance = false
+        val track = Track(jobId = "source", name = "song.mp3")
+        val account = ReflectionHelpers.getField<MutableStateFlow<Account?>>(model.sessions, "mutableAccount")
+        val library = ReflectionHelpers.getField<MutableState<LibraryState>>(model, "library\$delegate")
+        val requests = metadataResponses { 200 to ApiJson.encodeToString(
+            SongMetadata(title = "Editable song", canEdit = true)) }
+        compose.runOnIdle {
+            account.value = Account("https://music.example", User(id = "owner"), Session("test", "2099-01-01T00:00:00Z"))
+            library.value = LibraryState(library = Library(jobs = listOf(Job("source", initiatedBy = account.value!!.user))))
+        }
+        compose.setContent { MusicTheme { NowPlayingScreen(model, PlaybackState(track = track)) { _, _ -> } } }
+        openSongActions()
+        songAction("Edit metadata").performClick()
+        compose.runOnIdle { Snapshot.sendApplyNotifications() }
+        compose.mainClock.advanceTimeBy(300)
+        compose.onNode(isPopup()).assertDoesNotExist()
+        compose.waitUntil(5_000) {
+            compose.runOnIdle { Snapshot.sendApplyNotifications() }
+            compose.mainClock.advanceTimeByFrame()
+            compose.onAllNodesWithText("Editable song").fetchSemanticsNodes().isNotEmpty()
+        }
+        compose.onNode(isDialog()).assertIsDisplayed()
+        compose.onNodeWithText("Song information").assertIsDisplayed()
+        compose.onNodeWithText("Title").assertTextContains("Editable song").assert(hasSetTextAction())
+        compose.onNodeWithText("Save").assertIsEnabled()
+        compose.onNodeWithText("Cancel").performClick()
+        compose.runOnIdle { Snapshot.sendApplyNotifications() }
+        compose.mainClock.advanceTimeByFrame()
+        compose.onNode(isDialog()).assertDoesNotExist()
+        compose.onNode(isPopup()).assertDoesNotExist()
+        compose.runOnIdle {
+            assertEquals(listOf(songPath(track, "lyrics")), requests.map { it.url.encodedPath })
+            assertTrue(requests.all { it.method == "GET" })
+        }
+    }
+
+    @Config(qualifiers = "w320dp-h800dp")
     @Test fun sharedMetadataActionsReadAudioIncludingNoVocalsAndNonMp3WithoutWriting() {
         compose.mainClock.autoAdvance = false
         val track = mutableStateOf(Track(jobId = "source job", name = "song.mp3", playlistId = "shared"))
@@ -628,8 +779,11 @@ class NowPlayingScreenTest {
                     compose.onNodeWithContentDescription("Options for ${track.value.displayTitle}").performClick()
                     compose.runOnIdle { Snapshot.sendApplyNotifications() }
                     compose.mainClock.advanceTimeBy(300)
-                    compose.onNodeWithText("View song metadata").performClick()
-                } else compose.onNodeWithContentDescription("View song metadata").performClick()
+                } else openSongActions()
+                songAction("View song metadata").performClick()
+                compose.runOnIdle { Snapshot.sendApplyNotifications() }
+                compose.mainClock.advanceTimeBy(300)
+                compose.onNode(isPopup()).assertDoesNotExist()
                 compose.waitUntil(5_000) {
                     compose.runOnIdle { Snapshot.sendApplyNotifications() }
                     compose.mainClock.advanceTimeByFrame()
@@ -786,39 +940,47 @@ class NowPlayingScreenTest {
                 transcriptionLocked = true, canEdit = true)
         }
         compose.setContent { MusicTheme { NowPlayingScreen(model, PlaybackState(track = track)) { _, _ -> } } }
-        compose.onNodeWithContentDescription("Edit lyrics").assertDoesNotExist()
+        openSongActions()
+        songAction("Edit lyrics").assertDoesNotExist()
         compose.onNodeWithText("SYLT Lyrics").performClick()
-        val edit = compose.onNodeWithContentDescription("Edit lyrics").assertIsDisplayed()
-        assertTrue(edit.fetchSemanticsNode().boundsInRoot.bottom <=
+        val overflow = compose.onNodeWithContentDescription("More song actions").assertIsDisplayed()
+        assertTrue(overflow.fetchSemanticsNode().boundsInRoot.bottom <=
             compose.onNodeWithText("SYLT Lyrics").fetchSemanticsNode().boundsInRoot.top)
-        edit.performClick()
+        openSongActions()
+        songAction("Edit lyrics").performClick()
+        compose.onNode(isPopup()).assertDoesNotExist()
         compose.onNode(isDialog()).assertIsDisplayed()
         compose.onNodeWithTag("sylt-editor").assertIsDisplayed()
         compose.onNodeWithText("Cancel").performClick()
         compose.onNode(isDialog()).assertDoesNotExist()
         listOf("Player", "Queue").forEach { tab ->
             compose.onNodeWithText(tab).performClick()
-            compose.onNodeWithContentDescription("Edit lyrics").assertDoesNotExist()
+            openSongActions()
+            songAction("Edit lyrics").assertDoesNotExist()
         }
         compose.onNodeWithText("SYLT Lyrics").performClick()
         compose.onNodeWithText("SYLT Lyrics").performClick()
         compose.onNodeWithText("Plain line").assertIsDisplayed()
-        compose.onNodeWithContentDescription("Edit lyrics").performClick()
+        openSongActions()
+        songAction("Edit lyrics").performClick()
+        compose.onNode(isPopup()).assertDoesNotExist()
         compose.onNode(isDialog()).assertIsDisplayed()
         compose.onNodeWithTag("uslt-editor").assertIsDisplayed()
         compose.onNodeWithText("Cancel").performClick()
         val busy = ReflectionHelpers.getField<MutableState<Boolean>>(model, "busy\$delegate")
         compose.runOnIdle { busy.value = true }
-        compose.onNodeWithContentDescription("Edit lyrics").assertIsNotEnabled()
+        openSongActions()
+        songAction("Edit lyrics").assertIsNotEnabled()
         compose.runOnIdle { busy.value = false }
-        compose.onNodeWithContentDescription("Edit lyrics").assertIsEnabled()
+        songAction("Edit lyrics").assertIsEnabled()
         compose.runOnIdle { metadata.value = metadata.value!!.copy(canEdit = false) }
-        compose.onNodeWithContentDescription("Edit lyrics").assertDoesNotExist()
+        songAction("Edit lyrics").assertDoesNotExist()
         compose.runOnIdle {
             metadata.value = metadata.value!!.copy(canEdit = true)
             account.value = account.value!!.copy(user = User(role = "Shared"))
         }
-        compose.onNodeWithContentDescription("Edit lyrics").assertDoesNotExist()
+        openSongActions()
+        songAction("Edit lyrics").assertDoesNotExist()
     }
 
     @Test fun lyricsEditingRequiresLoadedPermissionAndMp3AndClearsOnAccountOrPlaybackReset() {
@@ -832,66 +994,104 @@ class NowPlayingScreenTest {
         }
         compose.setContent { MusicTheme { NowPlayingScreen(model, state.value) { _, _ -> } } }
         compose.onNodeWithText("Lyrics").performClick()
-        compose.onNodeWithContentDescription("Edit lyrics").assertDoesNotExist()
+        openSongActions()
+        songAction("Edit lyrics").assertDoesNotExist()
         compose.runOnIdle { metadata.value = SongMetadata(canEdit = true) }
-        compose.onNodeWithContentDescription("Edit lyrics").assertIsDisplayed()
+        songAction("Edit lyrics").assertIsDisplayed()
         compose.runOnIdle { state.value = state.value.copy(track = track.copy(name = "song.flac")) }
-        compose.onNodeWithContentDescription("Edit lyrics").assertDoesNotExist()
+        openSongActions()
+        songAction("Edit lyrics").assertDoesNotExist()
         compose.runOnIdle { state.value = state.value.copy(track = track) }
-        compose.onNodeWithContentDescription("Edit lyrics").performClick()
+        openSongActions()
+        songAction("Edit lyrics").performClick()
         compose.onNodeWithTag("sylt-editor").performTextReplacement("[00:00:00.000] Unsaved draft")
         compose.runOnIdle { account.value = account.value!!.copy(user = User(id = "another-owner")) }
         compose.onNode(isDialog()).assertDoesNotExist()
-        compose.onNodeWithContentDescription("Edit lyrics").performClick()
+        openSongActions()
+        songAction("Edit lyrics").performClick()
         compose.onNodeWithTag("sylt-editor").assertTextContains("")
         compose.runOnIdle { state.value = PlaybackState() }
         compose.onNode(isDialog()).assertDoesNotExist()
-        compose.onNodeWithContentDescription("Edit lyrics").assertDoesNotExist()
+        compose.onNodeWithContentDescription("More song actions").assertDoesNotExist()
     }
 
     @Test
     @Config(qualifiers = "w320dp-h800dp")
-    fun compactLyricsBarKeepsPrimaryActionsVisibleAndFileActionsAccessible() {
-        val track = Track(jobId = "preview", name = "song.mp3")
+    fun compactHeaderKeepsOnlyOverflowBesideTitleAndAllLyricsActionsInMenu() {
+        val track = Track(jobId = "preview", name = "song.mp3", playlistTitle = "A long playlist title ".repeat(5))
         val metadata = ReflectionHelpers.getField<MutableState<SongMetadata?>>(model, "metadata\$delegate")
         val account = ReflectionHelpers.getField<MutableStateFlow<Account?>>(model.sessions, "mutableAccount")
         val library = ReflectionHelpers.getField<MutableState<LibraryState>>(model, "library\$delegate")
         val busy = ReflectionHelpers.getField<MutableState<Boolean>>(model, "busy\$delegate")
+        val health = ReflectionHelpers.getField<MutableState<JsonObject?>>(model, "health\$delegate")
         val downloads = mutableListOf<Pair<String, String>>()
         compose.runOnIdle {
             model.viewModelScope.cancel()
             account.value = Account("https://music.example", User(id = "owner"), Session("test", "2099-01-01T00:00:00Z"))
             library.value = LibraryState(library = Library(jobs = listOf(Job("preview", initiatedBy = account.value!!.user))))
             metadata.value = SongMetadata(uslt = "Plain lyrics", canEdit = true)
+            health.value = ApiJson.parseToJsonElement("""{"transcription":{"status":"active"}}""").jsonObject
         }
         compose.setContent {
             MusicTheme { NowPlayingScreen(model, PlaybackState(track = track)) { path, name -> downloads.add(path to name) } }
         }
         compose.onNodeWithText("USLT Lyrics").performClick()
-        compose.onNodeWithText("NOW PLAYING").assertIsDisplayed()
-        val title = compose.onNodeWithText("Your queue").assertIsDisplayed().fetchSemanticsNode().boundsInRoot
-        val actions = listOf("Edit lyrics", "Edit metadata", "Transcribe lyrics", "More song actions").map {
-            compose.onNodeWithContentDescription(it).assertIsDisplayed().fetchSemanticsNode().boundsInRoot
+        assertOnlySongOverflowBesideTitle(track.playlistTitle)
+        openSongActions()
+        val actions = listOf("Edit lyrics", "Edit metadata", "Transcribe lyrics", "Replace File", "Share Media", "Save file")
+        actions.forEach {
+            songAction(it).assertIsDisplayed().assertIsEnabled().assertHasClickAction()
         }
-        assertTrue(title.right <= actions.first().left)
-        actions.zipWithNext().forEach { (left, right) ->
-            assertTrue(left.right <= right.left)
-            assertEquals(left.center.y, right.center.y, 1f)
-        }
-        compose.onNodeWithContentDescription("More song actions").performClick()
-        listOf("Replace File", "Share Media", "Save file").forEach {
-            compose.onNodeWithText(it).assertIsDisplayed().assertIsEnabled().assertHasClickAction()
-        }
+        compose.onAllNodes(hasClickAction() and hasAnyAncestor(isPopup())).assertCountEquals(actions.size)
         compose.runOnIdle { busy.value = true }
-        listOf("Replace File", "Share Media", "Save file").forEach { compose.onNodeWithText(it).assertIsNotEnabled() }
+        actions.forEach { songAction(it).assertIsNotEnabled() }
         compose.runOnIdle { busy.value = false }
-        compose.onNodeWithText("Save file").performClick()
+        songAction("Save file").performClick()
         compose.runOnIdle { assertEquals(listOf(songPath(track, "download") to track.name), downloads) }
-        compose.onNodeWithText("Save file").assertDoesNotExist()
-        compose.onNodeWithText("Player").performClick()
-        compose.onNodeWithContentDescription("Edit lyrics").assertDoesNotExist()
-        compose.onNodeWithContentDescription("More song actions").assertDoesNotExist()
-        compose.onNodeWithContentDescription("Save file").assertIsDisplayed()
+        compose.onNode(isPopup()).assertDoesNotExist()
+        openSongActions()
+        songAction("Replace File").performClick()
+        compose.onNode(isPopup()).assertDoesNotExist()
+        compose.onNode(isDialog()).assertIsDisplayed()
+        compose.onNodeWithText("Choose replacement file").assertIsDisplayed()
+        compose.onNodeWithText("Cancel").performClick()
+        compose.onNode(isDialog()).assertDoesNotExist()
+        listOf("Player", "Queue").forEach { tab ->
+            compose.onNodeWithText(tab).performClick()
+            assertOnlySongOverflowBesideTitle(track.playlistTitle)
+            openSongActions()
+            songAction("Edit lyrics").assertDoesNotExist()
+            actions.filterNot { it == "Edit lyrics" }.forEach { songAction(it).assertIsDisplayed().assertIsEnabled() }
+        }
+    }
+
+    @Test
+    @Config(qualifiers = "w840dp-h800dp")
+    fun wideHeaderKeepsAllSongActionsInOverflowAcrossTabs() {
+        val track = Track(jobId = "preview", name = "song.mp3", playlistTitle = "A long playlist title ".repeat(5))
+        val metadata = ReflectionHelpers.getField<MutableState<SongMetadata?>>(model, "metadata\$delegate")
+        val account = ReflectionHelpers.getField<MutableStateFlow<Account?>>(model.sessions, "mutableAccount")
+        val library = ReflectionHelpers.getField<MutableState<LibraryState>>(model, "library\$delegate")
+        val health = ReflectionHelpers.getField<MutableState<JsonObject?>>(model, "health\$delegate")
+        compose.runOnIdle {
+            model.viewModelScope.cancel()
+            account.value = Account("https://music.example", User(id = "owner"), Session("test", "2099-01-01T00:00:00Z"))
+            library.value = LibraryState(library = Library(jobs = listOf(Job("preview", initiatedBy = account.value!!.user))))
+            metadata.value = SongMetadata(uslt = "Plain lyrics", canEdit = true)
+            health.value = ApiJson.parseToJsonElement("""{"transcription":{"status":"active"}}""").jsonObject
+        }
+        compose.setContent { MusicTheme { NowPlayingScreen(model, PlaybackState(track = track)) { _, _ -> } } }
+        listOf("Player", "USLT Lyrics", "Queue").forEach { tab ->
+            compose.onNodeWithText(tab).performClick()
+            assertOnlySongOverflowBesideTitle(track.playlistTitle)
+            openSongActions()
+            listOf("Edit metadata", "Transcribe lyrics", "Replace File", "Share Media", "Save file").forEach {
+                songAction(it).assertIsDisplayed().assertIsEnabled().assertHasClickAction()
+            }
+            if (tab == "USLT Lyrics") songAction("Edit lyrics").assertIsDisplayed().assertIsEnabled()
+            else songAction("Edit lyrics").assertDoesNotExist()
+            songAction("View song metadata").assertDoesNotExist()
+        }
     }
 
     @Test fun advancingPlaybackKeepsOpenLyricsDraftBoundToOriginalSong() {
@@ -906,7 +1106,9 @@ class NowPlayingScreenTest {
         }
         compose.setContent { MusicTheme { NowPlayingScreen(model, state.value) { _, _ -> } } }
         compose.onNodeWithText("USLT Lyrics").performClick()
-        compose.onNodeWithContentDescription("Edit lyrics").performClick()
+        openSongActions()
+        songAction("Edit lyrics").performClick()
+        compose.onNode(isPopup()).assertDoesNotExist()
         compose.onNodeWithTag("uslt-editor").performTextReplacement("Unsaved draft")
         compose.runOnIdle {
             state.value = state.value.copy(track = Track(jobId = "preview", name = "next.mp3"))

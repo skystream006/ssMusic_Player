@@ -194,7 +194,7 @@ The shuffle button beside the mini-player's progress slider toggles random queue
 playback without changing the current song. Shuffle and repeat are also available
 in Now Playing. Tap repeat once from off to repeat the current song (the **1**
 icon), again to repeat the entire queue, and again to turn repeat off.
-Now Playing's header offers **Edit metadata** and **Transcribe lyrics** for MP3
+Now Playing's three-dot **More song actions** menu offers **Edit metadata** and **Transcribe lyrics** for MP3
 files you can edit, plus **Save file** to download the current song to a location
 chosen with Android's document picker. **Transcribe lyrics** opens the same
 transcription options as the Library menu, including no-vocals generation for
@@ -205,14 +205,14 @@ or queue controls to open **Rate song**. Saving uses the existing MP3 editing
 permissions. Tap the selected star again to clear a rating, then **Save**.
 
 Shared accounts can choose **View song metadata** (the info icon) from a Library
-song's options or the Now Playing header. For audio in their granted libraries,
+song's options or the Now Playing three-dot menu. For audio in their granted libraries,
 including non-MP3 and `[NoVocals]/` files, the dialog displays title, artist, album,
 genre, year, artwork, rating, and transcription-lock status read-only. It has a
 **Close** button and no save, rating, artwork, or lock editing controls. Tapping a
 track's rating also shows its value read-only; existing MP3 editing permissions
 remain unchanged, and the server still enforces library grants.
 
-Choose **Replace File** from a Library song's options or the Now Playing header
+Choose **Replace File** from a Library song's options or the Now Playing three-dot menu
 to upload one non-empty audio file in the same format, up to 512 MB. Selecting
 a file does not upload it: confirm **Replace File** to overwrite the song.
 Convert other formats first; renaming the extension does not convert the audio.
@@ -249,10 +249,10 @@ You can also change the lock in **Edit song / rating**, then **Save**. Locking d
 prevent manual lyric editing.
 
 While viewing lyrics, permitted MP3 editors can choose **Edit lyrics** in the
-**Now Playing** bar to edit both SYLT timestamps/text and USLT text, including
+**Now Playing** bar's three-dot menu to edit both SYLT timestamps/text and USLT text, including
 clearing either format. This action is hidden on the Player and Queue tabs.
-On narrow screens, **More song actions** keeps Replace File, Share Media, and
-Save file accessible without crowding the lyrics editing controls.
+On all screen sizes, **More song actions** groups editing, transcription, Replace File,
+Share Media, and Save file without crowding the header.
 Saving updates the displayed lyrics; canceling leaves them unchanged.
 
 Library and queue tracks show an icon-only transcription status to the left of

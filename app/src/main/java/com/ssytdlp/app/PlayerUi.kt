@@ -206,78 +206,66 @@ fun NowPlayingScreen(model: MusicViewModel, state: PlaybackState, download: (Str
         previous = model.playback::previousTrack, next = model.playback::next,
         trackKey = state.track?.key, onDragDistanceChanged = { artworkDrag = it }
     )) {
-        BoxWithConstraints(Modifier.fillMaxWidth().padding(horizontal = 20.dp, vertical = 12.dp)) {
-            val compactActions = canEditLyrics && maxWidth < 400.dp
-            Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-                Column(Modifier.weight(1f)) {
-                    Text("NOW PLAYING", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.primary)
-                    Text(state.track?.playlistTitle?.ifBlank { null } ?: "Your queue", style = MaterialTheme.typography.titleLarge,
-                        maxLines = 1, overflow = TextOverflow.Ellipsis)
+        Row(Modifier.fillMaxWidth().padding(horizontal = 20.dp, vertical = 12.dp),
+            verticalAlignment = Alignment.CenterVertically) {
+            Column(Modifier.weight(1f)) {
+                Text("NOW PLAYING", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.primary)
+                Text(state.track?.playlistTitle?.ifBlank { null } ?: "Your queue", style = MaterialTheme.typography.titleLarge,
+                    maxLines = 1, overflow = TextOverflow.Ellipsis)
+            }
+            state.track?.let { track ->
+                val job = model.library.library.jobs.find { it.id == track.jobId }
+                    ?: model.jobs.find { it.id == track.jobId }
+                val canShare = track.mediaType == "audio" && account?.user?.let { user ->
+                    !user.isShared && job?.canModify(user) == true
+                } == true
+                val canEdit = track.name.endsWith(".mp3", true) && account?.user?.let { user ->
+                    !user.isShared && model.library.library.jobs.find { it.id == track.jobId }?.canModify(user) == true
+                } == true
+                var transcribe by remember(canEdit, track.key, account?.origin, account?.user?.id) { mutableStateOf(false) }
+                var moreActions by remember(track.key, tab, account?.origin, account?.user?.id, account?.user?.role) {
+                    mutableStateOf(false)
                 }
-                state.track?.let { track ->
-                    if (canEditLyrics && metadata != null) {
-                        ToolButton(Icons.Rounded.EditNote, "Edit lyrics", enabled = !model.busy) {
-                            editingLyrics = Triple(track, metadata, showUslt)
+                Box {
+                    ToolButton(Icons.Rounded.MoreVert, "More song actions") { moreActions = true }
+                    DropdownMenu(expanded = moreActions, onDismissRequest = { moreActions = false }) {
+                        if (canEditLyrics && metadata != null) {
+                            DropdownMenuItem(text = { Text("Edit lyrics") }, enabled = !model.busy,
+                                leadingIcon = { Icon(Icons.Rounded.EditNote, null) }, onClick = {
+                                    moreActions = false
+                                    editingLyrics = Triple(track, metadata, showUslt)
+                                })
                         }
-                    }
-                    val job = model.library.library.jobs.find { it.id == track.jobId }
-                        ?: model.jobs.find { it.id == track.jobId }
-                    val canShare = track.mediaType == "audio" && account?.user?.let { user ->
-                        !user.isShared && job?.canModify(user) == true
-                    } == true
-                    val canEdit = track.name.endsWith(".mp3", true) && account?.user?.let { user ->
-                        !user.isShared && model.library.library.jobs.find { it.id == track.jobId }?.canModify(user) == true
-                    } == true
-                    if (canEdit) {
-                        ToolButton(Icons.Rounded.Edit, "Edit metadata", enabled = !model.busy) { editingTrack = track }
-                        var transcribe by remember(track.key, account?.origin, account?.user?.id) { mutableStateOf(false) }
-                        val available = model.transcriptionAvailable
-                        TooltipBox(positionProvider = TooltipDefaults.rememberPlainTooltipPositionProvider(),
-                            tooltip = { PlainTooltip { Text(if (available) "Transcribe lyrics" else INACTIVE_TRANSCRIPTION_MESSAGE) } },
-                            state = rememberTooltipState()) {
-                            IconButton(onClick = { transcribe = true }, enabled = available && !model.busy) {
-                                Icon(if (model.library.transcriptionLocked(track)) Icons.Rounded.MicOff else Icons.Rounded.Lyrics,
-                                    "Transcribe lyrics")
+                        if (canEdit) {
+                            DropdownMenuItem(text = { Text("Edit metadata") }, enabled = !model.busy,
+                                leadingIcon = { Icon(Icons.Rounded.Edit, null) },
+                                onClick = { moreActions = false; editingTrack = track })
+                            TranscribeMenuItem(model.library.transcriptionLocked(track), model.transcriptionAvailable, model.busy) {
+                                moreActions = false; transcribe = true
                             }
+                        } else if (account?.user?.isShared == true && track.mediaType == "audio") {
+                            DropdownMenuItem(text = { Text("View song metadata") }, enabled = !model.busy,
+                                leadingIcon = { Icon(Icons.Rounded.Info, null) },
+                                onClick = { moreActions = false; editingTrack = track })
                         }
-                        if (transcribe) TranscribeDialog(model, track) { transcribe = false }
-                    } else if (account?.user?.isShared == true && track.mediaType == "audio") {
-                        ToolButton(Icons.Rounded.Info, "View song metadata", enabled = !model.busy) { editingTrack = track }
-                    }
-                    if (compactActions) {
-                        var moreActions by remember(track.key, account?.origin, account?.user?.id) { mutableStateOf(false) }
-                        Box {
-                            ToolButton(Icons.Rounded.MoreVert, "More song actions") { moreActions = true }
-                            DropdownMenu(expanded = moreActions, onDismissRequest = { moreActions = false }) {
-                                if (canReplaceFile(account?.user, job, track)) {
-                                    DropdownMenuItem(text = { Text("Replace File") }, enabled = !model.busy,
-                                        leadingIcon = { Icon(Icons.Rounded.UploadFile, null) },
-                                        onClick = { moreActions = false; replacingTrack = track })
-                                }
-                                if (canShare) {
-                                    DropdownMenuItem(text = { Text("Share Media") }, enabled = !model.busy,
-                                        leadingIcon = { Icon(Icons.Rounded.Share, null) },
-                                        onClick = { moreActions = false; sharingTrack = track })
-                                }
-                                DropdownMenuItem(text = { Text("Save file") }, enabled = !model.busy,
-                                    leadingIcon = { Icon(Icons.Rounded.Download, null) }, onClick = {
-                                        moreActions = false
-                                        download(track.downloadUrl ?: songPath(track, "download"), track.name)
-                                    })
-                            }
-                        }
-                    } else {
                         if (canReplaceFile(account?.user, job, track)) {
-                            ToolButton(Icons.Rounded.UploadFile, "Replace File", enabled = !model.busy) { replacingTrack = track }
+                            DropdownMenuItem(text = { Text("Replace File") }, enabled = !model.busy,
+                                leadingIcon = { Icon(Icons.Rounded.UploadFile, null) },
+                                onClick = { moreActions = false; replacingTrack = track })
                         }
                         if (canShare) {
-                            ToolButton(Icons.Rounded.Share, "Share Media", enabled = !model.busy) { sharingTrack = track }
+                            DropdownMenuItem(text = { Text("Share Media") }, enabled = !model.busy,
+                                leadingIcon = { Icon(Icons.Rounded.Share, null) },
+                                onClick = { moreActions = false; sharingTrack = track })
                         }
-                        ToolButton(Icons.Rounded.Download, "Save file", enabled = !model.busy) {
-                            download(track.downloadUrl ?: songPath(track, "download"), track.name)
-                        }
+                        DropdownMenuItem(text = { Text("Save file") }, enabled = !model.busy,
+                            leadingIcon = { Icon(Icons.Rounded.Download, null) }, onClick = {
+                                moreActions = false
+                                download(track.downloadUrl ?: songPath(track, "download"), track.name)
+                            })
                     }
                 }
+                if (canEdit && transcribe) TranscribeDialog(model, track) { transcribe = false }
             }
         }
         if (state.track == null) {
