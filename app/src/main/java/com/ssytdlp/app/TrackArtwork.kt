@@ -1,0 +1,75 @@
+package com.ssytdlp.app
+
+import android.graphics.BitmapFactory
+import androidx.compose.foundation.Image
+import androidx.compose.foundation.background
+import androidx.compose.foundation.border
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.rounded.GraphicEq
+import androidx.compose.material.icons.rounded.Movie
+import androidx.compose.material.icons.rounded.MusicNote
+import androidx.compose.material3.Icon
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.key
+import androidx.compose.runtime.produceState
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.ImageBitmap
+import androidx.compose.ui.graphics.asImageBitmap
+import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.unit.dp
+import com.ssytdlp.app.core.Account
+import com.ssytdlp.app.core.Track
+import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
+
+@Composable
+internal fun rememberTrackArtwork(track: Track, api: ServerApi, account: Account?): ImageBitmap? =
+    key(api, account?.origin, account?.user?.id, account?.session, track.artworkUrl, track.mediaType) {
+        val bitmap by produceState<ImageBitmap?>(null) {
+            val path = track.artworkUrl?.takeIf { it.isNotBlank() }
+            if (account != null && path != null && track.mediaType == "audio") {
+                try {
+                    val bytes = api.artwork(path)
+                    value = withContext(Dispatchers.Default) { decodeTrackArtwork(bytes) }
+                } catch (error: Exception) {
+                    if (error is CancellationException) throw error
+                }
+            }
+        }
+        bitmap
+    }
+
+internal fun decodeTrackArtwork(bytes: ByteArray): ImageBitmap? {
+    if (bytes.isEmpty() || bytes.size > 64 * 1024) return null
+    val dimensions = BitmapFactory.Options().apply { inJustDecodeBounds = true }
+    BitmapFactory.decodeByteArray(bytes, 0, bytes.size, dimensions)
+    if (dimensions.outWidth !in 1..96 || dimensions.outHeight !in 1..96) return null
+    return BitmapFactory.decodeByteArray(bytes, 0, bytes.size)?.asImageBitmap()
+}
+
+@Composable
+internal fun TrackArtwork(track: Track, active: Boolean, bitmap: ImageBitmap?) {
+    Box(Modifier.size(46.dp).clip(RoundedCornerShape(6.dp)).background(MaterialTheme.colorScheme.surfaceContainer)
+        .border(1.dp, if (active) MaterialTheme.colorScheme.primary.copy(alpha = 0.4f)
+            else MaterialTheme.colorScheme.outlineVariant, RoundedCornerShape(6.dp)),
+        contentAlignment = Alignment.Center) {
+        if (bitmap != null) {
+            Image(bitmap, "Album artwork for ${track.displayTitle}", Modifier.fillMaxSize(), contentScale = ContentScale.Crop)
+            if (active) Icon(Icons.Rounded.GraphicEq, null,
+                Modifier.align(Alignment.BottomEnd).background(MaterialTheme.colorScheme.surfaceContainer).size(18.dp),
+                tint = MaterialTheme.colorScheme.primary)
+        } else {
+            Icon(if (active) Icons.Rounded.GraphicEq else if (track.mediaType == "video") Icons.Rounded.Movie else Icons.Rounded.MusicNote,
+                null, Modifier.size(22.dp), tint = if (active) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant)
+        }
+    }
+}

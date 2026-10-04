@@ -200,6 +200,51 @@ class ServerApiTest {
         assertEquals("Bearer $token", request.getHeader("Authorization"))
     }
 
+    @Test fun `artwork preserves binary data and versioned nested paths for shared accounts`() = runBlocking {
+        account = account!!.copy(user = account!!.user.copy(role = "shared"))
+        val bytes = byteArrayOf(0, 1, 2, 3, -1)
+        val path = "/api/jobs/source/artwork/%5BNoVocals%5D%2Fa%20%26%20b.mp3?v=123.45"
+        server.enqueue(MockResponse().setHeader("Content-Type", "image/webp")
+            .setHeader("Cache-Control", "private, no-cache").setBody(okio.Buffer().write(bytes)))
+        assertArrayEquals(bytes, api.artwork(path))
+        val request = server.takeRequest(2, TimeUnit.SECONDS)!!
+        assertEquals(path, request.path)
+        assertEquals(listOf("Bearer", token).joinToString(" "), request.getHeader("Authorization"))
+        assertNull(request.getHeader("Cookie"))
+        assertFalse(request.path!!.contains(token))
+    }
+
+    @Test fun `artwork rejects oversized responses including chunked bodies`() = runBlocking {
+        val path = "/api/jobs/source/artwork/song.mp3"
+        val maximum = ByteArray(64 * 1024)
+        server.enqueue(MockResponse().setBody(okio.Buffer().write(maximum)))
+        assertArrayEquals(maximum, api.artwork(path))
+        listOf(MockResponse().setBody(okio.Buffer().write(ByteArray(maximum.size + 1))),
+            MockResponse().setChunkedBody(okio.Buffer().write(ByteArray(maximum.size + 1)), 1024)).forEach { response ->
+            server.enqueue(response)
+            assertTrue(runCatching { api.artwork(path) }.exceptionOrNull() is IOException)
+        }
+    }
+
+    @Test fun `artwork refuses foreign URLs and redirects and expires unauthorized sessions`() = runBlocking {
+        assertTrue(runCatching { api.artwork("https://other.example/api/artwork") }.exceptionOrNull() is IllegalArgumentException)
+        assertEquals(0, server.requestCount)
+        MockWebServer().use { other ->
+            other.start()
+            server.enqueue(MockResponse().setResponseCode(302).setHeader("Location", other.url("/api/stolen")))
+            val error = runCatching { api.artwork("/api/jobs/source/artwork/song.mp3") }.exceptionOrNull() as ApiException
+            assertEquals(302, error.status)
+            assertEquals(0, other.requestCount)
+        }
+        server.enqueue(MockResponse().setResponseCode(404))
+        assertEquals(404, (runCatching { api.artwork("/api/jobs/source/artwork/missing.mp3") }.exceptionOrNull() as ApiException).status)
+        assertNotNull(account)
+        server.enqueue(MockResponse().setResponseCode(401))
+        assertEquals(401, (runCatching { api.artwork("/api/jobs/source/artwork/song.mp3") }.exceptionOrNull() as ApiException).status)
+        assertNull(account)
+        assertEquals(listOf(token), cleared)
+    }
+
     @Test fun `downloads use the same authenticated transport and preserve binary data`() = runBlocking {
         val bytes = byteArrayOf(0, 1, 2, 3, -1)
         server.enqueue(MockResponse().setBody(okio.Buffer().write(bytes)))

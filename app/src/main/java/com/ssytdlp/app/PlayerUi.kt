@@ -272,6 +272,7 @@ fun NowPlayingScreen(model: MusicViewModel, state: PlaybackState, download: (Str
                 else -> LazyColumn(Modifier.weight(1f)) {
                     itemsIndexed(state.queue, key = { index, item -> "${item.key}:$index" }) { index, queued ->
                         TrackRow(queued.copy(rating = model.library.rating(queued)), active = index == state.index,
+                            artwork = { rememberTrackArtwork(queued.copy(artworkUrl = model.library.artworkUrl(queued)), model.api, account) },
                             transcription = model.library.transcription(queued),
                             onRatingClick = { ratingTrack = queued },
                             onClick = { model.playback.select(index) }) {
