@@ -52,6 +52,7 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.heading
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.semantics.stateDescription
@@ -86,7 +87,7 @@ fun PlayerDock(state: PlaybackState, model: MusicViewModel, expand: () -> Unit, 
     download: (String, String) -> Unit) {
     MiniPlayer(state, model.metadata?.artwork, expand, { requestNotifications(); model.playback.toggle() },
         model.playback::next, model.playback::seek, model.playback::previous, model.playback::repeat,
-        model.playback::shuffle) {
+        model.playback::shuffle, model.playback::previousTrack) {
         SongActionsMenu(model, state.track, download)
     }
 }
@@ -94,14 +95,17 @@ fun PlayerDock(state: PlaybackState, model: MusicViewModel, expand: () -> Unit, 
 @Composable
 fun MiniPlayer(state: PlaybackState, artwork: String?, expand: () -> Unit, toggle: () -> Unit,
     next: () -> Unit, onSeek: (Long) -> Unit, previous: () -> Unit = {}, repeat: () -> Unit = {},
-    shuffle: () -> Unit = {}, actions: @Composable () -> Unit = {}) {
+    shuffle: () -> Unit = {}, previousTrack: () -> Unit = previous, actions: @Composable () -> Unit = {}) {
     val track = state.track ?: return
     Surface(color = MaterialTheme.colorScheme.surfaceContainerLow) {
         BoxWithConstraints(Modifier.fillMaxWidth()) {
             val compact = maxWidth < 440.dp
             Column {
                 HorizontalDivider(color = MaterialTheme.colorScheme.primary.copy(alpha = 0.2f))
-                Row(Modifier.fillMaxWidth().padding(end = 8.dp), verticalAlignment = Alignment.CenterVertically) {
+                Row(Modifier.fillMaxWidth().playerTrackSwipes(
+                    enabled = true, nextEnabled = state.queue.size > 1,
+                    previous = previousTrack, next = next, trackKey = track.key
+                ).padding(end = 8.dp), verticalAlignment = Alignment.CenterVertically) {
                     key(track.key) {
                         MiniPlayerTrack(track, artwork, expand, Modifier.weight(1f), compact)
                     }
@@ -211,7 +215,15 @@ fun NowPlayingScreen(model: MusicViewModel, state: PlaybackState, download: (Str
             verticalAlignment = Alignment.CenterVertically) {
             Column(Modifier.weight(1f)) {
                 Text("NOW PLAYING", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.primary)
-                Text(state.track?.playlistTitle?.ifBlank { null } ?: "Your queue", style = MaterialTheme.typography.titleLarge,
+                state.track?.let { track ->
+                    key(track.key) {
+                        Text(track.displayTitle,
+                            modifier = Modifier.fillMaxWidth().semantics { heading() }.basicMarquee(iterations = Int.MAX_VALUE),
+                            style = MaterialTheme.typography.titleLarge, maxLines = 1, softWrap = false, overflow = TextOverflow.Clip)
+                    }
+                }
+                Text(state.track?.playlistTitle?.ifBlank { null } ?: "Your queue",
+                    style = if (state.track == null) MaterialTheme.typography.titleLarge else MaterialTheme.typography.bodySmall,
                     maxLines = 1, overflow = TextOverflow.Ellipsis)
             }
             SongActionsMenu(model, state.track, download, menuKey = tab,

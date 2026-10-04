@@ -190,6 +190,9 @@ Drag the bottom mini-player's progress slider to seek without leaving Library.
 Artwork, song information, and playback controls stay on one row even on narrow
 foldable cover screens; long titles and artist names scroll automatically.
 Its previous, play/pause, next, and repeat controls work without opening Now Playing.
+Swipe left across the mini-player's song row for the next song, or right for the
+previous song. Taps still open Now Playing or use the playback buttons; dragging
+the separate progress slider only seeks within the song.
 The shuffle button beside the mini-player's progress slider toggles random queue
 playback without changing the current song. Shuffle and repeat are also available
 in Now Playing. Tap repeat once from off to repeat the current song (the **1**
@@ -307,6 +310,8 @@ with the original page indices.
 Open **Settings** from the upper-right gear, to the right of **Refresh**, and
 select **Jobs** there to add downloads or manage server jobs.
 In **Now Playing**, the Player, Lyrics, and Queue tabs retain all playback controls.
+The header shows the current song name on every tab, with its playlist or queue
+underneath; long song names scroll without crowding the three-dot menu.
 On the audio **Player** tab, use the **Audio visualizer** switch to replace album
 artwork with visuals driven by the decoded music. While enabled, the dropdown
 offers **Waveform**, **Amplitude bars**, and **Radial pulse**. Switching back
@@ -317,7 +322,7 @@ Visuals stop animating when paused, buffering, or in the background, and respect
 disabled system animations. They work independently of edge lighting, require no
 microphone permission, and do not change the sound. Outputs that bypass decoded
 PCM processing show a stationary visual instead.
-On **Player** only, swipe left for the next song or right for the previous song;
+On the full-size **Player** tab, swipe left for the next song or right for the previous song;
 the artwork or visualizer follows your finger and settles back when the gesture ends.
 Lyrics and Queue gestures never skip songs. When both lyric sources are available,
 tap the selected **Lyrics** tab again to alternate between **SYLT** (synchronized)

@@ -5,17 +5,22 @@ import android.content.Context
 import androidx.activity.ComponentActivity
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.MutableState
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.snapshots.Snapshot
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.input.key.Key
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.semantics.SemanticsActions
 import androidx.compose.ui.semantics.SemanticsProperties
 import androidx.compose.ui.test.*
 import androidx.compose.ui.test.junit4.StateRestorationTester
 import androidx.compose.ui.test.junit4.createAndroidComposeRule
+import androidx.compose.ui.text.TextLayoutResult
+import androidx.compose.ui.unit.Density
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.ViewModelStore
 import androidx.lifecycle.viewModelScope
@@ -64,6 +69,7 @@ class NowPlayingScreenTest {
     private val models = ViewModelStore()
     private val provider = object : Provider("PlayerTestKeyStore", 1.0, "Empty test session keystore") {}
     private lateinit var model: MusicViewModel
+    private val isSongHeading = SemanticsMatcher.keyIsDefined(SemanticsProperties.Heading)
 
     @Before fun setup() {
         provider.put("KeyStore.AndroidKeyStore", Security.getProvider("SUN").getService("KeyStore", "JKS").className)
@@ -97,6 +103,76 @@ class NowPlayingScreenTest {
         }
         compose.onNodeWithContentDescription("Audio visualizer").assertDoesNotExist()
         compose.onNodeWithContentDescription("Visualizer style").assertDoesNotExist()
+        compose.onAllNodes(isSongHeading).assertCountEquals(0)
+    }
+
+    @Test fun headerShowsCurrentSongAndFilenameFallbackAcrossTabs() {
+        val track = Track("preview", "song.mp3", title = "Blue hour", playlistTitle = "Night Sessions")
+        val fallback = Track("preview", "folder/Quiet signal.mp3", title = " ")
+        val state = mutableStateOf(PlaybackState(track = track, queue = listOf(track, fallback)))
+        compose.setContent { MusicTheme { NowPlayingScreen(model, state.value) { _, _ -> } } }
+        listOf(track to "Blue hour", track.copy(title = "Blue hour (live)") to "Blue hour (live)",
+            fallback to "Quiet signal").forEach { (current, title) ->
+            compose.runOnIdle {
+                state.value = state.value.copy(track = current)
+                Snapshot.sendApplyNotifications()
+            }
+            listOf("Player", "Lyrics", "Queue").forEach { tab ->
+                compose.onNodeWithText(tab).performClick().assertIsSelected()
+                compose.onNodeWithText("NOW PLAYING").assertIsDisplayed()
+                compose.onAllNodes(isSongHeading).assertCountEquals(1)
+                songHeading(title).assertIsDisplayed().assertTextEquals(title)
+                compose.onNodeWithText(if (current == fallback) "Your queue" else "Night Sessions").assertIsDisplayed()
+                compose.onNodeWithContentDescription("More song actions").assertIsDisplayed().assertHasClickAction()
+            }
+        }
+        compose.runOnIdle {
+            state.value = PlaybackState()
+            Snapshot.sendApplyNotifications()
+        }
+        compose.onAllNodes(isSongHeading).assertCountEquals(0)
+        compose.onNodeWithText("Your queue").assertIsDisplayed()
+        compose.onNodeWithContentDescription("More song actions").assertDoesNotExist()
+    }
+
+    @Test
+    @Config(qualifiers = "w320dp-h800dp")
+    fun longSongHeaderIsSingleLineAndKeepsOverflowAccessibleWithLargeText() {
+        val track = Track("preview", "song.mp3", title = "A long song title that needs to scroll ".repeat(4),
+            playlistTitle = "A long playlist name ".repeat(4))
+        compose.mainClock.autoAdvance = false
+        compose.setContent {
+            CompositionLocalProvider(LocalDensity provides Density(LocalDensity.current.density, 1.5f)) {
+                MusicTheme { NowPlayingScreen(model, PlaybackState(track = track)) { _, _ -> } }
+            }
+        }
+        compose.mainClock.advanceTimeByFrame()
+        val heading = songHeading(track.displayTitle).assertIsDisplayed()
+        val titleLayouts = mutableListOf<TextLayoutResult>()
+        heading.performSemanticsAction(SemanticsActions.GetTextLayoutResult) { it(titleLayouts) }
+        val titleLayout = titleLayouts.single()
+        assertEquals(1, titleLayout.lineCount)
+        assertEquals(false, titleLayout.isLineEllipsized(0))
+        val context = compose.onNodeWithText(track.playlistTitle).assertIsDisplayed()
+        val contextLayouts = mutableListOf<TextLayoutResult>()
+        context.performSemanticsAction(SemanticsActions.GetTextLayoutResult) { it(contextLayouts) }
+        assertTrue(titleLayout.layoutInput.style.fontSize.value > contextLayouts.single().layoutInput.style.fontSize.value)
+        val titleBounds = heading.getUnclippedBoundsInRoot()
+        val contextBounds = context.getUnclippedBoundsInRoot()
+        val labelBounds = compose.onNodeWithText("NOW PLAYING").getUnclippedBoundsInRoot()
+        val overflow = compose.onNodeWithContentDescription("More song actions")
+            .assertIsDisplayed().assertIsEnabled().assertHasClickAction().getUnclippedBoundsInRoot()
+        assertTrue(titleBounds.left >= 0.dp && titleBounds.right <= overflow.left)
+        assertTrue(titleBounds.right - titleBounds.left >= 48.dp)
+        assertTrue(labelBounds.bottom <= titleBounds.top && titleBounds.bottom <= contextBounds.top)
+        assertTrue(contextBounds.right <= overflow.left)
+        assertTrue(overflow.right <= 320.dp && overflow.right - overflow.left >= 48.dp)
+        assertTrue(contextBounds.bottom <= compose.onNodeWithText("Player").getUnclippedBoundsInRoot().top)
+        compose.mainClock.advanceTimeBy(3_000)
+        assertEquals(overflow, compose.onNodeWithContentDescription("More song actions").getUnclippedBoundsInRoot())
+        heading.assertTextEquals(track.displayTitle)
+        openSongActions()
+        songAction("Save file").assertIsDisplayed().assertIsEnabled()
     }
 
     @Test fun visualizerSwitchAndDropdownRetainSelectionWithoutChangingPlayback() {
@@ -780,15 +856,20 @@ class NowPlayingScreenTest {
 
     private fun songAction(text: String) = compose.onNode(hasText(text) and hasAnyAncestor(isPopup()))
 
-    private fun assertOnlySongOverflowBesideTitle(title: String) {
+    private fun songHeading(title: String) = compose.onNode(hasText(title) and isSongHeading)
+
+    private fun assertOnlySongOverflowBesideTitle(track: Track) {
         compose.onNodeWithText("NOW PLAYING").assertIsDisplayed()
         compose.onAllNodesWithContentDescription("More song actions").assertCountEquals(1)
-        val titleBounds = compose.onNodeWithText(title).assertIsDisplayed().fetchSemanticsNode().boundsInRoot
+        val titleBounds = songHeading(track.displayTitle).assertIsDisplayed().fetchSemanticsNode().boundsInRoot
+        val contextBounds = compose.onNodeWithText(track.playlistTitle).assertIsDisplayed().fetchSemanticsNode().boundsInRoot
         val overflow = compose.onNodeWithContentDescription("More song actions")
             .assertIsDisplayed().fetchSemanticsNode().boundsInRoot
         assertTrue(titleBounds.width > 0f)
         assertTrue(titleBounds.right <= overflow.left)
         assertTrue(titleBounds.center.y in overflow.top..overflow.bottom)
+        assertTrue(titleBounds.bottom <= contextBounds.top)
+        assertTrue(contextBounds.right <= overflow.left)
         listOf("Edit lyrics", "Edit metadata", "View song metadata", "Transcribe lyrics",
             "Replace File", "Share Media", "Save file").forEach {
             compose.onNodeWithContentDescription(it).assertDoesNotExist()
@@ -1175,7 +1256,7 @@ class NowPlayingScreenTest {
             MusicTheme { NowPlayingScreen(model, PlaybackState(track = track)) { path, name -> downloads.add(path to name) } }
         }
         compose.onNodeWithText("USLT Lyrics").performClick()
-        assertOnlySongOverflowBesideTitle(track.playlistTitle)
+        assertOnlySongOverflowBesideTitle(track)
         openSongActions()
         val actions = listOf("Edit lyrics", "Edit metadata", "Transcribe lyrics", "Replace File", "Share Media", "Save file")
         actions.forEach {
@@ -1197,7 +1278,7 @@ class NowPlayingScreenTest {
         compose.onNode(isDialog()).assertDoesNotExist()
         listOf("Player", "Queue").forEach { tab ->
             compose.onNodeWithText(tab).performClick()
-            assertOnlySongOverflowBesideTitle(track.playlistTitle)
+            assertOnlySongOverflowBesideTitle(track)
             openSongActions()
             songAction("Edit lyrics").assertDoesNotExist()
             actions.filterNot { it == "Edit lyrics" }.forEach { songAction(it).assertIsDisplayed().assertIsEnabled() }
@@ -1222,7 +1303,7 @@ class NowPlayingScreenTest {
         compose.setContent { MusicTheme { NowPlayingScreen(model, PlaybackState(track = track)) { _, _ -> } } }
         listOf("Player", "USLT Lyrics", "Queue").forEach { tab ->
             compose.onNodeWithText(tab).performClick()
-            assertOnlySongOverflowBesideTitle(track.playlistTitle)
+            assertOnlySongOverflowBesideTitle(track)
             openSongActions()
             listOf("Edit metadata", "Transcribe lyrics", "Replace File", "Share Media", "Save file").forEach {
                 songAction(it).assertIsDisplayed().assertIsEnabled().assertHasClickAction()
@@ -1273,11 +1354,11 @@ class NowPlayingScreenTest {
         compose.onNodeWithText("Lyrics").performClick().assertIsSelected()
         compose.onNodeWithContentDescription("Playback position").assertIsDisplayed()
         compose.onNodeWithText("Queue").performClick().assertIsSelected()
-        compose.onNodeWithText("Blue hour").assertIsDisplayed()
+        compose.onNode(hasText("Blue hour") and !isSongHeading).assertIsDisplayed()
         compose.onNodeWithContentDescription("Remove from queue").assertIsDisplayed()
         restoration.emulateSavedInstanceStateRestore()
         compose.onNodeWithText("Queue").assertIsSelected()
-        compose.onNodeWithText("Blue hour").assertIsDisplayed()
+        compose.onNode(hasText("Blue hour") and !isSongHeading).assertIsDisplayed()
     }
 
     @Test fun libraryUnratedSongOpensRatingDialogEvenWhenPlaybackIsDisconnected() {
@@ -1688,7 +1769,7 @@ class NowPlayingScreenTest {
         swipeBothWaysAt(compose.onNodeWithText("Synchronized line"))
         compose.runOnIdle { assertEquals(2, unhandledSwipes) }
         compose.onNodeWithText("Queue").performClick()
-        swipeBothWaysAt(compose.onNodeWithText("Blue hour"))
+        swipeBothWaysAt(compose.onNode(hasText("Blue hour") and !isSongHeading))
         compose.runOnIdle { assertEquals(4, unhandledSwipes) }
         compose.onNodeWithText("Player").performClick()
         swipeBothWaysAt(compose.onNodeWithContentDescription("Album artwork unavailable"))
@@ -1706,7 +1787,7 @@ class NowPlayingScreenTest {
         }
         val artwork = compose.onNodeWithContentDescription("Album artwork unavailable")
         val original = artwork.fetchSemanticsNode().boundsInRoot
-        val title = compose.onNodeWithText("Blue hour").fetchSemanticsNode().boundsInRoot
+        val title = compose.onNode(hasText("Blue hour") and !isSongHeading).fetchSemanticsNode().boundsInRoot
         compose.mainClock.autoAdvance = false
         try {
             listOf(100f, -100f).forEach { distance ->
@@ -1721,7 +1802,7 @@ class NowPlayingScreenTest {
                 val moved = artwork.fetchSemanticsNode().boundsInRoot.left - original.left
                 assertTrue(moved * distance > 0f)
                 assertTrue(kotlin.math.abs(moved) > 50f)
-                assertEquals(title, compose.onNodeWithText("Blue hour").fetchSemanticsNode().boundsInRoot)
+                assertEquals(title, compose.onNode(hasText("Blue hour") and !isSongHeading).fetchSemanticsNode().boundsInRoot)
                 compose.onNodeWithTag("page").performTouchInput { if (distance > 0f) up() else cancel() }
                 compose.mainClock.advanceTimeBy(32)
                 compose.waitForIdle()
