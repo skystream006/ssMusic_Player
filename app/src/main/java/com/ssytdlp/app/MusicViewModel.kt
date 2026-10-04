@@ -82,6 +82,11 @@ class MusicViewModel @JvmOverloads constructor(application: Application, private
         private set
     var waveAppearance by mutableStateOf(application.getSharedPreferences("settings", 0).getBoolean("wave_appearance", true))
         private set
+    var skinsEnabled by mutableStateOf(application.getSharedPreferences("settings", 0).getBoolean("skins_enabled", false))
+        private set
+    var skin by mutableStateOf(AppSkin.fromPreference(
+        application.getSharedPreferences("settings", 0).getString("skin", null)))
+        private set
     var edgeLightingEnabled by mutableStateOf(application.getSharedPreferences("settings", 0).getBoolean("edge_lighting", true))
         private set
     var edgeLightingStyle by mutableStateOf(EdgeLightingStyle.fromPreference(
@@ -482,6 +487,16 @@ class MusicViewModel @JvmOverloads constructor(application: Application, private
     fun chooseWaveAppearance(enabled: Boolean) {
         waveAppearance = enabled
         getApplication<Application>().getSharedPreferences("settings", 0).edit().putBoolean("wave_appearance", enabled).apply()
+    }
+
+    fun chooseSkins(enabled: Boolean) {
+        skinsEnabled = enabled
+        getApplication<Application>().getSharedPreferences("settings", 0).edit().putBoolean("skins_enabled", enabled).apply()
+    }
+
+    fun chooseSkin(value: AppSkin) {
+        skin = value
+        getApplication<Application>().getSharedPreferences("settings", 0).edit().putString("skin", value.name).apply()
     }
 
     fun chooseEdgeLighting(enabled: Boolean) {
