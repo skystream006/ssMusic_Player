@@ -29,7 +29,8 @@ data class LibraryState(
     val pendingTranscriptions: Map<String, Transcription> = emptyMap(),
     val transcriptions: Map<String, Transcription?> = emptyMap(),
     val ratings: Map<String, Int> = emptyMap(),
-    val transcriptionLocks: Map<String, Boolean> = emptyMap()
+    val transcriptionLocks: Map<String, Boolean> = emptyMap(),
+    val artworkUrls: Map<String, String?> = emptyMap()
 ) {
     fun withLibrary(result: Library): LibraryState = copy(
         library = result, selectedId = selectedId?.takeIf { id -> result.entries.any { it.id == id } })
@@ -40,11 +41,14 @@ data class LibraryState(
 
     fun rating(track: Track): Int = ratings[track.key] ?: track.rating
 
+    fun artworkUrl(track: Track): String? = if (artworkUrls.containsKey(track.key)) artworkUrls[track.key] else track.artworkUrl
+
     fun transcriptionLocked(track: Track): Boolean = transcriptionLocks[track.key] ?: track.transcriptionLocked
 
     fun withTrackPage(result: TrackPage): LibraryState = copy(
         tracks = result, page = result.page,
         ratings = ratings + result.files.associate { it.key to it.rating },
+        artworkUrls = artworkUrls + result.files.associate { it.key to it.artworkUrl },
         transcriptionLocks = transcriptionLocks + result.files.associate { it.key to it.transcriptionLocked },
         transcriptions = transcriptions + result.files.associate { track ->
             track.key to (track.transcription ?: library.jobs.find { it.id == track.jobId }?.transcriptions?.get(track.name))
@@ -57,6 +61,7 @@ data class LibraryState(
     fun withReplacedFile(file: Track): LibraryState = copy(
         tracks = tracks.copy(files = tracks.files.map { it.withReplacedFile(file) }),
         ratings = ratings + (file.key to file.rating),
+        artworkUrls = artworkUrls + (file.key to file.artworkUrl),
         transcriptionLocks = transcriptionLocks + (file.key to file.transcriptionLocked),
         pendingTranscriptions = pendingTranscriptions - file.key,
         transcriptions = transcriptions + (file.key to null))

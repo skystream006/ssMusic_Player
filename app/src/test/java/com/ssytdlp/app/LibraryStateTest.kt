@@ -39,6 +39,20 @@ class LibraryStateTest {
         assertEquals(5, otherPage.rating(Track("other", track.name)))
     }
 
+    @Test fun `artwork revisions and removals override queued snapshots across pages and replacements`() {
+        val queued = track.copy(artworkUrl = "/api/jobs/source/artwork/song.mp3?v=1")
+        val updated = queued.copy(artworkUrl = "/api/jobs/source/artwork/song.mp3?v=2")
+        assertEquals(queued.artworkUrl, LibraryState().artworkUrl(queued))
+        val refreshed = LibraryState().withTrackPage(TrackPage(files = listOf(updated)))
+        assertEquals(updated.artworkUrl, refreshed.artworkUrl(queued))
+        val nextPage = refreshed.withTrackPage(TrackPage(files = listOf(Track("other", track.name))))
+        assertEquals(updated.artworkUrl, nextPage.artworkUrl(queued))
+        assertNull(nextPage.artworkUrl(Track("other", track.name)))
+        assertNull(nextPage.withTrackPage(TrackPage(files = listOf(track))).artworkUrl(queued))
+        assertNull(nextPage.withReplacedFile(track).artworkUrl(queued))
+        assertEquals(updated.artworkUrl, LibraryState().withReplacedFile(updated).artworkUrl(queued))
+    }
+
     @Test fun `inline records take precedence over legacy job summaries`() {
         val state = LibraryState(library = Library(jobs = listOf(
             Job(id = track.jobId, transcriptions = mapOf(track.name to sent)))))

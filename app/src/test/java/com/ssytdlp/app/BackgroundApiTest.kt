@@ -66,7 +66,7 @@ class BackgroundApiTest {
         listOf("/api/jobs", "/api/jobs/job", "/api/health", "/api/library/tracks",
             "/api/preferences", "/api/auth/me", "/api/jobs/job/download-all",
             "/api/jobs/job/transcribe/song.mp3", "/api/jobs/job/files/song.mp3/metadata",
-            "/api/jobs/job/files/song.mp3/replace").forEach {
+            "/api/jobs/job/files/song.mp3/replace", "/api/jobs/job/artwork/song.mp3").forEach {
             assertFalse(it, isBackgroundPlaybackRequest("GET", it))
         }
     }
@@ -103,6 +103,34 @@ class BackgroundApiTest {
         withTimeout(5_000) { poll.await() }
         assertEquals("/api/jobs", server.takeRequest(2, TimeUnit.SECONDS)!!.path)
         assertEquals(2, server.requestCount)
+    }
+
+    @Test fun `artwork waits for foreground and interrupted bodies retry on resume`() = runBlocking {
+        val path = "/api/jobs/job/artwork/song.mp3?v=2"
+        server.enqueue(MockResponse().setBody("image").setBodyDelay(2, TimeUnit.SECONDS))
+        val artwork = async(Dispatchers.IO, start = CoroutineStart.UNDISPATCHED) { api.artwork(path) }
+        assertNull(server.takeRequest(150, TimeUnit.MILLISECONDS))
+        gate.activityResumed(activity)
+        assertEquals(path, server.takeRequest(5, TimeUnit.SECONDS)!!.path)
+        withTimeout(5_000) { headers.receive() }
+        gate.activityPaused(activity)
+        withTimeout(5_000) { failures.receive() }
+        assertNull(server.takeRequest(150, TimeUnit.MILLISECONDS))
+        assertFalse(artwork.isCompleted)
+        server.enqueue(MockResponse().setBody("replacement image"))
+        gate.activityResumed(activity)
+        assertEquals("replacement image", withTimeout(5_000) { artwork.await() }.decodeToString())
+        assertEquals(path, server.takeRequest(5, TimeUnit.SECONDS)!!.path)
+    }
+
+    @Test fun `deferred artwork cannot run as a replacement account`() = runBlocking {
+        val artwork = async(Dispatchers.IO, start = CoroutineStart.UNDISPATCHED) {
+            runCatching { api.artwork("/api/jobs/job/artwork/song.mp3") }
+        }
+        account = account.copy(user = User("replacement"))
+        gate.activityResumed(activity)
+        assertTrue(withTimeout(5_000) { artwork.await() }.exceptionOrNull() is IOException)
+        assertEquals(0, server.requestCount)
     }
 
     @Test fun `response body reads also stop when paused`() = runBlocking {

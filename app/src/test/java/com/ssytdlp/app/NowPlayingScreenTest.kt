@@ -1449,6 +1449,58 @@ class NowPlayingScreenTest {
         compose.onAllNodesWithContentDescription("Remove from queue").assertCountEquals(2)
     }
 
+    @Test
+    @GraphicsMode(GraphicsMode.Mode.NATIVE)
+    fun libraryAndQueueLoadVersionedArtworkForActiveAndRepeatedTracks() {
+        val image = java.io.ByteArrayOutputStream().use { output ->
+            val bitmap = android.graphics.Bitmap.createBitmap(96, 96, android.graphics.Bitmap.Config.ARGB_8888)
+            bitmap.compress(android.graphics.Bitmap.CompressFormat.WEBP_LOSSLESS, 100, output)
+            bitmap.recycle()
+            output.toByteArray()
+        }
+        val paths = Collections.synchronizedList(mutableListOf<String>())
+        val client = OkHttpClient.Builder().addInterceptor { chain ->
+            val request = chain.request()
+            paths.add(request.url.encodedPath + "?" + request.url.encodedQuery)
+            Response.Builder().request(request).protocol(Protocol.HTTP_1_1).code(200).message("Artwork")
+                .body(image.toResponseBody()).build()
+        }.build()
+        val account = ReflectionHelpers.getField<MutableStateFlow<Account?>>(model.sessions, "mutableAccount")
+        val library = ReflectionHelpers.getField<MutableState<LibraryState>>(model, "library\$delegate")
+        val queued = Track("preview", "song.mp3", artworkUrl = "/api/jobs/preview/artwork/song.mp3?v=1")
+        val refreshed = queued.copy(artworkUrl = "/api/jobs/preview/artwork/song.mp3?v=2")
+        val showLibrary = mutableStateOf(true)
+        compose.runOnIdle {
+            model.viewModelScope.cancel()
+            account.value = Account("https://music.example", User("shared", role = "shared"), Session("test", "2099-01-01T00:00:00Z"))
+            ReflectionHelpers.setField(model, "api", ServerApi({ account.value }, {}, client))
+            library.value = LibraryState().withTrackPage(TrackPage(files = listOf(refreshed)))
+        }
+        compose.setContent {
+            MusicTheme {
+                if (showLibrary.value) LibraryScreen(model, PlaybackState(connected = true), {}) { _, _ -> }
+                else NowPlayingScreen(model, PlaybackState(track = queued, queue = listOf(queued, queued))) { _, _ -> }
+            }
+        }
+        compose.waitUntil(5_000) {
+            compose.onAllNodesWithContentDescription("Album artwork for song", useUnmergedTree = true)
+                .fetchSemanticsNodes().size == 1
+        }
+        compose.runOnIdle { showLibrary.value = false }
+        compose.onNodeWithText("Queue").performClick()
+        compose.waitUntil(5_000) {
+            compose.onAllNodesWithContentDescription("Album artwork for song", useUnmergedTree = true)
+                .fetchSemanticsNodes().size == 2
+        }
+        compose.onAllNodesWithContentDescription("Remove from queue").assertCountEquals(2)
+        assertTrue(paths.isNotEmpty())
+        assertTrue(paths.all { it == refreshed.artworkUrl })
+        compose.runOnIdle {
+            library.value = library.value.withTrackPage(TrackPage(files = listOf(refreshed.copy(artworkUrl = null))))
+        }
+        compose.onAllNodesWithContentDescription("Album artwork for song", useUnmergedTree = true).assertCountEquals(0)
+    }
+
     @Test fun queueRatingReflectsSavedAndClearedValuesOutsideTheCurrentLibraryPage() {
         val track = Track(jobId = "preview", name = "song.mp3", rating = 4)
         val library = ReflectionHelpers.getField<MutableState<LibraryState>>(model, "library\$delegate")

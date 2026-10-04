@@ -23,6 +23,8 @@ import okhttp3.Request
 import okhttp3.RequestBody
 import okhttp3.RequestBody.Companion.toRequestBody
 import okhttp3.Response
+import okio.buffer
+import okio.source
 import kotlin.coroutines.resume
 import kotlin.coroutines.resumeWithException
 
@@ -145,6 +147,26 @@ class ServerApi(
         }
         if (uiActivity == null || isBackgroundPlaybackRequest("GET", request.url.encodedPath)) execute()
         else uiActivity.onceWhileResumed { execute() }
+    }
+
+    suspend fun artwork(path: String): ByteArray {
+        val owner = currentAccount() ?: throw ApiException(401, "Sign in with your passkey.")
+        val request = Request.Builder().url(ServerResource.resolve(owner.origin, path))
+            .tag(RequestOwner::class.java, RequestOwner(owner)).build()
+        suspend fun execute(): ByteArray {
+            requireOwner(owner)
+            var bytes = ByteArray(0)
+            download(authenticatedClient.newCall(request)) { input ->
+                input.source().buffer().use { source ->
+                    source.request(64 * 1024L + 1)
+                    if (source.buffer.size > 64 * 1024) throw IOException("Artwork thumbnail is too large.")
+                    bytes = source.readByteArray()
+                }
+            }
+            requireOwner(owner)
+            return bytes
+        }
+        return if (uiActivity == null) execute() else uiActivity.readWhileResumed { execute() }
     }
 
     private suspend fun download(call: Call, write: (java.io.InputStream) -> Unit): Unit = suspendCancellableCoroutine { continuation ->

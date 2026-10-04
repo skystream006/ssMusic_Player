@@ -81,6 +81,20 @@ class ModelsTest {
         assertEquals(9L, page.version)
     }
 
+    @Test fun `artwork URLs retain revisions and survive queue serialization with legacy defaults`() {
+        val url = "/api/jobs/source/artwork/%5BNoVocals%5D%2Fa%20%26%20b.mp3?v=123.45"
+        val page = ApiJson.decodeFromString<TrackPage>("""{"files":[
+            {"jobId":"source","name":"[NoVocals]/a & b.mp3","artworkUrl":"$url"},
+            {"name":"legacy.mp3"},
+            {"name":"video.mp4","artworkUrl":null}
+        ]}""")
+        val track = page.files.first()
+        assertEquals(url, track.artworkUrl)
+        assertEquals(track, ApiJson.decodeFromString<Track>(ApiJson.encodeToString(track)))
+        assertNull(page.files[1].artworkUrl)
+        assertNull(page.files[2].artworkUrl)
+    }
+
     @Test fun `track locks and lyric edit permissions decode with safe legacy defaults`() {
         val page = ApiJson.decodeFromString<TrackPage>("""{"files":[
             {"name":"locked.mp3","transcriptionLocked":true},

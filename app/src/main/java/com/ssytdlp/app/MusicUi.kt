@@ -28,6 +28,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.ImageBitmap
 import androidx.compose.ui.graphics.lerp
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalContext
@@ -280,8 +281,10 @@ private fun AppSettingsSheet(onDismiss: () -> Unit) {
 
 @Composable
 fun LibraryScreen(model: MusicViewModel, playback: PlaybackState, onPlay: (Int) -> Unit, download: (String, String) -> Unit) {
+    val account by model.sessions.account.collectAsStateWithLifecycle()
     var ratingTrack by remember { mutableStateOf<Track?>(null) }
     LibraryContent(model.library, playback, onPlay = onPlay, onPage = model::page,
+        artwork = { rememberTrackArtwork(it, model.api, account) },
         onRating = { ratingTrack = it }) { track, index -> TrackMenu(model, track, index, download) }
     ratingTrack?.let { track -> MetadataDialog(model, track, ratingOnly = true) { ratingTrack = null } }
 }
@@ -289,6 +292,7 @@ fun LibraryScreen(model: MusicViewModel, playback: PlaybackState, onPlay: (Int) 
 @Composable
 fun LibraryContent(state: LibraryState, playback: PlaybackState, onPlay: (Int) -> Unit,
     onPage: (Int) -> Unit, onRating: (Track) -> Unit = {},
+    artwork: @Composable (Track) -> ImageBitmap? = { null },
     trackActions: @Composable (Track, Int) -> Unit) {
     val groups = remember(state.tracks.files) {
         state.tracks.files.withIndex().partition { !it.value.name.startsWith("[NoVocals]/", ignoreCase = true) }
@@ -297,6 +301,7 @@ fun LibraryContent(state: LibraryState, playback: PlaybackState, onPlay: (Int) -
     val row: @Composable (IndexedValue<Track>) -> Unit = { (index, track) ->
         TrackRow(track.copy(rating = state.rating(track)), active = playback.track?.key == track.key,
             enabled = playback.connected && !state.loading, transcription = state.transcription(track),
+            artwork = { artwork(track.copy(artworkUrl = state.artworkUrl(track))) },
             onRatingClick = { onRating(track) }, onClick = { onPlay(index) }) {
             trackActions(track, index)
         }
@@ -388,6 +393,7 @@ fun EntryMenu(model: MusicViewModel, entry: LibraryEntry) {
 
 @Composable
 fun TrackRow(track: Track, active: Boolean = false, enabled: Boolean = true, transcription: Transcription? = null,
+    artwork: @Composable () -> ImageBitmap? = { null },
     onRatingClick: () -> Unit = {}, onClick: () -> Unit, trailing: @Composable () -> Unit = {}) {
     BoxWithConstraints(Modifier.fillMaxWidth()) {
         val compact = maxWidth < 240.dp
@@ -395,12 +401,7 @@ fun TrackRow(track: Track, active: Boolean = false, enabled: Boolean = true, tra
             .clickable(enabled = enabled, onClick = onClick).heightIn(min = 78.dp)
             .padding(start = if (compact) 8.dp else 20.dp, end = 8.dp, top = 10.dp, bottom = 10.dp),
             verticalAlignment = Alignment.CenterVertically) {
-            if (!compact) Box(Modifier.size(46.dp).clip(RoundedCornerShape(6.dp)).background(MaterialTheme.colorScheme.surfaceContainer)
-                .border(1.dp, if (active) MaterialTheme.colorScheme.primary.copy(alpha = 0.4f) else MaterialTheme.colorScheme.outlineVariant, RoundedCornerShape(6.dp)),
-                contentAlignment = Alignment.Center) {
-                Icon(if (active) Icons.Rounded.GraphicEq else if (track.mediaType == "video") Icons.Rounded.Movie else Icons.Rounded.MusicNote,
-                    null, Modifier.size(22.dp), tint = if (active) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant)
-            }
+            if (!compact) TrackArtwork(track, active, artwork())
             Column(Modifier.weight(1f).padding(start = if (compact) 4.dp else 14.dp, end = 4.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
                 Text(track.displayTitle, maxLines = 2, overflow = TextOverflow.Ellipsis, style = MaterialTheme.typography.titleSmall,
                     color = if (active) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurface)
