@@ -82,16 +82,19 @@ import kotlin.math.roundToInt
 import java.util.Locale
 
 @Composable
-fun PlayerDock(state: PlaybackState, model: MusicViewModel, expand: () -> Unit, requestNotifications: () -> Unit) {
+fun PlayerDock(state: PlaybackState, model: MusicViewModel, expand: () -> Unit, requestNotifications: () -> Unit,
+    download: (String, String) -> Unit) {
     MiniPlayer(state, model.metadata?.artwork, expand, { requestNotifications(); model.playback.toggle() },
         model.playback::next, model.playback::seek, model.playback::previous, model.playback::repeat,
-        model.playback::shuffle)
+        model.playback::shuffle) {
+        SongActionsMenu(model, state.track, download)
+    }
 }
 
 @Composable
 fun MiniPlayer(state: PlaybackState, artwork: String?, expand: () -> Unit, toggle: () -> Unit,
     next: () -> Unit, onSeek: (Long) -> Unit, previous: () -> Unit = {}, repeat: () -> Unit = {},
-    shuffle: () -> Unit = {}) {
+    shuffle: () -> Unit = {}, actions: @Composable () -> Unit = {}) {
     val track = state.track ?: return
     Surface(color = MaterialTheme.colorScheme.surfaceContainerLow) {
         BoxWithConstraints(Modifier.fillMaxWidth()) {
@@ -114,6 +117,7 @@ fun MiniPlayer(state: PlaybackState, artwork: String?, expand: () -> Unit, toggl
                             valueRange = 0f..state.duration.toFloat().coerceAtLeast(1f), enabled = state.duration > 0,
                             modifier = Modifier.weight(1f).padding(horizontal = 12.dp).semantics { contentDescription = "Playback position" })
                     }
+                    actions()
                 }
             }
         }
@@ -182,10 +186,7 @@ private fun RepeatButton(mode: Int, repeat: () -> Unit) {
 fun NowPlayingScreen(model: MusicViewModel, state: PlaybackState, download: (String, String) -> Unit) {
     var tab by rememberSaveable { mutableIntStateOf(0) }
     var ratingTrack by remember { mutableStateOf<Track?>(null) }
-    var editingTrack by remember { mutableStateOf<Track?>(null) }
-    var sharingTrack by remember { mutableStateOf<Track?>(null) }
     val account by model.sessions.account.collectAsStateWithLifecycle()
-    var replacingTrack by remember(account?.origin, account?.user?.id, account?.user?.role) { mutableStateOf<Track?>(null) }
     var editingLyrics by remember(tab, state.track == null, account?.origin, account?.user?.id, account?.session) {
         mutableStateOf<Triple<Track, SongMetadata, Boolean>?>(null)
     }
@@ -213,60 +214,10 @@ fun NowPlayingScreen(model: MusicViewModel, state: PlaybackState, download: (Str
                 Text(state.track?.playlistTitle?.ifBlank { null } ?: "Your queue", style = MaterialTheme.typography.titleLarge,
                     maxLines = 1, overflow = TextOverflow.Ellipsis)
             }
-            state.track?.let { track ->
-                val job = model.library.library.jobs.find { it.id == track.jobId }
-                    ?: model.jobs.find { it.id == track.jobId }
-                val canShare = track.mediaType == "audio" && account?.user?.let { user ->
-                    !user.isShared && job?.canModify(user) == true
-                } == true
-                val canEdit = track.name.endsWith(".mp3", true) && account?.user?.let { user ->
-                    !user.isShared && model.library.library.jobs.find { it.id == track.jobId }?.canModify(user) == true
-                } == true
-                var transcribe by remember(canEdit, track.key, account?.origin, account?.user?.id) { mutableStateOf(false) }
-                var moreActions by remember(track.key, tab, account?.origin, account?.user?.id, account?.user?.role) {
-                    mutableStateOf(false)
-                }
-                Box {
-                    ToolButton(Icons.Rounded.MoreVert, "More song actions") { moreActions = true }
-                    DropdownMenu(expanded = moreActions, onDismissRequest = { moreActions = false }) {
-                        if (canEditLyrics && metadata != null) {
-                            DropdownMenuItem(text = { Text("Edit lyrics") }, enabled = !model.busy,
-                                leadingIcon = { Icon(Icons.Rounded.EditNote, null) }, onClick = {
-                                    moreActions = false
-                                    editingLyrics = Triple(track, metadata, showUslt)
-                                })
-                        }
-                        if (canEdit) {
-                            DropdownMenuItem(text = { Text("Edit metadata") }, enabled = !model.busy,
-                                leadingIcon = { Icon(Icons.Rounded.Edit, null) },
-                                onClick = { moreActions = false; editingTrack = track })
-                            TranscribeMenuItem(model.library.transcriptionLocked(track), model.transcriptionAvailable, model.busy) {
-                                moreActions = false; transcribe = true
-                            }
-                        } else if (account?.user?.isShared == true && track.mediaType == "audio") {
-                            DropdownMenuItem(text = { Text("View song metadata") }, enabled = !model.busy,
-                                leadingIcon = { Icon(Icons.Rounded.Info, null) },
-                                onClick = { moreActions = false; editingTrack = track })
-                        }
-                        if (canReplaceFile(account?.user, job, track)) {
-                            DropdownMenuItem(text = { Text("Replace File") }, enabled = !model.busy,
-                                leadingIcon = { Icon(Icons.Rounded.UploadFile, null) },
-                                onClick = { moreActions = false; replacingTrack = track })
-                        }
-                        if (canShare) {
-                            DropdownMenuItem(text = { Text("Share Media") }, enabled = !model.busy,
-                                leadingIcon = { Icon(Icons.Rounded.Share, null) },
-                                onClick = { moreActions = false; sharingTrack = track })
-                        }
-                        DropdownMenuItem(text = { Text("Save file") }, enabled = !model.busy,
-                            leadingIcon = { Icon(Icons.Rounded.Download, null) }, onClick = {
-                                moreActions = false
-                                download(track.downloadUrl ?: songPath(track, "download"), track.name)
-                            })
-                    }
-                }
-                if (canEdit && transcribe) TranscribeDialog(model, track) { transcribe = false }
-            }
+            SongActionsMenu(model, state.track, download, menuKey = tab,
+                editLyrics = if (canEditLyrics && metadata != null) ({ track ->
+                    editingLyrics = Triple(track, metadata, showUslt)
+                }) else null)
         }
         if (state.track == null) {
             Box(Modifier.weight(1f).fillMaxWidth(), contentAlignment = Alignment.Center) {
@@ -312,7 +263,6 @@ fun NowPlayingScreen(model: MusicViewModel, state: PlaybackState, download: (Str
         }
     }
     ratingTrack?.let { track -> MetadataDialog(model, track, ratingOnly = true) { ratingTrack = null } }
-    editingTrack?.let { track -> MetadataDialog(model, track) { editingTrack = null } }
     editingLyrics?.takeIf { account?.user?.isShared == false }?.let { (editTrack, editMetadata, editUslt) ->
         key(editTrack.key) {
             LyricsEditorDialog(editMetadata, editUslt, model.busy, dismiss = { editingLyrics = null }) { changes ->
@@ -320,6 +270,70 @@ fun NowPlayingScreen(model: MusicViewModel, state: PlaybackState, download: (Str
             }
         }
     }
+}
+
+@Composable
+private fun SongActionsMenu(model: MusicViewModel, track: Track?, download: (String, String) -> Unit,
+    menuKey: Int = 0, editLyrics: ((Track) -> Unit)? = null) {
+    val account by model.sessions.account.collectAsStateWithLifecycle()
+    var editingTrack by remember { mutableStateOf<Track?>(null) }
+    var sharingTrack by remember { mutableStateOf<Track?>(null) }
+    var replacingTrack by remember(account?.origin, account?.user?.id, account?.user?.role) { mutableStateOf<Track?>(null) }
+    track?.let { track ->
+        val job = model.library.library.jobs.find { it.id == track.jobId }
+            ?: model.jobs.find { it.id == track.jobId }
+        val canShare = track.mediaType == "audio" && account?.user?.let { user ->
+            !user.isShared && job?.canModify(user) == true
+        } == true
+        val canEdit = track.name.endsWith(".mp3", true) && account?.user?.let { user ->
+            !user.isShared && model.library.library.jobs.find { it.id == track.jobId }?.canModify(user) == true
+        } == true
+        var transcribe by remember(canEdit, track.key, account?.origin, account?.user?.id) { mutableStateOf(false) }
+        var moreActions by remember(track.key, menuKey, account?.origin, account?.user?.id, account?.user?.role) {
+            mutableStateOf(false)
+        }
+        Box {
+            ToolButton(Icons.Rounded.MoreVert, "More song actions") { moreActions = true }
+            DropdownMenu(expanded = moreActions, onDismissRequest = { moreActions = false }) {
+                if (editLyrics != null) {
+                    DropdownMenuItem(text = { Text("Edit lyrics") }, enabled = !model.busy,
+                        leadingIcon = { Icon(Icons.Rounded.EditNote, null) }, onClick = {
+                            moreActions = false
+                            editLyrics(track)
+                        })
+                }
+                if (canEdit) {
+                    DropdownMenuItem(text = { Text("Edit metadata") }, enabled = !model.busy,
+                        leadingIcon = { Icon(Icons.Rounded.Edit, null) },
+                        onClick = { moreActions = false; editingTrack = track })
+                    TranscribeMenuItem(model.library.transcriptionLocked(track), model.transcriptionAvailable, model.busy) {
+                        moreActions = false; transcribe = true
+                    }
+                } else if (account?.user?.isShared == true && track.mediaType == "audio") {
+                    DropdownMenuItem(text = { Text("View song metadata") }, enabled = !model.busy,
+                        leadingIcon = { Icon(Icons.Rounded.Info, null) },
+                        onClick = { moreActions = false; editingTrack = track })
+                }
+                if (canReplaceFile(account?.user, job, track)) {
+                    DropdownMenuItem(text = { Text("Replace File") }, enabled = !model.busy,
+                        leadingIcon = { Icon(Icons.Rounded.UploadFile, null) },
+                        onClick = { moreActions = false; replacingTrack = track })
+                }
+                if (canShare) {
+                    DropdownMenuItem(text = { Text("Share Media") }, enabled = !model.busy,
+                        leadingIcon = { Icon(Icons.Rounded.Share, null) },
+                        onClick = { moreActions = false; sharingTrack = track })
+                }
+                DropdownMenuItem(text = { Text("Save file") }, enabled = !model.busy,
+                    leadingIcon = { Icon(Icons.Rounded.Download, null) }, onClick = {
+                        moreActions = false
+                        download(track.downloadUrl ?: songPath(track, "download"), track.name)
+                    })
+            }
+        }
+        if (canEdit && transcribe) TranscribeDialog(model, track) { transcribe = false }
+    }
+    editingTrack?.let { track -> MetadataDialog(model, track) { editingTrack = null } }
     sharingTrack?.let { track ->
         val job = model.library.library.jobs.find { it.id == track.jobId } ?: model.jobs.find { it.id == track.jobId }
         val canShare = track.mediaType == "audio" && account?.user?.let { user ->

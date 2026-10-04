@@ -200,6 +200,9 @@ chosen with Android's document picker. **Transcribe lyrics** opens the same
 transcription options as the Library menu, including no-vocals generation for
 locked songs, and is disabled while the service is inactive or an action is busy.
 These actions remain available on the Player, Lyrics, and Queue tabs.
+The mini-player has the same **More song actions** menu beside its progress slider,
+including Replace File, Share Media, and read-only metadata for shared accounts
+where permitted, without opening Now Playing or changing playback.
 Track ratings remain visible even at zero; tap the star beside a track's menu
 or queue controls to open **Rate song**. Saving uses the existing MP3 editing
 permissions. Tap the selected star again to clear a rating, then **Save**.

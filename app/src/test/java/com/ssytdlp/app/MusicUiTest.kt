@@ -549,20 +549,30 @@ class MusicUiTest {
         var previous = 0
         var expanded = 0
         var toggled = 0
+        var actions = 0
+        val showActions = mutableStateOf(false)
         compose.setContent {
             MusicTheme {
                 MiniPlayer(state.value, null, { expanded++ }, { toggled++ }, {}, {},
                     previous = { previous++ },
                     repeat = { state.value = state.value.copy(repeat = (state.value.repeat + 1) % 3) },
-                    shuffle = { state.value = state.value.copy(shuffle = !state.value.shuffle) })
+                    shuffle = { state.value = state.value.copy(shuffle = !state.value.shuffle) },
+                    actions = {
+                        if (showActions.value) ToolButton(Icons.Rounded.MoreVert, "More song actions") { actions++ }
+                    })
             }
         }
         val title = compose.onNodeWithText(titleText).assertIsDisplayed().getUnclippedBoundsInRoot()
+        val transport = listOf("Previous track", "Pause", "Next track", "Repeat: off")
+        val originalBounds = transport.map { compose.onNodeWithContentDescription(it).getUnclippedBoundsInRoot() }
+        compose.runOnIdle { showActions.value = true }
+        assertEquals(title, compose.onNodeWithText(titleText).getUnclippedBoundsInRoot())
         assertTrue("Mini-player must leave space for scrolling song text", title.right - title.left >= 48.dp)
         var previousRight = title.right
         val pause = compose.onNodeWithContentDescription("Pause").getUnclippedBoundsInRoot()
-        listOf("Previous track", "Pause", "Next track", "Repeat: off").forEach { label ->
+        transport.forEachIndexed { index, label ->
             val bounds = compose.onNodeWithContentDescription(label).assertIsDisplayed().getUnclippedBoundsInRoot()
+            assertEquals("Song actions must not reduce the top transport row", originalBounds[index], bounds)
             assertTrue(bounds.right - bounds.left >= 48.dp && bounds.bottom - bounds.top >= 48.dp)
             assertTrue(bounds.left >= 0.dp && bounds.right <= 320.dp)
             assertTrue("Controls must not overlap the song information or each other", bounds.left >= previousRight)
@@ -575,6 +585,18 @@ class MusicUiTest {
         assertTrue(shuffle.right - shuffle.left >= 48.dp && shuffle.bottom - shuffle.top >= 48.dp)
         assertTrue(shuffle.left >= 0.dp && shuffle.right <= slider.left && slider.right <= 320.dp)
         assertTrue("Shuffle must fit beside the slider without crowding song information", shuffle.top >= pause.bottom)
+        val menu = compose.onNodeWithContentDescription("More song actions").assertIsDisplayed().getUnclippedBoundsInRoot()
+        assertTrue(menu.right - menu.left >= 48.dp && menu.bottom - menu.top >= 48.dp)
+        assertTrue("Song actions must stay after a usable slider", slider.right - slider.left >= 48.dp && slider.right <= menu.left)
+        assertTrue(menu.right <= 320.dp && menu.top >= pause.bottom)
+        assertTrue("Song actions must stay beside the slider", menu.top < slider.bottom && menu.bottom > slider.top)
+        compose.onNodeWithContentDescription("More song actions").assertHasClickAction().performClick()
+        compose.runOnIdle {
+            assertEquals(1, actions)
+            assertEquals(0, previous)
+            assertEquals(0, toggled)
+            assertEquals(0, expanded)
+        }
         compose.onNodeWithContentDescription("Shuffle").assertIsOff().performClick().assertIsOn()
         compose.onNodeWithContentDescription("Previous track").performClick()
         compose.onNodeWithContentDescription("Repeat: off").assertIsOff().performClick()
