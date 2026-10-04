@@ -159,12 +159,32 @@ internal fun SkinSetting(
     onSkinChange: (AppSkin) -> Unit,
     onEnabledChange: (Boolean) -> Unit
 ) {
-    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-        Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-            Text("Skins", Modifier.weight(1f))
-            Switch(enabled, onEnabledChange, modifier = Modifier.semantics { contentDescription = "Skins" })
+    var showSkinPicker by rememberSaveable(enabled) { mutableStateOf(false) }
+    Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+        Row(Modifier.weight(1f).heightIn(min = 48.dp).clip(MaterialTheme.shapes.small)
+            .clickable(enabled = enabled, role = Role.Button, onClickLabel = "Choose skin") { showSkinPicker = true }
+            .padding(vertical = 8.dp), verticalAlignment = Alignment.CenterVertically) {
+            Column(Modifier.weight(1f)) {
+                Text("Skins")
+                Text(skin.label, style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant)
+            }
+            if (enabled) Icon(Icons.AutoMirrored.Rounded.KeyboardArrowRight, null)
         }
-        if (enabled) {
+        Switch(enabled, onEnabledChange, modifier = Modifier.semantics { contentDescription = "Skins" })
+    }
+    if (enabled && showSkinPicker) {
+        SkinPickerDialog(skin, onSkinChange = {
+            onSkinChange(it)
+            showSkinPicker = false
+        }, dismiss = { showSkinPicker = false })
+    }
+}
+
+@Composable
+private fun SkinPickerDialog(skin: AppSkin, onSkinChange: (AppSkin) -> Unit, dismiss: () -> Unit) {
+    AlertDialog(onDismissRequest = dismiss, title = { Text("Choose skin") }, text = {
+        Column(Modifier.verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(8.dp)) {
             Text("Background images • Your color theme stays the same", style = MaterialTheme.typography.bodySmall)
             Column(Modifier.selectableGroup(), verticalArrangement = Arrangement.spacedBy(8.dp)) {
                 AppSkin.entries.forEach { option ->
@@ -190,7 +210,7 @@ internal fun SkinSetting(
                 }
             }
         }
-    }
+    }, confirmButton = { TextButton(onClick = dismiss) { Text("Close") } })
 }
 
 @Composable
