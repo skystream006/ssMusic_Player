@@ -670,6 +670,132 @@ class MusicUiTest {
         }
     }
 
+    @Test
+    @Config(qualifiers = "w320dp-h640dp")
+    fun miniPlayerSongInformationFollowsDraggingAndSpringsBackWithoutMovingControls() {
+        var previous = 0
+        var next = 0
+        var otherActions = 0
+        compose.setContent {
+            MusicTheme {
+                Box(Modifier.fillMaxSize().testTag("mini-player-page")) {
+                    MiniPlayer(previewPlayback(), null, { otherActions++ }, { otherActions++ },
+                        { next++ }, { otherActions++ }, previous = { otherActions++ },
+                        repeat = { otherActions++ }, shuffle = { otherActions++ },
+                        previousTrack = { previous++ }) {
+                        ToolButton(Icons.Rounded.MoreVert, "More song actions") { otherActions++ }
+                    }
+                }
+            }
+        }
+        val song = listOf(
+            compose.onNodeWithContentDescription("Album artwork unavailable"),
+            compose.onNodeWithText("Blue hour", useUnmergedTree = true),
+            compose.onNodeWithText("Northbound", useUnmergedTree = true)
+        )
+        val original = song.map { it.getUnclippedBoundsInRoot() }
+        val controls = listOf("Previous track", "Pause", "Next track", "Repeat: off",
+            "Shuffle", "Playback position", "More song actions").map { compose.onNodeWithContentDescription(it) }
+        val controlBounds = controls.map { it.getUnclippedBoundsInRoot() }
+        val page = compose.onNodeWithTag("mini-player-page")
+        val y = miniPlayerTopRowY()
+        compose.mainClock.autoAdvance = false
+        try {
+            listOf(100f, -100f, 40f).forEach { distance ->
+                val pixels = with(compose.density) { distance.dp.toPx() }
+                page.performTouchInput {
+                    down(Offset(width * 0.5f, y))
+                    moveBy(Offset(pixels * 0.2f, 0f), delayMillis = 16)
+                    moveBy(Offset(pixels * 0.8f, 0f), delayMillis = 16)
+                }
+                compose.runOnIdle { Snapshot.sendApplyNotifications() }
+                compose.mainClock.advanceTimeBy(64)
+                compose.waitForIdle()
+                val moved = song.first().getUnclippedBoundsInRoot().left.value - original.first().left.value
+                assertTrue(moved * distance > 0f)
+                assertTrue(kotlin.math.abs(moved) > kotlin.math.abs(distance) * 0.5f)
+                song.forEachIndexed { index, node ->
+                    assertEquals(moved, node.getUnclippedBoundsInRoot().left.value - original[index].left.value, 1f)
+                }
+                assertEquals(controlBounds, controls.map { it.getUnclippedBoundsInRoot() })
+                page.performTouchInput { if (distance < 0f) cancel() else up() }
+                compose.mainClock.advanceTimeBy(32)
+                compose.waitForIdle()
+                assertTrue(kotlin.math.abs(song.first().getUnclippedBoundsInRoot().left.value - original.first().left.value) > 1f)
+                compose.mainClock.advanceTimeBy(2_000)
+                compose.waitForIdle()
+                song.forEachIndexed { index, node ->
+                    assertEquals(original[index].left.value, node.getUnclippedBoundsInRoot().left.value, 1f)
+                }
+            }
+            compose.runOnIdle {
+                assertEquals(1, previous)
+                assertEquals(0, next)
+                assertEquals(0, otherActions)
+            }
+        } finally {
+            compose.mainClock.autoAdvance = true
+        }
+    }
+
+    @Test fun miniPlayerResetsDragAnimationWhenTrackQueueOrPlayerChanges() {
+        val state = mutableStateOf(previewPlayback())
+        var skips = 0
+        compose.setContent {
+            MusicTheme {
+                Box(Modifier.fillMaxSize().testTag("mini-player-page")) {
+                    MiniPlayer(state.value, null, {}, {}, { skips++ }, {}, previousTrack = { skips++ })
+                }
+            }
+        }
+        val page = compose.onNodeWithTag("mini-player-page")
+        val artwork = compose.onNodeWithContentDescription("Album artwork unavailable")
+        val original = artwork.getUnclippedBoundsInRoot()
+        val y = miniPlayerTopRowY()
+        compose.mainClock.autoAdvance = false
+        try {
+            repeat(3) { change ->
+                page.performTouchInput {
+                    down(Offset(width * 0.5f, y))
+                    moveBy(Offset(with(compose.density) { 100.dp.toPx() }, 0f), delayMillis = 200)
+                }
+                compose.runOnIdle { Snapshot.sendApplyNotifications() }
+                compose.mainClock.advanceTimeBy(64)
+                compose.waitForIdle()
+                val displaced = artwork.getUnclippedBoundsInRoot().left
+                assertTrue(displaced > original.left + 50.dp)
+                compose.runOnIdle {
+                    state.value = state.value.copy(position = state.value.position + 1_000)
+                    Snapshot.sendApplyNotifications()
+                }
+                compose.mainClock.advanceTimeBy(64)
+                assertEquals(displaced, artwork.getUnclippedBoundsInRoot().left)
+                compose.runOnIdle {
+                    state.value = when (change) {
+                        0 -> state.value.copy(track = state.value.queue[1])
+                        1 -> state.value.copy(queue = listOf(state.value.track!!))
+                        else -> PlaybackState()
+                    }
+                    Snapshot.sendApplyNotifications()
+                }
+                compose.mainClock.advanceTimeBy(if (change == 1) 2_000 else 64)
+                if (change == 2) {
+                    artwork.assertDoesNotExist()
+                    compose.runOnIdle {
+                        state.value = previewPlayback()
+                        Snapshot.sendApplyNotifications()
+                    }
+                    compose.mainClock.advanceTimeBy(64)
+                }
+                assertEquals(original.left.value, artwork.getUnclippedBoundsInRoot().left.value, 1f)
+                page.performTouchInput { up() }
+                compose.runOnIdle { assertEquals(0, skips) }
+            }
+        } finally {
+            compose.mainClock.autoAdvance = true
+        }
+    }
+
     @Test fun libraryMiniPlayerSeeksByTouchAndAccessibilityWithoutTriggeringOtherControls() {
         val seeks = mutableListOf<Long>()
         var expanded = false

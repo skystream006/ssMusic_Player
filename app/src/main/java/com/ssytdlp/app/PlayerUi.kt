@@ -38,6 +38,7 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.clipToBounds
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.ImageBitmap
@@ -97,6 +98,11 @@ fun MiniPlayer(state: PlaybackState, artwork: String?, expand: () -> Unit, toggl
     next: () -> Unit, onSeek: (Long) -> Unit, previous: () -> Unit = {}, repeat: () -> Unit = {},
     shuffle: () -> Unit = {}, previousTrack: () -> Unit = previous, actions: @Composable () -> Unit = {}) {
     val track = state.track ?: return
+    var trackDrag by remember(track.key) { mutableFloatStateOf(0f) }
+    val trackOffset by key(track.key) {
+        animateFloatAsState(trackDrag, animationSpec = if (trackDrag == 0f) spring() else snap(),
+            label = "Mini-player swipe")
+    }
     Surface(color = MaterialTheme.colorScheme.surfaceContainerLow) {
         BoxWithConstraints(Modifier.fillMaxWidth()) {
             val compact = maxWidth < 440.dp
@@ -104,10 +110,14 @@ fun MiniPlayer(state: PlaybackState, artwork: String?, expand: () -> Unit, toggl
                 HorizontalDivider(color = MaterialTheme.colorScheme.primary.copy(alpha = 0.2f))
                 Row(Modifier.fillMaxWidth().playerTrackSwipes(
                     enabled = true, nextEnabled = state.queue.size > 1,
-                    previous = previousTrack, next = next, trackKey = track.key
+                    previous = previousTrack, next = next, trackKey = track.key,
+                    onDragDistanceChanged = { trackDrag = it }
                 ).padding(end = 8.dp), verticalAlignment = Alignment.CenterVertically) {
-                    key(track.key) {
-                        MiniPlayerTrack(track, artwork, expand, Modifier.weight(1f), compact)
+                    Box(Modifier.weight(1f).clipToBounds()) {
+                        key(track.key) {
+                            MiniPlayerTrack(track, artwork, expand,
+                                Modifier.fillMaxWidth().absoluteOffset { IntOffset(trackOffset.roundToInt(), 0) }, compact)
+                        }
                     }
                     MiniPlayerControls(state, previous, toggle, next, repeat)
                 }
