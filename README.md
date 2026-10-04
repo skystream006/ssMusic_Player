@@ -248,8 +248,9 @@ and offer **Generate NoVocals Only**, preserving the lock unless you explicitly 
 You can also change the lock in **Edit song / rating**, then **Save**. Locking does not
 prevent manual lyric editing.
 
-While viewing lyrics, permitted MP3 editors can choose **Edit lyrics** to edit
-both SYLT timestamps/text and USLT text, including clearing either format.
+While viewing lyrics, permitted MP3 editors can choose **Edit lyrics** in the
+**Now Playing** bar to edit both SYLT timestamps/text and USLT text, including
+clearing either format. This action is hidden on the Player and Queue tabs.
 Saving updates the displayed lyrics; canceling leaves them unchanged.
 
 Library and queue tracks show an icon-only transcription status to the left of
@@ -316,8 +317,10 @@ the artwork or visualizer follows your finger and settles back when the gesture 
 Lyrics and Queue gestures never skip songs. When both lyric sources are available,
 tap the selected **Lyrics** tab again to alternate between **SYLT** (synchronized)
 and **USLT** (plain) lyrics. Each new song starts with SYLT when available.
-Tap **Expand lyrics to full screen** to hide the app navigation and playback controls
-while reading. Use the **SYLT/USLT** button to switch available sources; synchronized
+Tap the **Expand lyrics to full screen** overlay in the upper-right corner of the
+lyrics section to hide the app navigation and playback controls while reading.
+The overlay does not reserve a separate toolbar row.
+Use the **SYLT/USLT** button to switch available sources; synchronized
 lyrics still follow playback and support tap-to-seek. Tap **Exit full screen lyrics**
 or press Android Back to return to the Lyrics tab without interrupting playback.
 Pinch in or out on either lyrics display to resize the text (75%–200%).

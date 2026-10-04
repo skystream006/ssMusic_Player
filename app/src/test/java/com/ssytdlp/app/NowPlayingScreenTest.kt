@@ -89,6 +89,7 @@ class NowPlayingScreenTest {
         compose.onNodeWithContentDescription("Play").assertDoesNotExist()
         compose.onNodeWithContentDescription("Close player").assertDoesNotExist()
         compose.onNodeWithContentDescription("Edit metadata").assertDoesNotExist()
+        compose.onNodeWithContentDescription("Edit lyrics").assertDoesNotExist()
         compose.onNodeWithContentDescription("View song metadata").assertDoesNotExist()
         compose.onNodeWithContentDescription("Transcribe lyrics").assertDoesNotExist()
         compose.onNodeWithContentDescription("Save file").assertDoesNotExist()
@@ -785,23 +786,67 @@ class NowPlayingScreenTest {
                 transcriptionLocked = true, canEdit = true)
         }
         compose.setContent { MusicTheme { NowPlayingScreen(model, PlaybackState(track = track)) { _, _ -> } } }
+        compose.onNodeWithContentDescription("Edit lyrics").assertDoesNotExist()
         compose.onNodeWithText("SYLT Lyrics").performClick()
-        compose.onNodeWithText("Edit lyrics").assertIsDisplayed().performClick()
+        val edit = compose.onNodeWithContentDescription("Edit lyrics").assertIsDisplayed()
+        assertTrue(edit.fetchSemanticsNode().boundsInRoot.bottom <=
+            compose.onNodeWithText("SYLT Lyrics").fetchSemanticsNode().boundsInRoot.top)
+        edit.performClick()
         compose.onNode(isDialog()).assertIsDisplayed()
+        compose.onNodeWithTag("sylt-editor").assertIsDisplayed()
         compose.onNodeWithText("Cancel").performClick()
         compose.onNode(isDialog()).assertDoesNotExist()
+        listOf("Player", "Queue").forEach { tab ->
+            compose.onNodeWithText(tab).performClick()
+            compose.onNodeWithContentDescription("Edit lyrics").assertDoesNotExist()
+        }
+        compose.onNodeWithText("SYLT Lyrics").performClick()
         compose.onNodeWithText("SYLT Lyrics").performClick()
         compose.onNodeWithText("Plain line").assertIsDisplayed()
-        compose.onNodeWithText("Edit lyrics").performClick()
+        compose.onNodeWithContentDescription("Edit lyrics").performClick()
         compose.onNode(isDialog()).assertIsDisplayed()
+        compose.onNodeWithTag("uslt-editor").assertIsDisplayed()
         compose.onNodeWithText("Cancel").performClick()
+        val busy = ReflectionHelpers.getField<MutableState<Boolean>>(model, "busy\$delegate")
+        compose.runOnIdle { busy.value = true }
+        compose.onNodeWithContentDescription("Edit lyrics").assertIsNotEnabled()
+        compose.runOnIdle { busy.value = false }
+        compose.onNodeWithContentDescription("Edit lyrics").assertIsEnabled()
         compose.runOnIdle { metadata.value = metadata.value!!.copy(canEdit = false) }
-        compose.onNodeWithText("Edit lyrics").assertDoesNotExist()
+        compose.onNodeWithContentDescription("Edit lyrics").assertDoesNotExist()
         compose.runOnIdle {
             metadata.value = metadata.value!!.copy(canEdit = true)
             account.value = account.value!!.copy(user = User(role = "Shared"))
         }
-        compose.onNodeWithText("Edit lyrics").assertDoesNotExist()
+        compose.onNodeWithContentDescription("Edit lyrics").assertDoesNotExist()
+    }
+
+    @Test fun lyricsEditingRequiresLoadedPermissionAndMp3AndClearsOnAccountOrPlaybackReset() {
+        val track = Track(jobId = "preview", name = "song.mp3")
+        val state = mutableStateOf(PlaybackState(track = track))
+        val metadata = ReflectionHelpers.getField<MutableState<SongMetadata?>>(model, "metadata\$delegate")
+        val account = ReflectionHelpers.getField<MutableStateFlow<Account?>>(model.sessions, "mutableAccount")
+        compose.runOnIdle {
+            model.viewModelScope.cancel()
+            account.value = Account("https://music.example", User(id = "owner"), Session("test", "2099-01-01T00:00:00Z"))
+        }
+        compose.setContent { MusicTheme { NowPlayingScreen(model, state.value) { _, _ -> } } }
+        compose.onNodeWithText("Lyrics").performClick()
+        compose.onNodeWithContentDescription("Edit lyrics").assertDoesNotExist()
+        compose.runOnIdle { metadata.value = SongMetadata(canEdit = true) }
+        compose.onNodeWithContentDescription("Edit lyrics").assertIsDisplayed()
+        compose.runOnIdle { state.value = state.value.copy(track = track.copy(name = "song.flac")) }
+        compose.onNodeWithContentDescription("Edit lyrics").assertDoesNotExist()
+        compose.runOnIdle { state.value = state.value.copy(track = track) }
+        compose.onNodeWithContentDescription("Edit lyrics").performClick()
+        compose.onNodeWithTag("sylt-editor").performTextReplacement("[00:00:00.000] Unsaved draft")
+        compose.runOnIdle { account.value = account.value!!.copy(user = User(id = "another-owner")) }
+        compose.onNode(isDialog()).assertDoesNotExist()
+        compose.onNodeWithContentDescription("Edit lyrics").performClick()
+        compose.onNodeWithTag("sylt-editor").assertTextContains("")
+        compose.runOnIdle { state.value = PlaybackState() }
+        compose.onNode(isDialog()).assertDoesNotExist()
+        compose.onNodeWithContentDescription("Edit lyrics").assertDoesNotExist()
     }
 
     @Test fun advancingPlaybackKeepsOpenLyricsDraftBoundToOriginalSong() {
@@ -816,7 +861,7 @@ class NowPlayingScreenTest {
         }
         compose.setContent { MusicTheme { NowPlayingScreen(model, state.value) { _, _ -> } } }
         compose.onNodeWithText("USLT Lyrics").performClick()
-        compose.onNodeWithText("Edit lyrics").performClick()
+        compose.onNodeWithContentDescription("Edit lyrics").performClick()
         compose.onNodeWithTag("uslt-editor").performTextReplacement("Unsaved draft")
         compose.runOnIdle {
             state.value = state.value.copy(track = Track(jobId = "preview", name = "next.mp3"))
@@ -928,6 +973,34 @@ class NowPlayingScreenTest {
             models.put("restored", restored)
             assertEquals(savedScale, restored.lyricsTextScale, 0f)
         }
+    }
+
+    @Test fun fullscreenButtonOverlaysLyricsWithoutReducingContentHeight() {
+        val track = Track(jobId = "preview", name = "song.mp3")
+        val metadata = ReflectionHelpers.getField<MutableState<SongMetadata?>>(model, "metadata\$delegate")
+        compose.setContent {
+            MusicTheme {
+                Box(Modifier.fillMaxSize().testTag("lyrics-section")) {
+                    Lyrics(model, PlaybackState(track = track), Modifier.fillMaxSize())
+                }
+            }
+        }
+        listOf(null, SongMetadata(), SongMetadata(uslt = "Plain lyrics"),
+            SongMetadata(sylt = listOf(LyricLine(0.0, "Timed lyrics")))).forEach { lyrics ->
+            compose.runOnIdle { metadata.value = lyrics }
+            val section = compose.onNodeWithTag("lyrics-section").fetchSemanticsNode().boundsInRoot
+            val content = compose.onNode(hasScrollAction()).fetchSemanticsNode().boundsInRoot
+            val fullscreen = compose.onNodeWithContentDescription("Expand lyrics to full screen")
+                .assertIsDisplayed().fetchSemanticsNode().boundsInRoot
+            assertEquals(section, content)
+            assertEquals(section.top, fullscreen.top, 1f)
+            assertEquals(section.right, fullscreen.right, 1f)
+            compose.onNodeWithContentDescription("Edit lyrics").assertDoesNotExist()
+        }
+        compose.onNodeWithContentDescription("Expand lyrics to full screen").performClick()
+        fullScreenText("Timed lyrics").assertIsDisplayed()
+        compose.onNodeWithContentDescription("Exit full screen lyrics").performClick()
+        compose.onNode(isDialog()).assertDoesNotExist()
     }
 
     @Test fun lyricsExpandToFullScreenAndCollapseToTheSelectedSource() {

@@ -59,6 +59,7 @@ import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.viewinterop.AndroidView
 import androidx.compose.ui.window.Dialog
@@ -185,7 +186,16 @@ fun NowPlayingScreen(model: MusicViewModel, state: PlaybackState, download: (Str
     var sharingTrack by remember { mutableStateOf<Track?>(null) }
     val account by model.sessions.account.collectAsStateWithLifecycle()
     var replacingTrack by remember(account?.origin, account?.user?.id, account?.user?.role) { mutableStateOf<Track?>(null) }
+    var editingLyrics by remember(tab, state.track == null, account?.origin, account?.user?.id, account?.session) {
+        mutableStateOf<Triple<Track, SongMetadata, Boolean>?>(null)
+    }
     var preferUslt by rememberSaveable(state.track?.key) { mutableStateOf(false) }
+    val metadata = model.metadata
+    val hasSylt = metadata?.sylt?.isNotEmpty() == true
+    val hasUslt = !metadata?.uslt.isNullOrBlank()
+    val showUslt = hasUslt && (preferUslt || !hasSylt)
+    val canEditLyrics = tab == 1 && state.track?.name?.endsWith(".mp3", true) == true &&
+        metadata?.canEdit == true && account?.user?.isShared == false
     var artworkDrag by remember(state.track?.key, tab) { mutableFloatStateOf(0f) }
     val artworkOffset by key(state.track?.key, tab) {
         animateFloatAsState(artworkDrag, animationSpec = if (artworkDrag == 0f) spring() else snap(),
@@ -196,47 +206,77 @@ fun NowPlayingScreen(model: MusicViewModel, state: PlaybackState, download: (Str
         previous = model.playback::previousTrack, next = model.playback::next,
         trackKey = state.track?.key, onDragDistanceChanged = { artworkDrag = it }
     )) {
-        Row(Modifier.fillMaxWidth().padding(horizontal = 20.dp, vertical = 12.dp),
-            verticalAlignment = Alignment.CenterVertically) {
-            Column(Modifier.weight(1f)) {
-                Text("NOW PLAYING", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.primary)
-                Text(state.track?.playlistTitle?.ifBlank { null } ?: "Your queue", style = MaterialTheme.typography.titleLarge,
-                    maxLines = 1, overflow = TextOverflow.Ellipsis)
-            }
-            state.track?.let { track ->
-                val job = model.library.library.jobs.find { it.id == track.jobId }
-                    ?: model.jobs.find { it.id == track.jobId }
-                val canShare = track.mediaType == "audio" && account?.user?.let { user ->
-                    !user.isShared && job?.canModify(user) == true
-                } == true
-                val canEdit = track.name.endsWith(".mp3", true) && account?.user?.let { user ->
-                    !user.isShared && model.library.library.jobs.find { it.id == track.jobId }?.canModify(user) == true
-                } == true
-                if (canEdit) {
-                    ToolButton(Icons.Rounded.Edit, "Edit metadata", enabled = !model.busy) { editingTrack = track }
-                    var transcribe by remember(track.key, account?.origin, account?.user?.id) { mutableStateOf(false) }
-                    val available = model.transcriptionAvailable
-                    TooltipBox(positionProvider = TooltipDefaults.rememberPlainTooltipPositionProvider(),
-                        tooltip = { PlainTooltip { Text(if (available) "Transcribe lyrics" else INACTIVE_TRANSCRIPTION_MESSAGE) } },
-                        state = rememberTooltipState()) {
-                        IconButton(onClick = { transcribe = true }, enabled = available && !model.busy) {
-                            Icon(if (model.library.transcriptionLocked(track)) Icons.Rounded.MicOff else Icons.Rounded.Lyrics,
-                                "Transcribe lyrics")
+        BoxWithConstraints(Modifier.fillMaxWidth().padding(horizontal = 20.dp, vertical = 12.dp)) {
+            val compactActions = canEditLyrics && maxWidth < 400.dp
+            Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                Column(Modifier.weight(1f)) {
+                    Text("NOW PLAYING", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.primary)
+                    Text(state.track?.playlistTitle?.ifBlank { null } ?: "Your queue", style = MaterialTheme.typography.titleLarge,
+                        maxLines = 1, overflow = TextOverflow.Ellipsis)
+                }
+                state.track?.let { track ->
+                    if (canEditLyrics && metadata != null) {
+                        ToolButton(Icons.Rounded.EditNote, "Edit lyrics", enabled = !model.busy) {
+                            editingLyrics = Triple(track, metadata, showUslt)
                         }
                     }
-                    if (transcribe) TranscribeDialog(model, track) { transcribe = false }
-                } else if (account?.user?.isShared == true && track.mediaType == "audio") {
-                    ToolButton(Icons.Rounded.Info, "View song metadata", enabled = !model.busy) { editingTrack = track }
-                }
-                if (canReplaceFile(account?.user,
-                    job, track)) {
-                    ToolButton(Icons.Rounded.UploadFile, "Replace File", enabled = !model.busy) { replacingTrack = track }
-                }
-                if (canShare) {
-                    ToolButton(Icons.Rounded.Share, "Share Media", enabled = !model.busy) { sharingTrack = track }
-                }
-                ToolButton(Icons.Rounded.Download, "Save file", enabled = !model.busy) {
-                    download(track.downloadUrl ?: songPath(track, "download"), track.name)
+                    val job = model.library.library.jobs.find { it.id == track.jobId }
+                        ?: model.jobs.find { it.id == track.jobId }
+                    val canShare = track.mediaType == "audio" && account?.user?.let { user ->
+                        !user.isShared && job?.canModify(user) == true
+                    } == true
+                    val canEdit = track.name.endsWith(".mp3", true) && account?.user?.let { user ->
+                        !user.isShared && model.library.library.jobs.find { it.id == track.jobId }?.canModify(user) == true
+                    } == true
+                    if (canEdit) {
+                        ToolButton(Icons.Rounded.Edit, "Edit metadata", enabled = !model.busy) { editingTrack = track }
+                        var transcribe by remember(track.key, account?.origin, account?.user?.id) { mutableStateOf(false) }
+                        val available = model.transcriptionAvailable
+                        TooltipBox(positionProvider = TooltipDefaults.rememberPlainTooltipPositionProvider(),
+                            tooltip = { PlainTooltip { Text(if (available) "Transcribe lyrics" else INACTIVE_TRANSCRIPTION_MESSAGE) } },
+                            state = rememberTooltipState()) {
+                            IconButton(onClick = { transcribe = true }, enabled = available && !model.busy) {
+                                Icon(if (model.library.transcriptionLocked(track)) Icons.Rounded.MicOff else Icons.Rounded.Lyrics,
+                                    "Transcribe lyrics")
+                            }
+                        }
+                        if (transcribe) TranscribeDialog(model, track) { transcribe = false }
+                    } else if (account?.user?.isShared == true && track.mediaType == "audio") {
+                        ToolButton(Icons.Rounded.Info, "View song metadata", enabled = !model.busy) { editingTrack = track }
+                    }
+                    if (compactActions) {
+                        var moreActions by remember(track.key, account?.origin, account?.user?.id) { mutableStateOf(false) }
+                        Box {
+                            ToolButton(Icons.Rounded.MoreVert, "More song actions") { moreActions = true }
+                            DropdownMenu(expanded = moreActions, onDismissRequest = { moreActions = false }) {
+                                if (canReplaceFile(account?.user, job, track)) {
+                                    DropdownMenuItem(text = { Text("Replace File") }, enabled = !model.busy,
+                                        leadingIcon = { Icon(Icons.Rounded.UploadFile, null) },
+                                        onClick = { moreActions = false; replacingTrack = track })
+                                }
+                                if (canShare) {
+                                    DropdownMenuItem(text = { Text("Share Media") }, enabled = !model.busy,
+                                        leadingIcon = { Icon(Icons.Rounded.Share, null) },
+                                        onClick = { moreActions = false; sharingTrack = track })
+                                }
+                                DropdownMenuItem(text = { Text("Save file") }, enabled = !model.busy,
+                                    leadingIcon = { Icon(Icons.Rounded.Download, null) }, onClick = {
+                                        moreActions = false
+                                        download(track.downloadUrl ?: songPath(track, "download"), track.name)
+                                    })
+                            }
+                        }
+                    } else {
+                        if (canReplaceFile(account?.user, job, track)) {
+                            ToolButton(Icons.Rounded.UploadFile, "Replace File", enabled = !model.busy) { replacingTrack = track }
+                        }
+                        if (canShare) {
+                            ToolButton(Icons.Rounded.Share, "Share Media", enabled = !model.busy) { sharingTrack = track }
+                        }
+                        ToolButton(Icons.Rounded.Download, "Save file", enabled = !model.busy) {
+                            download(track.downloadUrl ?: songPath(track, "download"), track.name)
+                        }
+                    }
                 }
             }
         }
@@ -246,9 +286,6 @@ fun NowPlayingScreen(model: MusicViewModel, state: PlaybackState, download: (Str
                     textAlign = TextAlign.Center)
             }
         } else {
-            val hasSylt = model.metadata?.sylt?.isNotEmpty() == true
-            val hasUslt = !model.metadata?.uslt.isNullOrBlank()
-            val showUslt = hasUslt && (preferUslt || !hasSylt)
             val lyricsTabTitle = when {
                 showUslt -> "USLT Lyrics"
                 hasSylt -> "SYLT Lyrics"
@@ -288,6 +325,13 @@ fun NowPlayingScreen(model: MusicViewModel, state: PlaybackState, download: (Str
     }
     ratingTrack?.let { track -> MetadataDialog(model, track, ratingOnly = true) { ratingTrack = null } }
     editingTrack?.let { track -> MetadataDialog(model, track) { editingTrack = null } }
+    editingLyrics?.takeIf { account?.user?.isShared == false }?.let { (editTrack, editMetadata, editUslt) ->
+        key(editTrack.key) {
+            LyricsEditorDialog(editMetadata, editUslt, model.busy, dismiss = { editingLyrics = null }) { changes ->
+                model.saveLyrics(editTrack, changes) { editingLyrics = null }
+            }
+        }
+    }
     sharingTrack?.let { track ->
         val job = model.library.library.jobs.find { it.id == track.jobId } ?: model.jobs.find { it.id == track.jobId }
         val canShare = track.mediaType == "audio" && account?.user?.let { user ->
@@ -427,29 +471,19 @@ fun PlayerTransport(state: PlaybackState, onSeek: (Long) -> Unit, previous: () -
 @Composable
 fun Lyrics(model: MusicViewModel, state: PlaybackState, modifier: Modifier, preferUslt: Boolean = false,
     toggleSource: (() -> Unit)? = null) {
-    val account by model.sessions.account.collectAsStateWithLifecycle()
     val track = state.track
     val metadata = model.metadata
     var expanded by rememberSaveable { mutableStateOf(false) }
-    var editing by remember(account?.origin, account?.user?.id, account?.session) {
-        mutableStateOf<Triple<Track, SongMetadata, Boolean>?>(null)
-    }
-    val canEdit = track?.name?.endsWith(".mp3", true) == true && metadata?.canEdit == true &&
-        account?.user?.let { !it.isShared } == true
-    Column(modifier) {
-        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End,
-            verticalAlignment = Alignment.CenterVertically) {
-            if (canEdit) TextButton(onClick = {
-                if (track != null && metadata != null) editing = Triple(track, metadata, preferUslt)
-            }, enabled = !model.busy) {
-                Icon(Icons.Rounded.Edit, null)
-                Spacer(Modifier.width(8.dp))
-                Text("Edit lyrics")
+    Box(modifier.fillMaxWidth()) {
+        LyricsContent(metadata, state.position, track?.key, model.playback::seek, Modifier.fillMaxSize(),
+            model.metadataError, track?.mediaType == "video", preferUslt, model.lyricsTextScale, model::zoomLyrics,
+            endPadding = 56.dp)
+        Box(Modifier.align(Alignment.TopEnd)) {
+            ToolButton(Icons.Rounded.Fullscreen, "Expand lyrics to full screen",
+                modifier = Modifier.background(MaterialTheme.colorScheme.surface.copy(alpha = 0.9f), CircleShape)) {
+                expanded = true
             }
-            ToolButton(Icons.Rounded.Fullscreen, "Expand lyrics to full screen") { expanded = true }
         }
-        LyricsContent(metadata, state.position, track?.key, model.playback::seek, Modifier.weight(1f),
-            model.metadataError, track?.mediaType == "video", preferUslt, model.lyricsTextScale, model::zoomLyrics)
     }
     if (expanded) Dialog(onDismissRequest = { expanded = false },
         properties = DialogProperties(usePlatformDefaultWidth = false, decorFitsSystemWindows = false)) {
@@ -479,19 +513,12 @@ fun Lyrics(model: MusicViewModel, state: PlaybackState, modifier: Modifier, pref
             }
         }
     }
-    editing?.takeIf { account?.user?.isShared == false }?.let { (editTrack, editMetadata, editUslt) ->
-        key(editTrack.key) {
-            LyricsEditorDialog(editMetadata, editUslt, model.busy, dismiss = { editing = null }) { changes ->
-                model.saveLyrics(editTrack, changes) { editing = null }
-            }
-        }
-    }
 }
 
 @Composable
 internal fun LyricsContent(lyrics: SongMetadata?, position: Long, trackKey: String?, onSeek: (Long) -> Unit,
     modifier: Modifier = Modifier, error: String? = null, isVideo: Boolean = false, preferUslt: Boolean = false,
-    textScale: Float = 1f, onZoom: (Float) -> Unit = {}) {
+    textScale: Float = 1f, onZoom: (Float) -> Unit = {}, endPadding: Dp = 28.dp) {
     val scale = normalizeLyricsTextScale(textScale)
     key(trackKey, lyrics?.sylt, lyrics?.uslt, preferUslt) {
         var pinching by remember { mutableStateOf(false) }
@@ -553,7 +580,7 @@ internal fun LyricsContent(lyrics: SongMetadata?, position: Long, trackKey: Stri
                     listState.animateScrollToItem(target)
             }
             LazyColumn(zoomModifier.fillMaxWidth().nestedScroll(scrollConnection), state = listState,
-                contentPadding = PaddingValues(horizontal = 28.dp, vertical = 24.dp)) {
+                contentPadding = PaddingValues(start = 28.dp, top = 24.dp, end = endPadding, bottom = 24.dp)) {
                 itemsIndexed(lyrics.sylt) { index, line ->
                     Row(modifier = Modifier.fillMaxWidth().padding(vertical = 12.dp),
                         verticalAlignment = Alignment.CenterVertically) {
@@ -573,7 +600,8 @@ internal fun LyricsContent(lyrics: SongMetadata?, position: Long, trackKey: Stri
                     }
                 }
             }
-        } else Column(zoomModifier.fillMaxWidth().verticalScroll(rememberScrollState()).padding(28.dp)) {
+        } else Column(zoomModifier.fillMaxWidth().verticalScroll(rememberScrollState())
+            .padding(start = 28.dp, top = 28.dp, end = endPadding, bottom = 28.dp)) {
             Text(lyrics?.uslt?.ifBlank { null } ?: error ?: if (lyrics == null && !isVideo) "Loading lyrics..." else "No lyrics available",
                 style = MaterialTheme.typography.bodyLarge.scaledLyrics(if (lyrics?.uslt.isNullOrBlank()) 1f else scale))
         }
