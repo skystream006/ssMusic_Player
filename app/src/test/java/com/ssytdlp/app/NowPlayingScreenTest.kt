@@ -1011,8 +1011,7 @@ class NowPlayingScreenTest {
             compose.onNodeWithText("Title").assertTextContains("Editable song").assert(hasSetTextAction())
             compose.onNodeWithText("Save").assertIsEnabled()
             compose.onNodeWithText("Cancel").performClick()
-            compose.runOnIdle { Snapshot.sendApplyNotifications() }
-            compose.mainClock.advanceTimeByFrame()
+            waitForPopupDismissal()
             compose.onNode(isDialog()).assertDoesNotExist()
             compose.onNode(isSongActionsPopup).assertDoesNotExist()
         }
@@ -1070,8 +1069,7 @@ class NowPlayingScreenTest {
                 compose.onNodeWithText("Save").assertDoesNotExist()
                 compose.onNodeWithContentDescription("3 stars").assertDoesNotExist()
                 compose.onNodeWithText("Close").performClick()
-                compose.runOnIdle { Snapshot.sendApplyNotifications() }
-                compose.mainClock.advanceTimeByFrame()
+                waitForPopupDismissal()
                 compose.onNode(isDialog()).assertDoesNotExist()
                 compose.onNode(isSongActionsPopup).assertDoesNotExist()
                 expectedPaths += songPath(track.value, "lyrics")
