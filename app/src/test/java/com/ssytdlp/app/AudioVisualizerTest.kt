@@ -8,12 +8,16 @@ import android.view.ViewGroup
 import androidx.activity.ComponentActivity
 import androidx.compose.foundation.layout.size
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.darkColorScheme
+import androidx.compose.material3.lightColorScheme
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
 import androidx.compose.runtime.snapshots.Snapshot
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.test.*
 import androidx.compose.ui.test.junit4.createAndroidComposeRule
 import androidx.compose.ui.unit.dp
@@ -25,6 +29,7 @@ import androidx.media3.common.C
 import androidx.media3.common.util.UnstableApi
 import java.nio.ByteBuffer
 import java.nio.ByteOrder
+import kotlin.math.abs
 import kotlin.math.sin
 import org.junit.After
 import org.junit.Assert.*
@@ -56,6 +61,65 @@ class AudioVisualizerTest {
     }
 
     @After fun restoreAnimations() = setDurationScale(1f)
+
+    @Test fun gradientsFollowEachStyleAndRefreshWithThemeAndSize() {
+        val themes = listOf(
+            lightColorScheme(primary = Color.Red, secondary = Color.Green, tertiary = Color.Blue),
+            darkColorScheme(primary = Color.Cyan, secondary = Color.Magenta, tertiary = Color.Yellow))
+        var theme by mutableStateOf(themes.first())
+        var style by mutableStateOf(AudioVisualizerStyle.WAVEFORM)
+        var height by mutableStateOf(260.dp)
+        val silence = FloatArray(128)
+        val loud = FloatArray(128) { 1f }
+        compose.setContent {
+            MaterialTheme(colorScheme = theme) {
+                AudioVisualizer(true, style, { 1f },
+                    { if (style == AudioVisualizerStyle.WAVEFORM) silence else loud }, Modifier.size(260.dp, height))
+            }
+        }
+        fun colorDistance(first: Color, second: Color) =
+            abs(first.red - second.red) + abs(first.green - second.green) + abs(first.blue - second.blue)
+        AudioVisualizerStyle.entries.forEach { option ->
+            listOf(260.dp, 160.dp).forEach { canvasHeight ->
+                var previousColors: List<Color>? = null
+                themes.forEach { scheme ->
+                    update { style = option; theme = scheme; height = canvasHeight }
+                    compose.mainClock.advanceTimeBy(100)
+                    val bounds = compose.onNodeWithContentDescription("${option.label} audio visualizer")
+                        .assertIsDisplayed().fetchSemanticsNode().boundsInRoot
+                    val inset = minOf(bounds.width, bounds.height) * 0.08f
+                    val points = when (option) {
+                        AudioVisualizerStyle.WAVEFORM -> listOf(0.2f, 0.5f, 0.8f).map {
+                            Offset(bounds.left + bounds.width * it, bounds.center.y)
+                        }
+                        AudioVisualizerStyle.BARS -> listOf(2, 11, 21).map {
+                            Offset(bounds.left + inset + (bounds.width - 2f * inset) * (it + 0.5f) / 24,
+                                bounds.center.y)
+                        }
+                        AudioVisualizerStyle.RADIAL -> {
+                            val radius = minOf(bounds.width, bounds.height) * 0.36f
+                            listOf(Offset(radius, 0f), Offset(0f, radius), Offset(-radius, 0f))
+                                .map { bounds.center + it }
+                        }
+                    }
+                    val pixels = captureContent()
+                    val width = compose.runOnIdle {
+                        compose.activity.findViewById<ViewGroup>(android.R.id.content).getChildAt(0).width
+                    }
+                    val colors = points.map { Color(pixels[it.y.toInt() * width + it.x.toInt()]) }
+                    colors.zipWithNext().forEach { (first, second) ->
+                        assertTrue("${option.label} must have a visible gradient along its geometry",
+                            colorDistance(first, second) > 0.2f)
+                    }
+                    previousColors?.zip(colors)?.forEach { (before, after) ->
+                        assertTrue("${option.label} must refresh its gradient when the theme changes",
+                            colorDistance(before, after) > 0.2f)
+                    }
+                    previousColors = colors
+                }
+            }
+        }
+    }
 
     @Test fun allThreeStylesRenderDistinctVisualsThatRespondToDecodedAudio() {
         val meter = AudioLevelMeter { 0L }
