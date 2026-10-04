@@ -9,6 +9,9 @@ import android.view.inspector.WindowInspector
 import androidx.activity.ComponentActivity
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.material3.DropdownMenu
+import androidx.compose.material3.DropdownMenuItem
+import androidx.compose.material3.Text
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.MutableState
 import androidx.compose.runtime.mutableStateOf
@@ -25,6 +28,7 @@ import androidx.compose.ui.test.junit4.createAndroidComposeRule
 import androidx.compose.ui.text.TextLayoutResult
 import androidx.compose.ui.unit.Density
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.window.Popup
 import androidx.lifecycle.ViewModelStore
 import androidx.lifecycle.viewModelScope
 import androidx.test.core.app.ApplicationProvider
@@ -73,6 +77,7 @@ class NowPlayingScreenTest {
     private val provider = object : Provider("PlayerTestKeyStore", 1.0, "Empty test session keystore") {}
     private lateinit var model: MusicViewModel
     private val isSongHeading = SemanticsMatcher.keyIsDefined(SemanticsProperties.Heading)
+    private val isSongActionsPopup = isPopup() and hasAnyDescendant(hasText("Save file"))
 
     @Before fun setup() {
         provider.put("KeyStore.AndroidKeyStore", Security.getProvider("SUN").getService("KeyStore", "JKS").className)
@@ -862,15 +867,38 @@ class NowPlayingScreenTest {
         compose.onNodeWithText("Generate public link").assertIsDisplayed()
     }
 
+    @Test fun songActionsPopupMatcherIgnoresNonMenuPopups() {
+        val expanded = mutableStateOf(false)
+        compose.setContent {
+            MusicTheme {
+                Box {
+                    Popup { Text("More song actions") }
+                    DropdownMenu(expanded = expanded.value, onDismissRequest = { expanded.value = false }) {
+                        DropdownMenuItem(text = { Text("Save file") }, onClick = { expanded.value = false })
+                    }
+                }
+            }
+        }
+        compose.onNode(isPopup()).assertExists()
+        compose.onNode(isSongActionsPopup).assertDoesNotExist()
+        compose.runOnIdle { expanded.value = true }
+        compose.onAllNodes(isPopup()).assertCountEquals(2)
+        compose.onNode(isSongActionsPopup).assertIsDisplayed()
+        songAction("Save file").performClick()
+        waitForPopupDismissal()
+        compose.onNode(isSongActionsPopup).assertDoesNotExist()
+        compose.onNode(isPopup()).assertExists()
+    }
+
     private fun openSongActions() {
-        compose.onNode(isPopup()).assertDoesNotExist()
+        compose.onNode(isSongActionsPopup).assertDoesNotExist()
         compose.onNodeWithContentDescription("More song actions").assertIsDisplayed().assertIsEnabled().performClick()
         compose.runOnIdle { Snapshot.sendApplyNotifications() }
         compose.mainClock.advanceTimeBy(300)
-        compose.onNode(isPopup()).assertIsDisplayed()
+        compose.onNode(isSongActionsPopup).assertIsDisplayed()
     }
 
-    private fun songAction(text: String) = compose.onNode(hasText(text) and hasAnyAncestor(isPopup()))
+    private fun songAction(text: String) = compose.onNode(hasText(text) and hasAnyAncestor(isSongActionsPopup))
 
     private fun songActionsWindow() = WindowInspector.getGlobalWindowViews().single {
         (it.layoutParams as? WindowManager.LayoutParams)?.type == WindowManager.LayoutParams.TYPE_APPLICATION_SUB_PANEL
@@ -880,7 +908,7 @@ class NowPlayingScreenTest {
         compose.waitUntil(5_000) {
             compose.runOnIdle { Snapshot.sendApplyNotifications() }
             compose.mainClock.advanceTimeByFrame()
-            compose.onAllNodes(isPopup()).fetchSemanticsNodes().isEmpty()
+            compose.onAllNodes(isSongActionsPopup).fetchSemanticsNodes().isEmpty()
         }
     }
 
@@ -972,7 +1000,7 @@ class NowPlayingScreenTest {
             openSongActions()
             songAction("Edit metadata").performClick()
             waitForPopupDismissal()
-            compose.onNode(isPopup()).assertDoesNotExist()
+            compose.onNode(isSongActionsPopup).assertDoesNotExist()
             compose.waitUntil(5_000) {
                 compose.runOnIdle { Snapshot.sendApplyNotifications() }
                 compose.mainClock.advanceTimeByFrame()
@@ -986,7 +1014,7 @@ class NowPlayingScreenTest {
             compose.runOnIdle { Snapshot.sendApplyNotifications() }
             compose.mainClock.advanceTimeByFrame()
             compose.onNode(isDialog()).assertDoesNotExist()
-            compose.onNode(isPopup()).assertDoesNotExist()
+            compose.onNode(isSongActionsPopup).assertDoesNotExist()
         }
         compose.runOnIdle {
             assertEquals(List(2) { songPath(track, "lyrics") }, requests.map { it.url.encodedPath })
@@ -1029,7 +1057,7 @@ class NowPlayingScreenTest {
                 } else openSongActions()
                 songAction("View song metadata").performClick()
                 waitForPopupDismissal()
-                compose.onNode(isPopup()).assertDoesNotExist()
+                compose.onNode(isSongActionsPopup).assertDoesNotExist()
                 compose.waitUntil(5_000) {
                     compose.runOnIdle { Snapshot.sendApplyNotifications() }
                     compose.mainClock.advanceTimeByFrame()
@@ -1045,6 +1073,7 @@ class NowPlayingScreenTest {
                 compose.runOnIdle { Snapshot.sendApplyNotifications() }
                 compose.mainClock.advanceTimeByFrame()
                 compose.onNode(isDialog()).assertDoesNotExist()
+                compose.onNode(isSongActionsPopup).assertDoesNotExist()
                 expectedPaths += songPath(track.value, "lyrics")
             }
         }
