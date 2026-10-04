@@ -190,29 +190,35 @@ Drag the bottom mini-player's progress slider to seek without leaving Library.
 Artwork, song information, and playback controls stay on one row even on narrow
 foldable cover screens; long titles and artist names scroll automatically.
 Its previous, play/pause, next, and repeat controls work without opening Now Playing.
+Swipe left across the mini-player's song row for the next song, or right for the
+previous song. Taps still open Now Playing or use the playback buttons; dragging
+the separate progress slider only seeks within the song.
 The shuffle button beside the mini-player's progress slider toggles random queue
 playback without changing the current song. Shuffle and repeat are also available
 in Now Playing. Tap repeat once from off to repeat the current song (the **1**
 icon), again to repeat the entire queue, and again to turn repeat off.
-Now Playing's header offers **Edit metadata** and **Transcribe lyrics** for MP3
+Now Playing's three-dot **More song actions** menu offers **Edit metadata** and **Transcribe lyrics** for MP3
 files you can edit, plus **Save file** to download the current song to a location
 chosen with Android's document picker. **Transcribe lyrics** opens the same
 transcription options as the Library menu, including no-vocals generation for
 locked songs, and is disabled while the service is inactive or an action is busy.
 These actions remain available on the Player, Lyrics, and Queue tabs.
+The mini-player has the same **More song actions** menu beside its progress slider,
+including Replace File, Share Media, and read-only metadata for shared accounts
+where permitted, without opening Now Playing or changing playback.
 Track ratings remain visible even at zero; tap the star beside a track's menu
 or queue controls to open **Rate song**. Saving uses the existing MP3 editing
 permissions. Tap the selected star again to clear a rating, then **Save**.
 
 Shared accounts can choose **View song metadata** (the info icon) from a Library
-song's options or the Now Playing header. For audio in their granted libraries,
+song's options or the Now Playing three-dot menu. For audio in their granted libraries,
 including non-MP3 and `[NoVocals]/` files, the dialog displays title, artist, album,
 genre, year, artwork, rating, and transcription-lock status read-only. It has a
 **Close** button and no save, rating, artwork, or lock editing controls. Tapping a
 track's rating also shows its value read-only; existing MP3 editing permissions
 remain unchanged, and the server still enforces library grants.
 
-Choose **Replace File** from a Library song's options or the Now Playing header
+Choose **Replace File** from a Library song's options or the Now Playing three-dot menu
 to upload one non-empty audio file in the same format, up to 512 MB. Selecting
 a file does not upload it: confirm **Replace File** to overwrite the song.
 Convert other formats first; renaming the extension does not convert the audio.
@@ -249,10 +255,10 @@ You can also change the lock in **Edit song / rating**, then **Save**. Locking d
 prevent manual lyric editing.
 
 While viewing lyrics, permitted MP3 editors can choose **Edit lyrics** in the
-**Now Playing** bar to edit both SYLT timestamps/text and USLT text, including
+**Now Playing** bar's three-dot menu to edit both SYLT timestamps/text and USLT text, including
 clearing either format. This action is hidden on the Player and Queue tabs.
-On narrow screens, **More song actions** keeps Replace File, Share Media, and
-Save file accessible without crowding the lyrics editing controls.
+On all screen sizes, **More song actions** groups editing, transcription, Replace File,
+Share Media, and Save file without crowding the header.
 Saving updates the displayed lyrics; canceling leaves them unchanged.
 
 Library and queue tracks show an icon-only transcription status to the left of
@@ -304,6 +310,8 @@ with the original page indices.
 Open **Settings** from the upper-right gear, to the right of **Refresh**, and
 select **Jobs** there to add downloads or manage server jobs.
 In **Now Playing**, the Player, Lyrics, and Queue tabs retain all playback controls.
+The header shows the current song name on every tab, with its playlist or queue
+underneath; long song names scroll without crowding the three-dot menu.
 On the audio **Player** tab, use the **Audio visualizer** switch to replace album
 artwork with visuals driven by the decoded music. While enabled, the dropdown
 offers **Waveform**, **Amplitude bars**, and **Radial pulse**. Switching back
@@ -314,7 +322,7 @@ Visuals stop animating when paused, buffering, or in the background, and respect
 disabled system animations. They work independently of edge lighting, require no
 microphone permission, and do not change the sound. Outputs that bypass decoded
 PCM processing show a stationary visual instead.
-On **Player** only, swipe left for the next song or right for the previous song;
+On the full-size **Player** tab, swipe left for the next song or right for the previous song;
 the artwork or visualizer follows your finger and settles back when the gesture ends.
 Lyrics and Queue gestures never skip songs. When both lyric sources are available,
 tap the selected **Lyrics** tab again to alternate between **SYLT** (synchronized)

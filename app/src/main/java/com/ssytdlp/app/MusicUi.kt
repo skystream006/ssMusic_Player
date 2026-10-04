@@ -203,7 +203,7 @@ fun MusicApp(model: MusicViewModel, requestNotifications: () -> Unit) {
                 }
             }, bottomBar = {
                 if (account != null) Column {
-                    if (playback.track != null && screen != 1) PlayerDock(playback, model, { screen = 1 }, requestNotifications)
+                    if (playback.track != null && screen != 1) PlayerDock(playback, model, { screen = 1 }, requestNotifications, download)
                     MusicNavigation(screen) { screen = it }
                 }
             }) { padding ->

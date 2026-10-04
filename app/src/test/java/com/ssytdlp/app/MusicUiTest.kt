@@ -475,6 +475,122 @@ class MusicUiTest {
         compose.runOnIdle { assertNotNull(sought); assertEquals(0, skips) }
     }
 
+    @Test
+    @Config(qualifiers = "w320dp-h640dp")
+    fun miniPlayerTopRowSwipesSkipOnceAndIgnoreShortCancelledAndVerticalGestures() {
+        var previous = 0
+        var next = 0
+        var otherActions = 0
+        compose.setContent {
+            MusicTheme {
+                Box(Modifier.fillMaxSize().testTag("mini-player-page")) {
+                    MiniPlayer(previewPlayback(), null, { otherActions++ }, { otherActions++ },
+                        { next++ }, { otherActions++ }, previous = { previous++ },
+                        repeat = { otherActions++ }, shuffle = { otherActions++ }) {
+                        ToolButton(Icons.Rounded.MoreVert, "More song actions") { otherActions++ }
+                    }
+                }
+            }
+        }
+        val page = compose.onNodeWithTag("mini-player-page")
+        val y = miniPlayerTopRowY()
+        val shortDistance = with(compose.density) { 30.dp.toPx() }
+        page.performTouchInput {
+            swipe(Offset(width * 0.5f, y), Offset(width * 0.5f + shortDistance, y))
+            down(Offset(width * 0.9f, y))
+            moveTo(Offset(width * 0.1f, y), delayMillis = 200)
+        }
+        compose.runOnIdle { assertEquals(0, next); assertEquals(0, previous) }
+        page.performTouchInput {
+            cancel()
+            swipe(Offset(width * 0.5f, y), Offset(width * 0.5f, height * 0.7f))
+            swipe(Offset(width * 0.5f, y), Offset(width * 0.5f, 0f))
+        }
+        val lowerRowY = compose.onNodeWithContentDescription("Shuffle").fetchSemanticsNode().boundsInRoot.center.y
+        page.performTouchInput {
+            swipe(Offset(width * 0.1f, lowerRowY), Offset(width * 0.9f, lowerRowY))
+            swipe(Offset(width * 0.9f, lowerRowY), Offset(width * 0.1f, lowerRowY))
+        }
+        compose.runOnIdle { assertEquals(0, next); assertEquals(0, previous) }
+        swipeMiniPlayerTopRow(left = true)
+        compose.runOnIdle { assertEquals(1, next); assertEquals(0, previous) }
+        swipeMiniPlayerTopRow(left = false)
+        compose.runOnIdle {
+            assertEquals(1, next)
+            assertEquals(1, previous)
+            assertEquals(0, otherActions)
+        }
+    }
+
+    @Test
+    @Config(qualifiers = "w320dp-h640dp")
+    fun miniPlayerSwipesUseCurrentCallbacksAndCancelWhenTrackOrQueueChanges() {
+        val state = mutableStateOf(previewPlayback())
+        var staleCallbacks = 0
+        var previous = 0
+        var next = 0
+        var restarted = 0
+        val onPrevious = mutableStateOf<() -> Unit>({ staleCallbacks++ })
+        val onNext = mutableStateOf<() -> Unit>({ staleCallbacks++ })
+        compose.setContent {
+            MusicTheme {
+                Box(Modifier.fillMaxSize().testTag("mini-player-page")) {
+                    MiniPlayer(state.value, null, {}, {}, onNext.value, {},
+                        previous = { restarted++ }, previousTrack = onPrevious.value)
+                }
+            }
+        }
+        val page = compose.onNodeWithTag("mini-player-page")
+        val y = miniPlayerTopRowY()
+        page.performTouchInput {
+            down(Offset(width * 0.9f, y))
+            moveTo(Offset(width * 0.1f, y), delayMillis = 200)
+        }
+        compose.runOnIdle {
+            onPrevious.value = { previous++ }
+            onNext.value = { next++ }
+            Snapshot.sendApplyNotifications()
+        }
+        page.performTouchInput { up() }
+        swipeMiniPlayerTopRow(left = false)
+        compose.runOnIdle {
+            assertEquals(0, staleCallbacks)
+            assertEquals(1, next)
+            assertEquals(1, previous)
+        }
+        page.performTouchInput {
+            down(Offset(width * 0.1f, y))
+            moveTo(Offset(width * 0.9f, y), delayMillis = 200)
+        }
+        compose.runOnIdle {
+            state.value = state.value.copy(track = state.value.queue[1])
+            Snapshot.sendApplyNotifications()
+        }
+        page.performTouchInput { up() }
+        compose.runOnIdle { assertEquals(1, previous) }
+        swipeMiniPlayerTopRow(left = false)
+        compose.runOnIdle { assertEquals(2, previous) }
+        page.performTouchInput {
+            down(Offset(width * 0.9f, y))
+            moveTo(Offset(width * 0.1f, y), delayMillis = 200)
+        }
+        compose.runOnIdle {
+            state.value = state.value.copy(queue = listOf(state.value.track!!))
+            Snapshot.sendApplyNotifications()
+        }
+        page.performTouchInput { up() }
+        compose.onNodeWithContentDescription("Next track").assertIsNotEnabled()
+        swipeMiniPlayerTopRow(left = true)
+        swipeMiniPlayerTopRow(left = false)
+        compose.onNodeWithContentDescription("Previous track").performTouchInput { click() }
+        compose.runOnIdle {
+            assertEquals(0, staleCallbacks)
+            assertEquals(1, next)
+            assertEquals(3, previous)
+            assertEquals(1, restarted)
+        }
+    }
+
     @Test fun libraryMiniPlayerSeeksByTouchAndAccessibilityWithoutTriggeringOtherControls() {
         val seeks = mutableListOf<Long>()
         var expanded = false
@@ -486,7 +602,7 @@ class MusicUiTest {
                 Scaffold(bottomBar = {
                     Column {
                         MiniPlayer(playback, null, { expanded = true }, { toggled = true },
-                            { skipped = true }, seeks::add)
+                            { skipped = true }, seeks::add, previousTrack = { skipped = true })
                         MusicNavigation(0) {}
                     }
                 }) { padding ->
@@ -510,9 +626,9 @@ class MusicUiTest {
             assertFalse(skipped)
         }
         compose.onNodeWithText("Library").assertIsSelected()
-        compose.onNodeWithText("Blue hour").performClick()
-        compose.onNodeWithContentDescription("Pause").performClick()
-        compose.onNodeWithContentDescription("Next track").performClick()
+        compose.onNodeWithText("Blue hour").performTouchInput { click() }
+        compose.onNodeWithContentDescription("Pause").performTouchInput { click() }
+        compose.onNodeWithContentDescription("Next track").performTouchInput { click() }
         compose.runOnIdle {
             assertTrue(expanded)
             assertTrue(toggled)
@@ -547,22 +663,34 @@ class MusicUiTest {
             it.copy(track = it.track!!.copy(title = titleText), repeat = Player.REPEAT_MODE_OFF)
         })
         var previous = 0
+        var swipePrevious = 0
         var expanded = 0
         var toggled = 0
+        var actions = 0
+        val showActions = mutableStateOf(false)
         compose.setContent {
             MusicTheme {
                 MiniPlayer(state.value, null, { expanded++ }, { toggled++ }, {}, {},
                     previous = { previous++ },
                     repeat = { state.value = state.value.copy(repeat = (state.value.repeat + 1) % 3) },
-                    shuffle = { state.value = state.value.copy(shuffle = !state.value.shuffle) })
+                    shuffle = { state.value = state.value.copy(shuffle = !state.value.shuffle) },
+                    previousTrack = { swipePrevious++ },
+                    actions = {
+                        if (showActions.value) ToolButton(Icons.Rounded.MoreVert, "More song actions") { actions++ }
+                    })
             }
         }
         val title = compose.onNodeWithText(titleText).assertIsDisplayed().getUnclippedBoundsInRoot()
+        val transport = listOf("Previous track", "Pause", "Next track", "Repeat: off")
+        val originalBounds = transport.map { compose.onNodeWithContentDescription(it).getUnclippedBoundsInRoot() }
+        compose.runOnIdle { showActions.value = true }
+        assertEquals(title, compose.onNodeWithText(titleText).getUnclippedBoundsInRoot())
         assertTrue("Mini-player must leave space for scrolling song text", title.right - title.left >= 48.dp)
         var previousRight = title.right
         val pause = compose.onNodeWithContentDescription("Pause").getUnclippedBoundsInRoot()
-        listOf("Previous track", "Pause", "Next track", "Repeat: off").forEach { label ->
+        transport.forEachIndexed { index, label ->
             val bounds = compose.onNodeWithContentDescription(label).assertIsDisplayed().getUnclippedBoundsInRoot()
+            assertEquals("Song actions must not reduce the top transport row", originalBounds[index], bounds)
             assertTrue(bounds.right - bounds.left >= 48.dp && bounds.bottom - bounds.top >= 48.dp)
             assertTrue(bounds.left >= 0.dp && bounds.right <= 320.dp)
             assertTrue("Controls must not overlap the song information or each other", bounds.left >= previousRight)
@@ -575,14 +703,31 @@ class MusicUiTest {
         assertTrue(shuffle.right - shuffle.left >= 48.dp && shuffle.bottom - shuffle.top >= 48.dp)
         assertTrue(shuffle.left >= 0.dp && shuffle.right <= slider.left && slider.right <= 320.dp)
         assertTrue("Shuffle must fit beside the slider without crowding song information", shuffle.top >= pause.bottom)
-        compose.onNodeWithContentDescription("Shuffle").assertIsOff().performClick().assertIsOn()
-        compose.onNodeWithContentDescription("Previous track").performClick()
+        val menu = compose.onNodeWithContentDescription("More song actions").assertIsDisplayed().getUnclippedBoundsInRoot()
+        assertTrue(menu.right - menu.left >= 48.dp && menu.bottom - menu.top >= 48.dp)
+        assertTrue("Song actions must stay after a usable slider", slider.right - slider.left >= 48.dp && slider.right <= menu.left)
+        assertTrue(menu.right <= 320.dp && menu.top >= pause.bottom)
+        assertTrue("Song actions must stay beside the slider", menu.top < slider.bottom && menu.bottom > slider.top)
+        compose.onNodeWithContentDescription("More song actions").assertHasClickAction().performTouchInput { click() }
+        compose.runOnIdle {
+            assertEquals(1, actions)
+            assertEquals(0, previous)
+            assertEquals(0, toggled)
+            assertEquals(0, expanded)
+        }
+        compose.onNodeWithContentDescription("Shuffle").assertIsOff().performTouchInput { click() }.assertIsOn()
+        compose.onNodeWithContentDescription("Previous track").performTouchInput { click() }
         compose.onNodeWithContentDescription("Repeat: off").assertIsOff().performClick()
         compose.onNodeWithContentDescription("Repeat: one").assertIsOn().performClick()
         compose.onNodeWithContentDescription("Repeat: all").assertIsOn().performClick()
         compose.onNodeWithContentDescription("Repeat: off").assertIsOff()
         compose.onNodeWithContentDescription("Shuffle").assertIsOn().performClick().assertIsOff()
-        compose.runOnIdle { assertEquals(1, previous); assertEquals(0, toggled); assertEquals(0, expanded) }
+        compose.runOnIdle {
+            assertEquals(1, previous)
+            assertEquals(0, swipePrevious)
+            assertEquals(0, toggled)
+            assertEquals(0, expanded)
+        }
     }
 
     @Test fun miniPlayerAndFullPlayerShareShuffleAndRepeatOneWithoutChangingPausedSong() {
@@ -1070,6 +1215,18 @@ class MusicUiTest {
     private fun previewPlayback(): PlaybackState {
         val tracks = previewTracks()
         return PlaybackState(connected = true, track = tracks.first(), queue = tracks, playing = true, position = 86_000, duration = 234_000)
+    }
+
+    private fun miniPlayerTopRowY(): Float =
+        compose.onNodeWithContentDescription("Previous track").fetchSemanticsNode().boundsInRoot.center.y -
+            compose.onNodeWithTag("mini-player-page").fetchSemanticsNode().boundsInRoot.top
+
+    private fun swipeMiniPlayerTopRow(left: Boolean) {
+        val y = miniPlayerTopRowY()
+        compose.onNodeWithTag("mini-player-page").performTouchInput {
+            val start = if (left) 0.9f else 0.1f
+            swipe(Offset(width * start, y), Offset(width * (1f - start), y))
+        }
     }
 
     private fun showSwipePlayer(state: PlaybackState = previewPlayback(), previous: () -> Unit,

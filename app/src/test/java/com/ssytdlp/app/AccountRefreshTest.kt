@@ -333,14 +333,16 @@ class AccountRefreshTest {
         compose.setContent {
             MusicTheme { NowPlayingScreen(model, model.playback.state.collectAsState().value) { _, _ -> } }
         }
-        compose.onNodeWithContentDescription("Edit metadata").performClick()
+        compose.onNodeWithContentDescription("More song actions").performClick()
+        compose.onNodeWithText("Edit metadata").performClick()
         waitFor { compose.onAllNodesWithText("Title").fetchSemanticsNodes().isNotEmpty() }
         compose.onNodeWithText("Title").performTextReplacement("Discard this")
         compose.onNodeWithText("Cancel").performClick()
         compose.onNode(isDialog()).assertDoesNotExist()
         assertFalse(drainRequests().any { it.method == "PATCH" })
 
-        compose.onNodeWithContentDescription("Edit metadata").performClick()
+        compose.onNodeWithContentDescription("More song actions").performClick()
+        compose.onNodeWithText("Edit metadata").performClick()
         waitFor { compose.onAllNodesWithText("Title").fetchSemanticsNodes().isNotEmpty() }
         compose.onNodeWithText("Title").assertTextContains("Original song").performTextReplacement("Edited song")
         showTrack(model, next)
