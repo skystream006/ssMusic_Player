@@ -52,7 +52,8 @@ import kotlinx.coroutines.delay
 val LocalWaveAppearance = staticCompositionLocalOf { true }
 
 @Composable
-fun MusicTheme(preferences: Preferences = Preferences(), waveAppearance: Boolean = true, content: @Composable () -> Unit) {
+fun MusicTheme(preferences: Preferences = Preferences(), waveAppearance: Boolean = true,
+    skin: AppSkin? = null, content: @Composable () -> Unit) {
     val theme = preferences.effectiveTheme
     val accent = when (theme) {
         "midnight" -> Color(0xFF5F7FF0)
@@ -103,7 +104,7 @@ fun MusicTheme(preferences: Preferences = Preferences(), waveAppearance: Boolean
         labelLarge = textStyle(body, 13, 18, FontWeight.SemiBold),
         labelMedium = textStyle(body, 12, 17, FontWeight.Medium), labelSmall = textStyle(body, 11, 16, FontWeight.Medium)
     )
-    CompositionLocalProvider(LocalWaveAppearance provides waveAppearance) {
+    CompositionLocalProvider(LocalWaveAppearance provides waveAppearance, LocalAppSkin provides skin) {
         MaterialTheme(colorScheme = colors, typography = typography,
             shapes = Shapes(extraSmall = RoundedCornerShape(4.dp), small = RoundedCornerShape(6.dp),
                 medium = RoundedCornerShape(8.dp), large = RoundedCornerShape(8.dp), extraLarge = RoundedCornerShape(8.dp)),
@@ -190,10 +191,11 @@ fun MusicApp(model: MusicViewModel, requestNotifications: () -> Unit) {
         requestNotifications()
         model.playback.play(model.library.tracks.files, index)
     }
-    MusicTheme(model.preferences, waveAppearance = model.waveAppearance) {
+    MusicTheme(model.preferences, waveAppearance = model.waveAppearance, skin = model.skin.takeIf { model.skinsEnabled }) {
         SystemBarAppearance()
-        Box(Modifier.fillMaxSize()) {
-            Scaffold(containerColor = MaterialTheme.colorScheme.background, snackbarHost = { SnackbarHost(snackbar) }, topBar = {
+        SkinBackground(Modifier.fillMaxSize()) {
+            Scaffold(containerColor = appBackgroundColor(), contentColor = MaterialTheme.colorScheme.onBackground,
+                snackbarHost = { SnackbarHost(snackbar) }, topBar = {
                 if (account != null) {
                     if (screen == 0) LibraryTopBar(model.library, !model.busy,
                         onBrowse = { libraryBrowser = true }, onSearch = model::search,

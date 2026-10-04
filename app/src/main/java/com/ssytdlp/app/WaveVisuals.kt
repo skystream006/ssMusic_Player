@@ -49,7 +49,7 @@ fun SystemBarAppearance() {
 
 @Composable
 fun WaveBackdrop(modifier: Modifier = Modifier, opacity: Float = 1f) {
-    if (!LocalWaveAppearance.current) return
+    if (!LocalWaveAppearance.current || LocalAppSkin.current != null) return
     val background = MaterialTheme.colorScheme.background
     Box(modifier) {
         Image(painterResource(R.drawable.wave_ribbon), contentDescription = null, modifier = Modifier.matchParentSize(),
@@ -62,7 +62,7 @@ fun WaveBackdrop(modifier: Modifier = Modifier, opacity: Float = 1f) {
 @Composable
 fun MusicTopBar(userName: String, refreshEnabled: Boolean, onRefresh: () -> Unit,
     onSettings: () -> Unit, onBack: (() -> Unit)? = null) {
-    TopAppBar(colors = TopAppBarDefaults.topAppBarColors(containerColor = MaterialTheme.colorScheme.background),
+    TopAppBar(colors = TopAppBarDefaults.topAppBarColors(containerColor = appBackgroundColor()),
         navigationIcon = {
             if (onBack != null) ToolButton(Icons.AutoMirrored.Rounded.ArrowBack, "Back", onClick = onBack)
         }, title = {
@@ -83,7 +83,7 @@ fun MusicTopBar(userName: String, refreshEnabled: Boolean, onRefresh: () -> Unit
 @Composable
 fun MusicNavigation(selected: Int, onSelect: (Int) -> Unit) {
     HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.6f))
-    NavigationBar(containerColor = MaterialTheme.colorScheme.background, tonalElevation = 0.dp) {
+    NavigationBar(containerColor = appBackgroundColor(), tonalElevation = 0.dp) {
         listOf("Library" to Icons.Rounded.LibraryMusic, "Now Playing" to Icons.Rounded.GraphicEq)
             .forEachIndexed { index, (label, icon) ->
                 NavigationBarItem(selected = selected == index, onClick = { onSelect(index) }, icon = { Icon(icon, label, Modifier.size(22.dp)) },
@@ -110,7 +110,7 @@ fun LibraryTopBar(state: LibraryState, refreshEnabled: Boolean,
     }
     Column {
         TopAppBar(windowInsets = windowInsets,
-            colors = TopAppBarDefaults.topAppBarColors(containerColor = MaterialTheme.colorScheme.background),
+            colors = TopAppBarDefaults.topAppBarColors(containerColor = appBackgroundColor()),
             title = {
                 Row(Modifier.heightIn(min = 48.dp).clickable(role = Role.Button, onClick = onBrowse),
                     verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(4.dp)) {
@@ -146,7 +146,7 @@ fun LibraryTopBar(state: LibraryState, refreshEnabled: Boolean,
 fun LoginContent(server: String, signingIn: Boolean, pending: Boolean, modifier: Modifier = Modifier,
     onSignIn: () -> Unit, onCancel: () -> Unit, onRegister: () -> Unit, onAppSettings: (() -> Unit)? = null,
     onChangeServer: (() -> Unit)? = null) {
-    BoxWithConstraints(modifier.fillMaxSize().background(MaterialTheme.colorScheme.background)) {
+    BoxWithConstraints(modifier.fillMaxSize().background(appBackgroundColor())) {
         val compactHeight = maxHeight < 500.dp
         val artworkHeight = if (compactHeight) 180.dp else 300.dp
         WaveBackdrop(Modifier.fillMaxWidth().height(artworkHeight).align(Alignment.TopCenter))
@@ -191,7 +191,7 @@ fun LoginContent(server: String, signingIn: Boolean, pending: Boolean, modifier:
 @Composable
 fun ServerSetupContent(value: String, error: String?, busy: Boolean, modifier: Modifier = Modifier,
     onValueChange: (String) -> Unit, onContinue: () -> Unit, onAppSettings: () -> Unit = {}) {
-    BoxWithConstraints(modifier.fillMaxSize().background(MaterialTheme.colorScheme.background)) {
+    BoxWithConstraints(modifier.fillMaxSize().background(appBackgroundColor())) {
         val compactHeight = maxHeight < 500.dp
         val artworkHeight = if (compactHeight) 180.dp else 300.dp
         WaveBackdrop(Modifier.fillMaxWidth().height(artworkHeight).align(Alignment.TopCenter))

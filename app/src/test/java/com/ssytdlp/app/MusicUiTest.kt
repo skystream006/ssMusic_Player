@@ -22,6 +22,7 @@ import androidx.compose.runtime.snapshots.Snapshot
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.toArgb
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.semantics.SemanticsActions
@@ -56,6 +57,84 @@ import org.robolectric.annotation.GraphicsMode
 @GraphicsMode(GraphicsMode.Mode.NATIVE)
 class MusicUiTest {
     @get:Rule val compose = createAndroidComposeRule<ComponentActivity>()
+
+    @Test fun skinsDoNotReplaceAnyColorThemeOrLightDarkPreference() {
+        val preferences = mutableStateOf(Preferences())
+        val wave = mutableStateOf(true)
+        val skin = mutableStateOf<AppSkin?>(null)
+        lateinit var plain: List<Color>
+        lateinit var skinned: List<Color>
+        var container = Color.Unspecified
+        var selectedSkin: AppSkin? = null
+        fun palette(colors: ColorScheme) = listOf(colors.primary, colors.background, colors.onBackground,
+            colors.surface, colors.onSurface, colors.onSurfaceVariant, colors.secondary)
+        compose.setContent {
+            MusicTheme(preferences.value, waveAppearance = wave.value) { plain = palette(MaterialTheme.colorScheme) }
+            MusicTheme(preferences.value, waveAppearance = wave.value, skin = skin.value) {
+                skinned = palette(MaterialTheme.colorScheme)
+                container = appBackgroundColor()
+                selectedSkin = LocalAppSkin.current
+            }
+        }
+        listOf("midnight", "royal-purple", "gold", "green", "pink", "black").forEach { theme ->
+            listOf("light", "dark").forEach { mode ->
+                listOf(false, true).forEach { blueWave ->
+                    (listOf(null) + AppSkin.entries).forEach { option ->
+                        compose.runOnIdle {
+                            preferences.value = Preferences(theme = theme, mode = mode)
+                            wave.value = blueWave
+                            skin.value = option
+                        }
+                        compose.runOnIdle {
+                            assertEquals(plain, skinned)
+                            assertEquals(option, selectedSkin)
+                            assertEquals(if (option == null) plain[1] else Color.Transparent, container)
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    @Test fun skinImagesRenderDistinctBackgroundsAndDisablingRestoresPlainTheme() {
+        val skin = mutableStateOf<AppSkin?>(null)
+        val mode = mutableStateOf("dark")
+        var background = Color.Unspecified
+        compose.setContent {
+            MusicTheme(Preferences(theme = "black", mode = mode.value), waveAppearance = false, skin = skin.value) {
+                background = MaterialTheme.colorScheme.background
+                SkinBackground(Modifier.fillMaxSize()) {
+                    Box(Modifier.fillMaxSize().background(appBackgroundColor()))
+                }
+            }
+        }
+        fun pixels(): List<Int> = compose.runOnIdle {
+            val content = compose.activity.findViewById<ViewGroup>(android.R.id.content).getChildAt(0)
+            val image = content.drawToBitmap()
+            try {
+                listOf(0.2f, 0.4f, 0.6f, 0.8f).flatMap { y ->
+                    listOf(0.25f, 0.5f, 0.75f).map { x ->
+                        image.getPixel((image.width * x).toInt(), (image.height * y).toInt())
+                    }
+                }
+            } finally {
+                image.recycle()
+            }
+        }
+        listOf("dark", "light").forEach { appearance ->
+            compose.runOnIdle { mode.value = appearance }
+            assertTrue(pixels().all { it == background.toArgb() })
+            compose.runOnIdle { skin.value = AppSkin.CHERRY_BLOSSOM }
+            val cherry = pixels()
+            assertTrue(cherry.toSet().size > 3)
+            compose.runOnIdle { skin.value = AppSkin.STARRY_CITY }
+            val city = pixels()
+            assertTrue(city.toSet().size > 3)
+            assertNotEquals(cherry, city)
+            compose.runOnIdle { skin.value = null }
+            assertTrue(pixels().all { it == background.toArgb() })
+        }
+    }
 
     @Test fun waveAppearanceUsesBlackAndCyanEvenWithLightServerPreferences() {
         lateinit var colors: ColorScheme

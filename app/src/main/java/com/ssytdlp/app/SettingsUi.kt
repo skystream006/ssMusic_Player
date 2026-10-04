@@ -7,12 +7,14 @@ import android.net.Uri
 import android.os.PowerManager
 import android.provider.Settings
 import androidx.browser.customtabs.CustomTabsIntent
+import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.selection.selectableGroup
+import androidx.compose.foundation.selection.selectable
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
@@ -23,8 +25,11 @@ import androidx.compose.runtime.*
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.selected
 import androidx.compose.ui.semantics.semantics
@@ -88,6 +93,7 @@ fun SettingsScreen(model: MusicViewModel, download: (String, String) -> Unit, on
                 { model.setTheme(mode = if (it) "dark" else "light") }, enabled = !model.busy)
         }
         }
+        SkinSetting(model.skinsEnabled, model.skin, model::chooseSkin, model::chooseSkins)
         EdgeLightingSetting(model.edgeLightingEnabled, model.edgeLightingStyle,
             model::chooseEdgeLightingStyle, model::chooseEdgeLighting)
         if (showJobsAndBackup) {
@@ -144,6 +150,47 @@ fun SettingsScreen(model: MusicViewModel, download: (String, String) -> Unit, on
     }
     if (logout) ConfirmDialog("Sign out?", "Playback will stop and this device's server session will be revoked.", { logout = false }) { logout = false; model.logout() }
     if (schedule && showJobsAndBackup) BackupScheduleDialog(model) { schedule = false }
+}
+
+@Composable
+internal fun SkinSetting(
+    enabled: Boolean,
+    skin: AppSkin,
+    onSkinChange: (AppSkin) -> Unit,
+    onEnabledChange: (Boolean) -> Unit
+) {
+    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+        Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+            Text("Skins", Modifier.weight(1f))
+            Switch(enabled, onEnabledChange, modifier = Modifier.semantics { contentDescription = "Skins" })
+        }
+        if (enabled) {
+            Text("Background images • Your color theme stays the same", style = MaterialTheme.typography.bodySmall)
+            Column(Modifier.selectableGroup(), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                AppSkin.entries.forEach { option ->
+                    val selected = skin == option
+                    Row(Modifier.fillMaxWidth().clip(MaterialTheme.shapes.medium)
+                        .background(MaterialTheme.colorScheme.surfaceContainerLow)
+                        .border(if (selected) 2.dp else 1.dp,
+                            if (selected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.outlineVariant,
+                            MaterialTheme.shapes.medium)
+                        .selectable(selected, role = Role.RadioButton, onClick = { onSkinChange(option) })
+                        .padding(12.dp), verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                        Image(painterResource(option.drawable), contentDescription = null,
+                            modifier = Modifier.size(width = 64.dp, height = 112.dp).clip(MaterialTheme.shapes.small),
+                            contentScale = ContentScale.Crop)
+                        Column(Modifier.weight(1f)) {
+                            Text(option.label, style = MaterialTheme.typography.titleSmall)
+                            Text(option.description, style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        }
+                        RadioButton(selected, onClick = null)
+                    }
+                }
+            }
+        }
+    }
 }
 
 @Composable
