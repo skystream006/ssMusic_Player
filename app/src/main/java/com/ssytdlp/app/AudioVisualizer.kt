@@ -83,9 +83,20 @@ internal fun AudioVisualizer(playing: Boolean, style: AudioVisualizerStyle, audi
         }
     }
     val primary = MaterialTheme.colorScheme.primary
-    val secondary = MaterialTheme.colorScheme.tertiary
+    val secondary = MaterialTheme.colorScheme.secondary
+    val tertiary = MaterialTheme.colorScheme.tertiary
     val background = MaterialTheme.colorScheme.surfaceContainerHigh
-    val gradient = remember(primary, secondary) { Brush.verticalGradient(listOf(primary, secondary)) }
+    val gradient = remember(primary, secondary, tertiary, style) {
+        val colors = listOf(primary, secondary, tertiary)
+        when (style) {
+            AudioVisualizerStyle.WAVEFORM -> Brush.horizontalGradient(colors)
+            AudioVisualizerStyle.BARS -> Brush.linearGradient(colors)
+            AudioVisualizerStyle.RADIAL -> Brush.sweepGradient(colors + primary)
+        }
+    }
+    val glow = remember(primary, tertiary) {
+        Brush.radialGradient(listOf(primary.copy(alpha = 0.24f), tertiary.copy(alpha = 0f)))
+    }
     val path = remember { Path() }
     Canvas(modifier.clip(RoundedCornerShape(24.dp)).background(background).semantics {
         contentDescription = "${style.label} audio visualizer"
@@ -107,6 +118,7 @@ internal fun AudioVisualizer(playing: Boolean, style: AudioVisualizerStyle, audi
                     val y = center.y - (samples.getOrNull(index) ?: 0f) * height * 0.45f
                     if (index == 0) path.moveTo(x, y) else path.lineTo(x, y)
                 }
+                drawPath(path, gradient, alpha = 0.16f, style = Stroke(stroke * 3f, cap = StrokeCap.Round))
                 drawPath(path, gradient, style = Stroke(stroke, cap = StrokeCap.Round))
             }
             AudioVisualizerStyle.BARS -> {
@@ -125,14 +137,14 @@ internal fun AudioVisualizer(playing: Boolean, style: AudioVisualizerStyle, audi
             }
             AudioVisualizerStyle.RADIAL -> {
                 val radius = size.minDimension * (0.18f + animation.level * 0.08f)
-                drawCircle(primary.copy(alpha = 0.08f + animation.level * 0.12f), radius, center)
+                drawCircle(glow, size.minDimension / 2f, center, alpha = 0.5f + animation.level * 0.5f)
                 drawCircle(gradient, radius, center, style = Stroke(stroke))
                 repeat(64) { index ->
                     val angle = (2.0 * PI * index / 64).toFloat()
                     val direction = Offset(cos(angle), sin(angle))
                     val sample = animation.waveform.getOrNull(index * animation.waveform.size / 64) ?: 0f
                     val length = stroke + abs(sample) * size.minDimension * 0.16f
-                    drawLine(primary, center + direction * (radius + stroke * 2f),
+                    drawLine(gradient, center + direction * (radius + stroke * 2f),
                         center + direction * (radius + stroke * 2f + length), stroke, StrokeCap.Round)
                 }
             }
