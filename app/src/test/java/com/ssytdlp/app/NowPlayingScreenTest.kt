@@ -4,6 +4,7 @@ import android.app.Application
 import android.content.Context
 import android.view.KeyEvent
 import android.view.MotionEvent
+import android.view.ViewGroup
 import android.view.WindowManager
 import android.view.inspector.WindowInspector
 import androidx.activity.ComponentActivity
@@ -11,6 +12,7 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
+import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.MutableState
@@ -18,6 +20,8 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.snapshots.Snapshot
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.toArgb
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.semantics.SemanticsActions
@@ -31,6 +35,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.window.Popup
 import androidx.lifecycle.ViewModelStore
 import androidx.lifecycle.viewModelScope
+import androidx.core.view.drawToBitmap
 import androidx.test.core.app.ApplicationProvider
 import com.ssytdlp.app.core.Track
 import com.ssytdlp.app.core.Account
@@ -41,6 +46,7 @@ import com.ssytdlp.app.core.TrackPage
 import com.ssytdlp.app.core.Job
 import com.ssytdlp.app.core.Library
 import com.ssytdlp.app.core.LyricLine
+import com.ssytdlp.app.core.Preferences
 import com.ssytdlp.app.core.SongMetadata
 import com.ssytdlp.app.core.Transcription
 import java.security.Provider
@@ -65,6 +71,7 @@ import org.junit.Test
 import org.junit.runner.RunWith
 import org.robolectric.RobolectricTestRunner
 import org.robolectric.annotation.Config
+import org.robolectric.annotation.GraphicsMode
 import org.robolectric.shadows.ShadowDialog
 import org.robolectric.util.ReflectionHelpers
 import org.robolectric.util.ReflectionHelpers.ClassParameter
@@ -1492,6 +1499,109 @@ class NowPlayingScreenTest {
             val restored = MusicViewModel(application)
             models.put("restored", restored)
             assertEquals(savedScale, restored.lyricsTextScale, 0f)
+        }
+    }
+
+    @Test
+    @GraphicsMode(GraphicsMode.Mode.NATIVE)
+    fun tabsAndLyricsUseSolidSurfacesAcrossThemesAndSkins() {
+        val track = Track("preview", "song.mp3")
+        val preferences = mutableStateOf(Preferences())
+        val wave = mutableStateOf(true)
+        val skin = mutableStateOf<AppSkin?>(null)
+        var surface = Color.Unspecified
+        compose.setContent {
+            MusicTheme(preferences.value, waveAppearance = wave.value, skin = skin.value) {
+                surface = MaterialTheme.colorScheme.surface
+                SkinBackground(Modifier.fillMaxSize()) {
+                    NowPlayingScreen(model, PlaybackState(track = track, queue = listOf(track))) { _, _ -> }
+                }
+            }
+        }
+        compose.onNodeWithText("Lyrics").performClick()
+        val appearances = listOf(Preferences() to true) +
+            listOf("midnight", "royal-purple", "gold", "green", "pink", "black").flatMap { theme ->
+                listOf("light", "dark").map { mode -> Preferences(theme = theme, mode = mode) to false }
+            }
+        appearances.forEach { (selected, blueWave) ->
+            (listOf(null) + AppSkin.entries).forEach { option ->
+                compose.runOnIdle {
+                    preferences.value = selected
+                    wave.value = blueWave
+                    skin.value = option
+                }
+                assertSolidPlayerSurfaces { surface }
+            }
+        }
+        listOf("Player", "Queue", "Lyrics").forEach { tab ->
+            compose.onNodeWithText(tab).performClick().assertIsSelected()
+            assertSolidPlayerSurfaces(lyricsVisible = tab == "Lyrics") { surface }
+        }
+    }
+
+    @Test
+    @GraphicsMode(GraphicsMode.Mode.NATIVE)
+    fun lyricsSurfaceCoversSynchronizedPlainAndFallbackStates() {
+        val track = Track("preview", "song.mp3")
+        val state = mutableStateOf(PlaybackState(track = track))
+        val metadata = ReflectionHelpers.getField<MutableState<SongMetadata?>>(model, "metadata\$delegate")
+        val error = ReflectionHelpers.getField<MutableState<String?>>(model, "metadataError\$delegate")
+        var surface = Color.Unspecified
+        compose.runOnIdle { model.viewModelScope.cancel() }
+        compose.setContent {
+            MusicTheme(Preferences(theme = "black", mode = "light"), waveAppearance = false,
+                skin = AppSkin.CHERRY_BLOSSOM) {
+                surface = MaterialTheme.colorScheme.surface
+                SkinBackground(Modifier.fillMaxSize()) {
+                    NowPlayingScreen(model, state.value) { _, _ -> }
+                }
+            }
+        }
+        compose.onNodeWithText("Lyrics").performClick()
+        compose.onNodeWithText("Loading lyrics...").assertIsDisplayed()
+        assertSolidPlayerSurfaces { surface }
+        compose.runOnIdle {
+            metadata.value = SongMetadata(sylt = listOf(LyricLine(0.0, "Timed lyrics")), uslt = "Plain lyrics")
+        }
+        compose.onNodeWithText("Timed lyrics").assertIsDisplayed().assertHasClickAction()
+        assertSolidPlayerSurfaces { surface }
+        compose.onNodeWithText("SYLT Lyrics").performClick()
+        compose.onNodeWithText("Plain lyrics").assertIsDisplayed().assertHasNoClickAction()
+        assertSolidPlayerSurfaces { surface }
+        compose.runOnIdle { metadata.value = SongMetadata() }
+        compose.onNodeWithText("No lyrics available").assertIsDisplayed()
+        assertSolidPlayerSurfaces { surface }
+        compose.runOnIdle { metadata.value = null; error.value = "Lyrics and artwork are unavailable." }
+        compose.onNodeWithText("Lyrics and artwork are unavailable.").assertIsDisplayed()
+        assertSolidPlayerSurfaces { surface }
+        compose.runOnIdle { error.value = null; state.value = state.value.copy(track = track.copy(mediaType = "video")) }
+        compose.onNodeWithText("No lyrics available").assertIsDisplayed()
+        assertSolidPlayerSurfaces { surface }
+    }
+
+    private fun assertSolidPlayerSurfaces(lyricsVisible: Boolean = true, surface: () -> Color) {
+        val tabs = compose.onNode(SemanticsMatcher.keyIsDefined(SemanticsProperties.SelectableGroup))
+            .fetchSemanticsNode().boundsInRoot
+        val transport = compose.onNodeWithContentDescription("Playback position").fetchSemanticsNode().boundsInRoot
+        compose.runOnIdle {
+            val content = compose.activity.findViewById<ViewGroup>(android.R.id.content).getChildAt(0)
+            val image = content.drawToBitmap()
+            try {
+                val points = listOf(tabs.left + 4f, tabs.center.x, tabs.right - 4f).map { x ->
+                    Offset(x, tabs.top + 4f)
+                } + if (lyricsVisible) listOf(
+                    Offset(tabs.left + 4f, tabs.bottom + 4f),
+                    Offset(tabs.left + 4f, (tabs.bottom + transport.top) / 2f),
+                    Offset(tabs.center.x, transport.top - 4f),
+                    Offset(tabs.right - 4f, transport.top - 4f)
+                ) else emptyList()
+                points.forEach { point ->
+                    assertEquals("Expected an opaque theme surface at $point", surface().toArgb(),
+                        image.getPixel(point.x.toInt(), point.y.toInt()))
+                }
+            } finally {
+                image.recycle()
+            }
         }
     }
 
