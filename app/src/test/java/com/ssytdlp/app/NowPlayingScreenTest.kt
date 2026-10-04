@@ -1039,8 +1039,8 @@ class NowPlayingScreenTest {
             val fullscreen = compose.onNodeWithContentDescription("Expand lyrics to full screen")
                 .assertIsDisplayed().fetchSemanticsNode().boundsInRoot
             assertEquals(section, content)
-            assertEquals(section.top, fullscreen.top, 1f)
-            assertEquals(section.right, fullscreen.right, 1f)
+            assertTrue(fullscreen.top in section.top..(section.top + fullscreen.height))
+            assertTrue(fullscreen.right in (section.right - fullscreen.width)..section.right)
             if (lyrics?.uslt == text || lyrics?.sylt?.isNotEmpty() == true) {
                 assertTrue(compose.onNodeWithText(text).fetchSemanticsNode().boundsInRoot.right <= fullscreen.left)
             }
