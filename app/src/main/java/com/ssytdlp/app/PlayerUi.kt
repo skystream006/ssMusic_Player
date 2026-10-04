@@ -305,7 +305,7 @@ private fun SongActionsMenu(model: MusicViewModel, track: Track?, download: (Str
             mutableStateOf(false)
         }
         Box {
-            ToolButton(Icons.Rounded.MoreVert, "More song actions") { moreActions = true }
+            ToolButton(Icons.Rounded.MoreVert, "More song actions", modifier = Modifier.size(48.dp)) { moreActions = true }
             DropdownMenu(expanded = moreActions, onDismissRequest = { moreActions = false }) {
                 if (editLyrics != null) {
                     DropdownMenuItem(text = { Text("Edit lyrics") }, enabled = !model.busy,
