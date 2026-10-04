@@ -363,6 +363,16 @@ change the theme or mode.
 The server's **Black** theme uses neutral charcoal surfaces with yellow accents in
 dark mode, and gray/white surfaces with darker gold accents in light mode.
 
+**Settings > Appearance > Skins** adds optional illustrated backgrounds alongside
+the color themes. Skins are off by default. Turn them on to see previews and choose
+**Cherry Blossom Sunset** (flowing blossoms and windblown petals over a sunset) or
+**Starry City Sunset** (a star-filled sky above a city skyline and sunset).
+Both are original bundled vector images, available offline without downloads.
+The toggle and selected skin are remembered on this device; turning skins off
+restores the normal background without forgetting the selection. Skins work with
+Blue Wave and every server color theme in light or dark mode, without changing
+server preferences or album covers. A theme-colored overlay keeps text readable.
+
 **Settings > Appearance > Edge lighting** is enabled by default unless previously
 turned off; saved preferences are preserved. When enabled, it
 expands alphabetized, horizontal choices that wrap on smaller screens:

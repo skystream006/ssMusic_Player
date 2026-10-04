@@ -194,7 +194,8 @@ fun MusicApp(model: MusicViewModel, requestNotifications: () -> Unit) {
     MusicTheme(model.preferences, waveAppearance = model.waveAppearance, skin = model.skin.takeIf { model.skinsEnabled }) {
         SystemBarAppearance()
         SkinBackground(Modifier.fillMaxSize()) {
-            Scaffold(containerColor = appBackgroundColor(), snackbarHost = { SnackbarHost(snackbar) }, topBar = {
+            Scaffold(containerColor = appBackgroundColor(), contentColor = MaterialTheme.colorScheme.onBackground,
+                snackbarHost = { SnackbarHost(snackbar) }, topBar = {
                 if (account != null) {
                     if (screen == 0) LibraryTopBar(model.library, !model.busy,
                         onBrowse = { libraryBrowser = true }, onSearch = model::search,

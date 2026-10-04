@@ -67,6 +67,96 @@ class SettingsUiTest {
         compose.runOnUiThread { owner.lifecycle.currentState = Lifecycle.State.RESUMED }
     }
 
+    @Test fun skinsStartDisabledAndRetainTheSelectedPreviewWhenToggled() {
+        val enabled = mutableStateOf(false)
+        val skin = mutableStateOf(AppSkin.CHERRY_BLOSSOM)
+        compose.setContent {
+            MusicTheme { SkinSetting(enabled.value, skin.value, { skin.value = it }, { enabled.value = it }) }
+        }
+        compose.onNodeWithContentDescription("Skins").assertIsOff()
+        AppSkin.entries.forEach { compose.onNodeWithText(it.label).assertDoesNotExist() }
+        compose.onNodeWithContentDescription("Skins").performClick().assertIsOn()
+        compose.onNodeWithText(AppSkin.CHERRY_BLOSSOM.label).assertIsSelected()
+        AppSkin.entries.forEach { option ->
+            compose.onNodeWithText(option.label).assertIsDisplayed().performClick().assertIsSelected()
+            compose.runOnIdle { assertEquals(option, skin.value) }
+            AppSkin.entries.filter { it != option }.forEach {
+                compose.onNodeWithText(it.label).assertIsNotSelected()
+            }
+        }
+        compose.onNodeWithContentDescription("Skins").performClick().assertIsOff()
+        AppSkin.entries.forEach { compose.onNodeWithText(it.label).assertDoesNotExist() }
+        compose.onNodeWithContentDescription("Skins").performClick()
+        compose.onNodeWithText(AppSkin.STARRY_CITY.label).assertIsSelected()
+    }
+
+    @Test
+    @Config(qualifiers = "w320dp-h900dp")
+    fun skinChoicesRemainSelectableWithLargeTextOnNarrowScreens() {
+        val skin = mutableStateOf(AppSkin.CHERRY_BLOSSOM)
+        compose.setContent {
+            CompositionLocalProvider(LocalDensity provides Density(LocalDensity.current.density, 1.5f)) {
+                MusicTheme { SkinSetting(true, skin.value, { skin.value = it }, {}) }
+            }
+        }
+        AppSkin.entries.forEach {
+            val option = compose.onNodeWithText(it.label).assertIsDisplayed()
+            val bounds = option.getUnclippedBoundsInRoot()
+            assertTrue(bounds.left >= 0.dp && bounds.right <= 320.dp)
+            option.performClick().assertIsSelected()
+        }
+    }
+
+    @Test fun skinPreferencesPersistIndependentlyOfColorThemesAndHandleUnknownValues() {
+        val preferences = ApplicationProvider.getApplicationContext<Application>()
+            .getSharedPreferences("settings", Context.MODE_PRIVATE)
+        preferences.edit().remove("skins_enabled").remove("skin").commit()
+        val models = ViewModelStore()
+        try {
+            withSettingsModel { initial ->
+                assertFalse(initial.skinsEnabled)
+                assertEquals(AppSkin.CHERRY_BLOSSOM, initial.skin)
+                compose.runOnUiThread {
+                    val theme = initial.preferences
+                    val wave = initial.waveAppearance
+                    initial.chooseSkins(true)
+                    AppSkin.entries.forEach { option ->
+                        initial.chooseSkin(option)
+                        assertEquals(option.name, preferences.getString("skin", null))
+                        assertEquals(option, AppSkin.fromPreference(option.name))
+                    }
+                    val restored = MusicViewModel(initial.getApplication(), connectPlayback = false)
+                    models.put("restored", restored)
+                    restored.viewModelScope.cancel()
+                    assertTrue(restored.skinsEnabled)
+                    assertEquals(AppSkin.STARRY_CITY, restored.skin)
+                    restored.chooseSkins(false)
+                    val disabled = MusicViewModel(initial.getApplication(), connectPlayback = false)
+                    models.put("disabled", disabled)
+                    disabled.viewModelScope.cancel()
+                    assertFalse(disabled.skinsEnabled)
+                    assertEquals(AppSkin.STARRY_CITY, disabled.skin)
+                    disabled.chooseSkins(true)
+                    assertEquals(AppSkin.STARRY_CITY, disabled.skin)
+                    assertTrue(preferences.getBoolean("skins_enabled", false))
+                    assertEquals(theme, initial.preferences)
+                    assertEquals(wave, initial.waveAppearance)
+                    assertEquals(wave, disabled.waveAppearance)
+                    preferences.edit().putString("skin", "unknown-skin").commit()
+                    val unknown = MusicViewModel(initial.getApplication(), connectPlayback = false)
+                    models.put("unknown", unknown)
+                    unknown.viewModelScope.cancel()
+                    assertTrue(unknown.skinsEnabled)
+                    assertEquals(AppSkin.CHERRY_BLOSSOM, unknown.skin)
+                    assertEquals(AppSkin.CHERRY_BLOSSOM, AppSkin.fromPreference(null))
+                }
+            }
+        } finally {
+            compose.runOnUiThread { models.clear() }
+            preferences.edit().remove("skins_enabled").remove("skin").commit()
+        }
+    }
+
     @Test fun edgeLightingSwitchReflectsPreferenceAndReportsBothChanges() {
         val enabled = mutableStateOf(true)
         compose.setContent {
@@ -194,7 +284,13 @@ class SettingsUiTest {
             }
             compose.onNodeWithContentDescription("green theme").assertIsSelected()
             compose.onNodeWithText("Dark appearance").assertIsDisplayed()
+            compose.onNodeWithContentDescription("Skins").assertIsDisplayed().assertIsOff().performClick()
+            compose.onNodeWithText(AppSkin.STARRY_CITY.label).performScrollTo().performClick().assertIsSelected()
+            compose.onNodeWithContentDescription("Skins").performScrollTo().performClick()
             compose.onNodeWithText("Blue Wave").performClick().assertIsSelected()
+            compose.onNodeWithContentDescription("Skins").assertIsDisplayed().performClick()
+            compose.onNodeWithText(AppSkin.STARRY_CITY.label).performScrollTo().assertIsSelected()
+            compose.onNodeWithContentDescription("Skins").performScrollTo().performClick()
             compose.onNodeWithContentDescription("green theme").assertDoesNotExist()
             compose.onNodeWithText("Server theme").performClick().assertIsSelected()
             compose.onNodeWithContentDescription("green theme").assertIsSelected()
