@@ -67,31 +67,65 @@ class SettingsUiTest {
         compose.runOnUiThread { owner.lifecycle.currentState = Lifecycle.State.RESUMED }
     }
 
-    @Test fun skinsStartDisabledAndRetainTheSelectedPreviewWhenToggled() {
+    @Test fun skinsShowSelectedNameAndKeepChoicesInADialogWhenEnabled() {
         val enabled = mutableStateOf(false)
         val skin = mutableStateOf(AppSkin.CHERRY_BLOSSOM)
         compose.setContent {
             MusicTheme { SkinSetting(enabled.value, skin.value, { skin.value = it }, { enabled.value = it }) }
         }
         compose.onNodeWithContentDescription("Skins").assertIsOff()
-        AppSkin.entries.forEach { compose.onNodeWithText(it.label).assertDoesNotExist() }
+        compose.onNodeWithText(skin.value.label).assertIsDisplayed().assertIsNotEnabled().performClick()
+        compose.onNode(isDialog()).assertDoesNotExist()
+        compose.onNodeWithText(AppSkin.STARRY_CITY.label).assertDoesNotExist()
+        AppSkin.entries.forEach { compose.onNodeWithText(it.description).assertDoesNotExist() }
         compose.onNodeWithContentDescription("Skins").performClick().assertIsOn()
-        compose.onNodeWithText(AppSkin.CHERRY_BLOSSOM.label).assertIsSelected()
+        compose.onNode(isDialog()).assertDoesNotExist()
         AppSkin.entries.forEach { option ->
-            compose.onNodeWithText(option.label).assertIsDisplayed().performClick().assertIsSelected()
+            compose.onNodeWithText(skin.value.label).assertIsEnabled().performClick()
+            compose.onNode(isDialog()).assertIsDisplayed()
+            skinOption(skin.value).assertIsSelected()
+            AppSkin.entries.filter { it != skin.value }.forEach { skinOption(it).assertIsNotSelected() }
+            skinOption(option).performScrollTo().assertIsDisplayed().performClick()
+            compose.onNode(isDialog()).assertDoesNotExist()
+            compose.onNodeWithText(option.label).assertIsDisplayed()
+            compose.onNodeWithContentDescription("Skins").assertIsOn()
             compose.runOnIdle { assertEquals(option, skin.value) }
-            AppSkin.entries.filter { it != option }.forEach {
-                compose.onNodeWithText(it.label).assertIsNotSelected()
-            }
+            AppSkin.entries.forEach { compose.onNodeWithText(it.description).assertDoesNotExist() }
         }
         compose.onNodeWithContentDescription("Skins").performClick().assertIsOff()
-        AppSkin.entries.forEach { compose.onNodeWithText(it.label).assertDoesNotExist() }
-        compose.onNodeWithContentDescription("Skins").performClick()
-        compose.onNodeWithText(AppSkin.STARRY_CITY.label).assertIsSelected()
+        compose.onNodeWithText(AppSkin.STARRY_CITY.label).assertIsDisplayed().assertIsNotEnabled()
+        compose.onNodeWithContentDescription("Skins").performClick().assertIsOn()
+        compose.onNodeWithText(AppSkin.STARRY_CITY.label).performClick()
+        skinOption(AppSkin.STARRY_CITY).assertIsSelected()
+        skinOption(AppSkin.CHERRY_BLOSSOM).assertIsNotSelected()
+        compose.onNodeWithText("Close").performClick()
+        compose.onNode(isDialog()).assertDoesNotExist()
+        compose.onNodeWithText(AppSkin.STARRY_CITY.label).assertIsDisplayed()
+        compose.runOnIdle { assertEquals(AppSkin.STARRY_CITY, skin.value) }
+    }
+
+    @Test fun skinPickerSurvivesStateRestorationAndClosesWhenSkinsAreDisabled() {
+        val enabled = mutableStateOf(true)
+        val skin = mutableStateOf(AppSkin.STARRY_CITY)
+        val restoration = StateRestorationTester(compose)
+        restoration.setContent {
+            MusicTheme { SkinSetting(enabled.value, skin.value, { skin.value = it }, { enabled.value = it }) }
+        }
+        compose.onNodeWithText(AppSkin.STARRY_CITY.label).performClick()
+        restoration.emulateSavedInstanceStateRestore()
+        compose.onNode(isDialog()).assertIsDisplayed()
+        skinOption(AppSkin.STARRY_CITY).assertIsSelected()
+        compose.runOnIdle { enabled.value = false }
+        compose.onNode(isDialog()).assertDoesNotExist()
+        compose.onNodeWithText(AppSkin.STARRY_CITY.label).assertIsDisplayed()
+        compose.onNodeWithContentDescription("Skins").performClick().assertIsOn()
+        compose.onNode(isDialog()).assertDoesNotExist()
+        compose.onNodeWithText(AppSkin.STARRY_CITY.label).performClick()
+        skinOption(AppSkin.STARRY_CITY).assertIsSelected()
     }
 
     @Test
-    @Config(qualifiers = "w320dp-h900dp")
+    @Config(qualifiers = "w320dp-h480dp")
     fun skinChoicesRemainSelectableWithLargeTextOnNarrowScreens() {
         val skin = mutableStateOf(AppSkin.CHERRY_BLOSSOM)
         compose.setContent {
@@ -100,12 +134,19 @@ class SettingsUiTest {
             }
         }
         AppSkin.entries.forEach {
-            val option = compose.onNodeWithText(it.label).assertIsDisplayed()
+            compose.onNodeWithText(skin.value.label).assertIsDisplayed().performClick()
+            val option = skinOption(it).performScrollTo().assertIsDisplayed()
             val bounds = option.getUnclippedBoundsInRoot()
             assertTrue(bounds.left >= 0.dp && bounds.right <= 320.dp)
-            option.performClick().assertIsSelected()
+            option.performClick()
+            compose.onNode(isDialog()).assertDoesNotExist()
+            compose.onNodeWithText(it.label).assertIsDisplayed()
+            compose.runOnIdle { assertEquals(it, skin.value) }
         }
     }
+
+    private fun skinOption(skin: AppSkin) =
+        compose.onNode(hasText(skin.label) and hasAnyAncestor(isDialog()))
 
     @Test fun skinPreferencesPersistIndependentlyOfColorThemesAndHandleUnknownValues() {
         val preferences = ApplicationProvider.getApplicationContext<Application>()
@@ -285,11 +326,16 @@ class SettingsUiTest {
             compose.onNodeWithContentDescription("green theme").assertIsSelected()
             compose.onNodeWithText("Dark appearance").assertIsDisplayed()
             compose.onNodeWithContentDescription("Skins").assertIsDisplayed().assertIsOff().performClick()
-            compose.onNodeWithText(AppSkin.STARRY_CITY.label).performScrollTo().performClick().assertIsSelected()
+            compose.onNodeWithText(model.skin.label).performClick()
+            skinOption(AppSkin.STARRY_CITY).performScrollTo().performClick()
+            compose.onNode(isDialog()).assertDoesNotExist()
+            compose.onNodeWithText(AppSkin.STARRY_CITY.label).assertIsDisplayed()
             compose.onNodeWithContentDescription("Skins").performScrollTo().performClick()
             compose.onNodeWithText("Blue Wave").performClick().assertIsSelected()
             compose.onNodeWithContentDescription("Skins").assertIsDisplayed().performClick()
-            compose.onNodeWithText(AppSkin.STARRY_CITY.label).performScrollTo().assertIsSelected()
+            compose.onNodeWithText(AppSkin.STARRY_CITY.label).performScrollTo().performClick()
+            skinOption(AppSkin.STARRY_CITY).assertIsSelected()
+            compose.onNodeWithText("Close").performClick()
             compose.onNodeWithContentDescription("Skins").performScrollTo().performClick()
             compose.onNodeWithContentDescription("green theme").assertDoesNotExist()
             compose.onNodeWithText("Server theme").performClick().assertIsSelected()
