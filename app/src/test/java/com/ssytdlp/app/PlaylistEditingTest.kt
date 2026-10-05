@@ -5,13 +5,17 @@ import android.content.Context
 import android.content.res.Configuration
 import android.os.Looper
 import androidx.activity.ComponentActivity
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.requiredWidth
 import androidx.compose.runtime.MutableState
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.test.*
 import androidx.compose.ui.test.junit4.createAndroidComposeRule
 import androidx.compose.ui.test.junit4.StateRestorationTester
+import androidx.compose.ui.unit.dp
 import androidx.lifecycle.ViewModelStore
 import androidx.lifecycle.viewModelScope
 import androidx.test.core.app.ApplicationProvider
@@ -318,7 +322,10 @@ class PlaylistEditingTest {
             }
             CompositionLocalProvider(LocalConfiguration provides configuration) {
                 MusicTheme {
-                    LibraryScreen(model, PlaybackState(), {}) { _, _ -> }
+                    // Keep dialogs at 320dp for Robolectric #8460, but give the inline panes landscape width.
+                    Box(Modifier.requiredWidth(if (landscape.value) 800.dp else 320.dp)) {
+                        LibraryScreen(model, PlaybackState(), {}) { _, _ -> }
+                    }
                     if (!landscape.value && model.playlistEditTarget == null) LibraryBrowser(model) {}
                     PlaylistEditor(model)
                 }
@@ -329,12 +336,14 @@ class PlaylistEditingTest {
         compose.onNodeWithText("Playlist name").performTextReplacement("Unsaved title")
         compose.onNode(isToggleable()).performClick()
         chooseFolder()
+        compose.onNodeWithTag("library-playlists-pane").assertDoesNotExist()
         compose.runOnIdle { landscape.value = true }
-        compose.onNodeWithTag("library-playlists-pane").assertExists()
+        compose.onNodeWithTag("library-playlists-pane").assertWidthIsEqualTo(280.dp)
         compose.onNodeWithText("Playlist name").assertTextContains("Unsaved title")
         compose.onNode(isToggleable()).assertIsOn()
         compose.onNodeWithText("Collection / Favorites").assertExists()
         compose.runOnIdle { landscape.value = false }
+        compose.onNodeWithTag("library-playlists-pane").assertDoesNotExist()
         compose.onNodeWithText("Playlist name").assertTextContains("Unsaved title")
         compose.onNode(isToggleable()).assertIsOn()
         compose.onNodeWithText("Collection / Favorites").assertExists()
