@@ -15,6 +15,25 @@ import com.ssytdlp.app.core.LibraryEntry
 import com.ssytdlp.app.core.LibraryPlaylist
 
 @Composable
+internal fun PlaylistEditor(model: MusicViewModel) {
+    val target = model.playlistEditTarget ?: return
+    val account by model.sessions.account.collectAsStateWithLifecycle()
+    val entry = model.library.library.entries.find { it.id == target.id && it.type == "playlist" }
+    val playlist = model.library.library.playlists.find { it.id == target.id }
+    if (entry == null || playlist == null || account?.user?.isShared != false ||
+        account?.origin != target.account.origin || account?.user?.id != target.account.user.id ||
+        account?.session != target.account.session) {
+        LaunchedEffect(target) { model.closePlaylistEditor() }
+        return
+    }
+    key(target) {
+        var sharing by rememberSaveable { mutableStateOf(false) }
+        if (sharing) SharePlaylistDialog(model, playlist, model::closePlaylistEditor)
+        else EditPlaylistDialog(model, entry, playlist, model::closePlaylistEditor, { sharing = true })
+    }
+}
+
+@Composable
 internal fun EditPlaylistDialog(model: MusicViewModel, entry: LibraryEntry, playlist: LibraryPlaylist,
     dismiss: () -> Unit, share: () -> Unit) {
     val account by model.sessions.account.collectAsStateWithLifecycle()

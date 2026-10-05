@@ -2,9 +2,13 @@ package com.ssytdlp.app
 
 import android.app.Application
 import android.content.Context
+import android.content.res.Configuration
 import android.os.Looper
 import androidx.activity.ComponentActivity
 import androidx.compose.runtime.MutableState
+import androidx.compose.runtime.CompositionLocalProvider
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.test.*
 import androidx.compose.ui.test.junit4.createAndroidComposeRule
 import androidx.compose.ui.test.junit4.StateRestorationTester
@@ -288,7 +292,10 @@ class PlaylistEditingTest {
             if (request.url.encodedPath == titlePath) 409 to """{"error":"Playlist busy"}""" else null
         }
         val restoration = StateRestorationTester(compose)
-        restoration.setContent { MusicTheme { EntryMenu(model, model.library.library.entries.first()) } }
+        restoration.setContent { MusicTheme {
+            EntryMenu(model, model.library.library.entries.first())
+            PlaylistEditor(model)
+        } }
         contentSet = true
         openEdit()
         compose.onNodeWithText("Playlist name").performTextReplacement("Unsaved title")
@@ -299,6 +306,41 @@ class PlaylistEditingTest {
         compose.onNodeWithText("Collection / Favorites").assertExists()
         compose.onNodeWithText("Unable to save all playlist changes: Playlist busy").assertExists()
         compose.onNodeWithText("Save changes").assertIsEnabled()
+    }
+
+    @Config(qualifiers = "w320dp-h800dp")
+    @Test fun editorSurvivesSwitchingBetweenModalAndInlineLibraryBrowsers() {
+        startModel()
+        val landscape = mutableStateOf(false)
+        compose.setContent {
+            val configuration = Configuration(LocalConfiguration.current).apply {
+                orientation = if (landscape.value) Configuration.ORIENTATION_LANDSCAPE else Configuration.ORIENTATION_PORTRAIT
+            }
+            CompositionLocalProvider(LocalConfiguration provides configuration) {
+                MusicTheme {
+                    LibraryScreen(model, PlaybackState(), {}) { _, _ -> }
+                    if (!landscape.value && model.playlistEditTarget == null) LibraryBrowser(model) {}
+                    PlaylistEditor(model)
+                }
+            }
+        }
+        contentSet = true
+        openEdit()
+        compose.onNodeWithText("Playlist name").performTextReplacement("Unsaved title")
+        compose.onNode(isToggleable()).performClick()
+        chooseFolder()
+        compose.runOnIdle { landscape.value = true }
+        compose.onNodeWithTag("library-playlists-pane").assertExists()
+        compose.onNodeWithText("Playlist name").assertTextContains("Unsaved title")
+        compose.onNode(isToggleable()).assertIsOn()
+        compose.onNodeWithText("Collection / Favorites").assertExists()
+        compose.runOnIdle { landscape.value = false }
+        compose.onNodeWithText("Playlist name").assertTextContains("Unsaved title")
+        compose.onNode(isToggleable()).assertIsOn()
+        compose.onNodeWithText("Collection / Favorites").assertExists()
+        compose.onNodeWithText("Cancel").performClick()
+        assertNull(model.playlistEditTarget)
+        assertTrue(requests.isEmpty())
     }
 
     @Config(qualifiers = "w320dp-h800dp")
@@ -442,6 +484,7 @@ class PlaylistEditingTest {
         if (!contentSet) {
             compose.setContent { MusicTheme {
                 EntryMenu(model, model.library.library.entries.first { it.id == entry.id })
+                PlaylistEditor(model)
             } }
             contentSet = true
         }
@@ -456,7 +499,7 @@ class PlaylistEditingTest {
     }
 
     private fun chooseFolder() {
-        compose.onNodeWithText("Library").performScrollTo().performClick()
+        compose.onNode(hasText("Library") and hasClickAction()).performScrollTo().performClick()
         compose.onNodeWithText("Collection / Favorites").performScrollTo().performClick()
     }
 

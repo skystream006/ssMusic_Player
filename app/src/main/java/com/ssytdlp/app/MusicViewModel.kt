@@ -104,6 +104,7 @@ internal fun Track.withReplacedFile(file: Track): Track = when {
 }
 
 internal data class PlaylistSaveResult(val id: String, val error: String? = null)
+internal data class PlaylistEditTarget(val id: String, val account: Account)
 
 class MusicViewModel @JvmOverloads constructor(application: Application, private val connectPlayback: Boolean = true) : AndroidViewModel(application) {
     private val app = application as MusicApplication
@@ -147,6 +148,8 @@ class MusicViewModel @JvmOverloads constructor(application: Application, private
         private set
     internal var playlistSaveResult by mutableStateOf<PlaylistSaveResult?>(null)
         private set
+    internal var playlistEditTarget by mutableStateOf<PlaylistEditTarget?>(null)
+        private set
     private var playlistReloadRequired = false
     var signingIn by mutableStateOf(false)
         private set
@@ -169,6 +172,7 @@ class MusicViewModel @JvmOverloads constructor(application: Application, private
                 account?.let { Triple(it.origin, it.user.id, it.session) }
             }.collectLatest { account ->
                 playlistSaveResult = null
+                playlistEditTarget = null
                 playlistReloadRequired = false
                 if (account == null) {
                     operation?.cancel()
@@ -479,7 +483,14 @@ class MusicViewModel @JvmOverloads constructor(application: Application, private
         }
     }
 
-    internal fun clearPlaylistSaveResult() { playlistSaveResult = null }
+    internal fun openPlaylistEditor(id: String) {
+        val account = sessions.account.value ?: return
+        if (busy || account.user.isShared) return
+        playlistSaveResult = null
+        playlistEditTarget = PlaylistEditTarget(id, account)
+    }
+
+    internal fun closePlaylistEditor() { playlistEditTarget = null }
 
     fun savePlaylist(id: String, title: String, isPrivate: Boolean, parentId: String?,
         onSuccess: () -> Unit = {}, onError: (String) -> Unit = {}, move: Boolean = false) = launchAction {
