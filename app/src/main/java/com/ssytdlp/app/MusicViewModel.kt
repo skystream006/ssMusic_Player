@@ -32,7 +32,8 @@ data class LibraryState(
     val transcriptionLocks: Map<String, Boolean> = emptyMap(),
     val artworkUrls: Map<String, String?> = emptyMap(),
     val filePrivacy: Map<String, Boolean> = emptyMap(),
-    val privacyJobs: Map<String, Job> = emptyMap()
+    val privacyJobs: Map<String, Job> = emptyMap(),
+    private val privacyFileJobs: Map<String, Job> = emptyMap()
 ) {
     fun withLibrary(result: Library): LibraryState = copy(
         library = result, selectedId = selectedId?.takeIf { id -> result.entries.any { it.id == id } },
@@ -44,10 +45,23 @@ data class LibraryState(
     fun privacy(track: Track, job: Job? = privacyJob(track)): FilePrivacy =
         track.copy(isPrivate = filePrivacy[track.key] ?: track.isPrivate).privacy(job)
 
-    fun withPrivacyFiles(files: List<Track>): LibraryState {
-        val all = files.flatMap { listOfNotNull(it, it.noVocalsVersion) }
+    fun withPrivacyFiles(files: List<Track>, job: Job? = null): LibraryState {
+        val all = files.flatMap { file ->
+            val track = if (job == null) file else file.copy(jobId = job.id, sourceJob = job)
+            listOfNotNull(track, track.noVocalsVersion?.copy(jobId = track.jobId, sourceJob = track.sourceJob))
+        }
+        val sources = all.mapNotNull { it.sourceJob }.associateBy { it.id }
         return copy(filePrivacy = filePrivacy + all.associate { it.key to it.isPrivate },
-            privacyJobs = privacyJobs + all.mapNotNull { it.sourceJob }.associateBy { it.id })
+            privacyJobs = privacyJobs + sources,
+            privacyFileJobs = privacyFileJobs + all.mapNotNull { track -> track.sourceJob?.let { track.key to it } })
+    }
+
+    fun needsPrivacyRefresh(job: Job, tracks: List<Track>): Boolean {
+        return job.privateFiles != null && tracks.any { track ->
+            val known = privacyFileJobs[track.key]
+            track.key !in filePrivacy || known?.updatedAt != job.updatedAt ||
+                known?.isPrivate != job.isPrivate || known?.privateFiles != job.privateFiles
+        }
     }
 
     fun transcription(track: Track): Transcription? = pendingTranscriptions[track.key]
@@ -309,8 +323,12 @@ class MusicViewModel @JvmOverloads constructor(application: Application, private
                 if (sessions.account.value != account || generation != transcriptionGeneration) return@withLock
                 runAction {
                     val job = ApiJson.decodeFromJsonElement<Job>(api.request("/api/jobs/${encode(jobId)}"))
+                    val privacyFiles = if (library.needsPrivacyRefresh(job, tracks)) {
+                        ApiJson.decodeFromJsonElement<TrackPage>(api.request("/api/jobs/${encode(jobId)}/files"))
+                    } else null
                     if (sessions.account.value == account && generation == transcriptionGeneration) {
                         library = library.withTranscriptions(job, tracks)
+                        if (privacyFiles != null) library = library.withPrivacyFiles(privacyFiles.files, job)
                     }
                 }
             }
@@ -425,7 +443,11 @@ class MusicViewModel @JvmOverloads constructor(application: Application, private
         refreshPrivacyFiles(updated)
         loadLibrary()
         refreshTracks()
-        message(if (value) "Song is private. Only the owner can access it." else "Song is no longer private.")
+        message(when {
+            value -> "Song is private. Only the owner can access it."
+            songPrivacy(track).isPrivate -> "Song remains private because it inherits source privacy."
+            else -> "Song is no longer private."
+        })
     }
 
     fun setPlaylistPrivate(playlist: LibraryPlaylist, value: Boolean) = launchAction {
@@ -450,10 +472,7 @@ class MusicViewModel @JvmOverloads constructor(application: Application, private
         val result = ApiJson.decodeFromJsonElement<TrackPage>(api.request("/api/jobs/${encode(job.id)}/files"))
         transcriptionGeneration++
         trackRequest?.cancel()
-        library = library.withPrivacyFiles(result.files.map { file ->
-            file.copy(jobId = job.id, sourceJob = job,
-                noVocalsVersion = file.noVocalsVersion?.copy(jobId = job.id, sourceJob = job))
-        })
+        library = library.withPrivacyFiles(result.files, job)
     }
 
     private fun mutate(path: String, body: JsonObject, onSuccess: (JsonElement) -> Unit = {}) = launchAction {

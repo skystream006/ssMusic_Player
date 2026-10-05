@@ -1,8 +1,10 @@
 package com.ssytdlp.app
 
 import com.ssytdlp.app.core.Job
+import com.ssytdlp.app.core.FilePrivacy
 import com.ssytdlp.app.core.Library
 import com.ssytdlp.app.core.LibraryEntry
+import com.ssytdlp.app.core.LibraryPlaylist
 import com.ssytdlp.app.core.Track
 import com.ssytdlp.app.core.TrackPage
 import com.ssytdlp.app.core.Transcription
@@ -161,5 +163,105 @@ class LibraryStateTest {
         assertEquals(original.streamUrl, updated.streamUrl)
         assertEquals(replacement, updated.noVocalsVersion)
         assertEquals(replacement, companion.withReplacedFile(replacement))
+    }
+
+    @Test fun `privacy refresh overrides stale queued snapshots across pages and source jobs`() {
+        val privateJob = Job(track.jobId, privateFiles = listOf(track.name))
+        val queued = track.copy(isPrivate = true, sourceJob = privateJob)
+        val publicJob = privateJob.copy(privateFiles = emptyList())
+        val refreshed = LibraryState().withTrackPage(TrackPage(files = listOf(
+            track.copy(sourceJob = publicJob))))
+        val other = track.copy(jobId = "other", isPrivate = true,
+            sourceJob = Job("other", privateFiles = listOf(track.name)))
+        val nextPage = refreshed.withTrackPage(TrackPage(files = listOf(other), page = 2))
+            .withLibrary(Library(version = 9))
+
+        assertEquals(false, nextPage.filePrivacy[queued.key])
+        assertEquals(publicJob, nextPage.privacyJob(queued))
+        assertEquals(FilePrivacy(false, false), nextPage.privacy(queued))
+        assertEquals(FilePrivacy(true, false), nextPage.privacy(other))
+        assertEquals(2, nextPage.page)
+        assertEquals(9L, nextPage.library.version)
+    }
+
+    @Test fun `catalog refresh cannot confirm stale queued file privacy from an older job version`() {
+        val privateJob = Job(track.jobId, isPrivate = true, privateFiles = emptyList(), updatedAt = "v1")
+        val queued = track.copy(isPrivate = true, sourceJob = privateJob)
+        val confirmed = LibraryState().withTrackPage(TrackPage(files = listOf(queued)))
+        assertFalse(confirmed.needsPrivacyRefresh(privateJob, listOf(queued)))
+
+        val publicJob = privateJob.copy(isPrivate = false, updatedAt = "v2")
+        val catalogRefresh = confirmed.withLibrary(Library(jobs = listOf(publicJob)))
+        assertEquals(publicJob, catalogRefresh.privacyJob(queued))
+        assertEquals(true, catalogRefresh.filePrivacy[queued.key])
+        assertTrue(catalogRefresh.needsPrivacyRefresh(publicJob, listOf(queued)))
+
+        val other = track.copy(name = "other.mp3", sourceJob = publicJob)
+        val otherPage = catalogRefresh.withTrackPage(TrackPage(files = listOf(other), page = 2))
+        assertEquals(true, otherPage.filePrivacy[queued.key])
+        assertEquals(false, otherPage.filePrivacy[other.key])
+        assertTrue(otherPage.needsPrivacyRefresh(publicJob, listOf(queued)))
+        assertTrue(otherPage.needsPrivacyRefresh(publicJob, listOf(queued, other)))
+        assertFalse(otherPage.needsPrivacyRefresh(publicJob, listOf(other)))
+
+        val filesRefresh = otherPage.withPrivacyFiles(listOf(Track(name = track.name)), publicJob)
+        assertEquals(false, filesRefresh.filePrivacy[queued.key])
+        assertEquals(FilePrivacy(false, false), filesRefresh.privacy(queued))
+        assertFalse(filesRefresh.needsPrivacyRefresh(publicJob, listOf(queued, other)))
+    }
+
+    @Test fun `privacy files refresh no vocals references without replacing the visible page`() {
+        val job = Job(track.jobId, privateFiles = listOf(track.name))
+        val companion = track.copy(name = "[NoVocals]/folder/song.mp3", isPrivate = true, sourceJob = job)
+        val original = track.copy(isPrivate = true, sourceJob = job, noVocalsVersion = companion)
+        val state = LibraryState(selectedId = "playlist", search = "other", page = 2,
+            tracks = TrackPage(files = listOf(Track("other", "other.mp3")), page = 2))
+        val privateState = state.withPrivacyFiles(listOf(original))
+        assertEquals(FilePrivacy(true, false), privateState.privacy(track))
+        assertEquals(FilePrivacy(true, true), privateState.privacy(companion.copy(isPrivate = false)))
+        assertEquals(true, privateState.filePrivacy[companion.key])
+
+        val publicJob = job.copy(privateFiles = emptyList())
+        val publicState = privateState.withPrivacyFiles(listOf(
+            original.copy(isPrivate = false, sourceJob = publicJob,
+                noVocalsVersion = companion.copy(isPrivate = false, sourceJob = publicJob))))
+        assertEquals(FilePrivacy(false, false), publicState.privacy(original))
+        assertEquals(FilePrivacy(false, false), publicState.privacy(companion))
+        assertEquals(false, publicState.filePrivacy[companion.key])
+        assertEquals(publicJob, publicState.privacyJobs[track.jobId])
+        assertEquals(state.tracks, publicState.tracks)
+        assertEquals(state.selectedId, publicState.selectedId)
+        assertEquals(state.search, publicState.search)
+        assertEquals(state.page, publicState.page)
+    }
+
+    @Test fun `source playlist privacy is inherited while explicit songs remain private after public refresh`() {
+        val explicit = track.copy(name = "explicit.mp3")
+        val privateJob = Job(track.jobId, isPrivate = true, privateFiles = listOf(explicit.name))
+        val state = LibraryState().withLibrary(Library(jobs = listOf(privateJob)))
+        assertEquals(FilePrivacy(true, true), state.privacy(track))
+        assertEquals(FilePrivacy(true, true), state.privacy(explicit))
+
+        val publicJob = privateJob.copy(isPrivate = false)
+        val refreshed = state.withLibrary(Library(jobs = listOf(publicJob))).withTrackPage(
+            TrackPage(files = listOf(track.copy(sourceJob = publicJob),
+                explicit.copy(isPrivate = true, sourceJob = publicJob))))
+        assertEquals(publicJob, refreshed.privacyJob(track.copy(sourceJob = privateJob)))
+        assertEquals(FilePrivacy(false, false), refreshed.privacy(track.copy(isPrivate = true)))
+        assertEquals(FilePrivacy(true, false), refreshed.privacy(explicit))
+    }
+
+    @Test fun `synthetic playlist privacy does not make its linked songs private`() {
+        val job = Job(track.jobId, privateFiles = emptyList())
+        val linked = track.copy(playlistId = "synthetic", sourceJob = job)
+        val state = LibraryState().withTrackPage(TrackPage(files = listOf(linked)))
+            .withLibrary(Library(
+                entries = listOf(LibraryEntry("synthetic", "playlist", protected = true, isPrivate = true)),
+                playlists = listOf(LibraryPlaylist("synthetic", isPrivate = true)),
+                jobs = listOf(job)))
+        assertTrue(state.library.playlists.single().isPrivate)
+        assertEquals(FilePrivacy(false, false), state.privacy(linked))
+        assertEquals(false, state.filePrivacy[linked.key])
+        assertEquals(job, state.privacyJobs[track.jobId])
     }
 }

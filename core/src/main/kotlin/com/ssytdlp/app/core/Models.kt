@@ -106,16 +106,32 @@ private fun ownsMedia(user: User?, owner: User?) =
 data class FilePrivacy(val isPrivate: Boolean, val inherited: Boolean)
 
 fun Track.privacy(job: Job? = sourceJob): FilePrivacy {
-    val inherited = job?.isPrivate == true ||
+    val inherited = job?.isPrivate == true || job?.inheritsCompanionPrivacy(name) == true ||
         (isPrivate && job?.privateFiles != null && name !in job.privateFiles)
     return FilePrivacy(inherited || isPrivate || job?.privateFiles?.contains(name) == true, inherited)
 }
+
+private fun Job.inheritsCompanionPrivacy(name: String): Boolean {
+    if (!name.lowercase().startsWith("[novocals]/")) return false
+    val stem = songStem(name)
+    return privateFiles?.any { original ->
+        original != name &&
+            (transcriptions[original]?.noVocalsName == name || songStem(original) == stem)
+    } == true
+}
+
+private val songExtension = Regex("""\.[^.]+$""")
+private val noVocalsMarker = Regex(
+    """(?:\[no[ _-]?vocals\]|[ _-]+no[ _-]?vocals)""", RegexOption.IGNORE_CASE)
+
+private fun songStem(name: String) = name.substringAfterLast('/')
+    .replace(songExtension, "").replace(noVocalsMarker, "").trim().lowercase()
 
 @Serializable
 data class Transcription(
     val status: String = "", val requestedAt: String? = null, val completedAt: String? = null,
     val lyricsIncluded: Boolean = false, val options: SavedTranscriptionOptions? = null,
-    val error: String? = null
+    val error: String? = null, val noVocalsName: String? = null
 )
 
 @Serializable

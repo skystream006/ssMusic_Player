@@ -189,7 +189,7 @@ class PrivacyTest {
         assertEquals(FilePrivacy(true, false), track.copy(isPrivate = true).privacy(null))
     }
 
-    @Test fun `companions inherit server privacy unless their own exact filename is explicitly private`() {
+    @Test fun `companions inherit originals even when their own filename is explicitly private`() {
         val track = ApiJson.decodeFromString<Track>("""{
             "name":"song.mp3","private":true,
             "sourceJob":{"id":"source","private":false,"privateFiles":["song.mp3"]},
@@ -200,14 +200,94 @@ class PrivacyTest {
 
         assertEquals(FilePrivacy(true, false), track.privacy())
         assertEquals(FilePrivacy(true, true), companion.privacy(job))
-        assertEquals(FilePrivacy(false, false), companion.copy(isPrivate = false).privacy(job))
+        assertEquals(FilePrivacy(true, true), companion.copy(isPrivate = false).privacy(job))
         val explicitCompanion = job.copy(privateFiles = listOf(track.name, companion.name))
-        assertEquals(FilePrivacy(true, false), companion.privacy(explicitCompanion))
-        assertEquals(FilePrivacy(true, false),
+        assertEquals(FilePrivacy(true, true), companion.privacy(explicitCompanion))
+        assertEquals(FilePrivacy(true, true),
             companion.copy(isPrivate = false).privacy(explicitCompanion))
         assertEquals(FilePrivacy(true, true),
             companion.privacy(explicitCompanion.copy(isPrivate = true)))
+        val companionOnly = job.copy(privateFiles = listOf(companion.name))
+        assertEquals(FilePrivacy(true, false), companion.privacy(companionOnly))
+        assertEquals(FilePrivacy(true, false),
+            companion.copy(isPrivate = false).privacy(companionOnly))
+        assertEquals(FilePrivacy(false, false), track.copy(isPrivate = false).privacy(companionOnly))
         assertPrivateRoundTrip(track, true)
+    }
+
+    @Test fun `named transcription mappings preserve inheritance for renamed explicit companions`() {
+        val companion = ApiJson.decodeFromString<Track>("""{
+            "name":"[NoVocals]/Renamed mix.flac","private":true,
+            "sourceJob":{"id":"source","private":false,
+                "privateFiles":["Original.mp3","[NoVocals]/Renamed mix.flac"],
+                "transcriptions":{"Original.mp3":{"noVocalsName":"[NoVocals]/Renamed mix.flac"}}}
+        }""")
+        val job = companion.sourceJob!!
+
+        assertEquals(companion.name, job.transcriptions.getValue("Original.mp3").noVocalsName)
+        assertEquals(FilePrivacy(true, true), companion.privacy())
+        assertEquals(FilePrivacy(true, true), companion.copy(isPrivate = false).privacy())
+        assertEquals(FilePrivacy(true, true),
+            companion.copy(isPrivate = false).privacy(job.copy(privateFiles = listOf("Original.mp3"))))
+        assertEquals(FilePrivacy(true, false),
+            companion.privacy(job.copy(privateFiles = listOf(companion.name))))
+        assertEquals(FilePrivacy(true, false), companion.privacy(job.copy(transcriptions = emptyMap())))
+        assertEquals(FilePrivacy(true, false), companion.privacy(job.copy(transcriptions = mapOf(
+            "Original.mp3" to Transcription(noVocalsName = companion.name.lowercase())))))
+        assertPrivateRoundTrip(companion, true)
+    }
+
+    @Test fun `legacy transcription mappings remain nullable`() {
+        assertNull(ApiJson.decodeFromString<Transcription>("{}").noVocalsName)
+        assertNull(ApiJson.decodeFromString<Transcription>("""{"noVocalsName":null}""").noVocalsName)
+        val record = Transcription(noVocalsName = "[NoVocals]/Renamed mix.flac")
+        assertEquals(record, ApiJson.decodeFromString<Transcription>(ApiJson.encodeToString(record)))
+    }
+
+    @Test fun `companion inheritance matches normalized server stems independently of explicit flags`() {
+        val names = listOf(
+            "Albums/Song.mp3" to "[NoVocals]/song.flac",
+            "Albums/Song no vocals.mp3" to "[NOVOCALS]/Song.flac",
+            "Albums/Song_NoVocals.MP3" to "[novocals]/Song.flac",
+            "Albums/Song-no_vocals.mp3" to "[NoVoCaLs]/song.flac",
+            "Albums/[No-Vocals] Song [no_vocals].mp3" to "[NoVocals]/ Song .flac",
+            "Albums/Song.live.mp3" to "[NoVocals]/Song.live.wav",
+            "Albums/SONG.mp3" to "[NoVocals]/folder/Song_no-vocals.flac",
+            "[NoVocals]/Song.mp3" to "[NoVocals]/Song.flac"
+        )
+        names.forEach { (original, name) ->
+            listOf(listOf(original), listOf(original, name)).forEach { files ->
+                listOf(false, true).forEach { privateFlag ->
+                    val track = Track(name = name, isPrivate = privateFlag,
+                        sourceJob = Job("source", privateFiles = files))
+                    assertEquals("original=$original name=$name private=$privateFlag files=$files",
+                        FilePrivacy(true, true), track.privacy())
+                }
+            }
+        }
+    }
+
+    @Test fun `stem inheritance only applies to NoVocals prefix and matching whole stems`() {
+        val names = listOf("Song.flac", "folder/[NoVocals]/Song.flac",
+            "[No Vocals]/Song.flac", "[NoVocals]Song.flac", "[NoVocals]/Song.live.flac")
+        names.forEach { name ->
+            val job = Job("source", privateFiles = listOf("Song.mp3"))
+            val track = Track(name = name, sourceJob = job)
+            assertEquals(name, FilePrivacy(false, false), track.privacy())
+            assertEquals(name, FilePrivacy(true, false),
+                track.privacy(job.copy(privateFiles = listOf("Song.mp3", name))))
+        }
+    }
+
+    @Test fun `unmapped companion aliases retain the server flag fallback and absent array behavior`() {
+        val alias = Track(name = "[NoVocals]/Renamed mix.flac", isPrivate = true)
+        val job = Job("source", privateFiles = listOf("Original.mp3"))
+        assertEquals(FilePrivacy(true, true), alias.privacy(job))
+        assertEquals(FilePrivacy(true, true), alias.privacy(job.copy(privateFiles = emptyList())))
+        assertEquals(FilePrivacy(true, false), alias.privacy(job.copy(privateFiles = null)))
+        assertEquals(FilePrivacy(false, false), alias.copy(isPrivate = false).privacy(job))
+        assertEquals(FilePrivacy(true, false),
+            alias.privacy(job.copy(privateFiles = listOf("Original.mp3", alias.name))))
     }
 
     private data class PrivacyCase(
