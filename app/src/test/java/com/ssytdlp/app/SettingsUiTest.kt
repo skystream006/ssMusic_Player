@@ -433,8 +433,22 @@ class SettingsUiTest {
             ).forEach { action ->
                 val bounds = action.performScrollTo().assertIsDisplayed().getUnclippedBoundsInRoot()
                 assertTrue(bounds.left >= right.left && bounds.right <= right.right)
+                action.assertHasClickAction()
             }
-            compose.onNodeWithContentDescription("Backup schedule").performClick()
+        }
+    }
+
+    @Test
+    // Robolectric #8460: text fields in dialogs loop at widths above the default 320dp.
+    @Config(qualifiers = "w320dp-h800dp")
+    fun backupScheduleCanBeOpenedAndCancelledWithoutChangingBackupFormat() {
+        withSettingsModel { model ->
+            setPermissions(notifications = true, unrestrictedBattery = true)
+            showSettings(model, fontScale = 1.5f)
+            compose.onNodeWithText("Library backup").performScrollTo().performClick()
+            compose.onNodeWithText("iTunes").performScrollTo().performClick().assertIsSelected()
+            compose.onNodeWithContentDescription("Backup schedule").performScrollTo().assertIsDisplayed()
+                .assertIsEnabled().performClick()
             compose.onNodeWithText("Backup schedule").assertIsDisplayed()
             compose.onNodeWithText("Cancel").performClick()
             compose.onNodeWithText("iTunes").performScrollTo().assertIsSelected()

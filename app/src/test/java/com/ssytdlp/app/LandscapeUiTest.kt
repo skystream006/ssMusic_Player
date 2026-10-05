@@ -7,6 +7,7 @@ import androidx.activity.ComponentActivity
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.width
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.MutableState
 import androidx.compose.runtime.mutableStateOf
@@ -145,6 +146,8 @@ class LandscapeUiTest {
         compose.onNodeWithText("Second song").assertIsDisplayed().assertHasClickAction()
         compose.onNodeWithContentDescription("Play").assertIsDisplayed()
         compose.onNodeWithContentDescription("Playback position").assertIsDisplayed()
+        compose.onNodeWithText("0:00").assertIsDisplayed()
+        compose.onNodeWithText("1:00").assertIsDisplayed()
         compose.onNodeWithText("USLT Lyrics").performClick().assertIsSelected()
         compose.onNodeWithText("Landscape lyrics").assertIsDisplayed()
         compose.onNodeWithText("Second song").assertIsDisplayed()
@@ -158,6 +161,20 @@ class LandscapeUiTest {
         compose.onNodeWithText("Choose a song from Library to start playing.").assertIsDisplayed()
         compose.onNodeWithText("Your queue is empty.").assertIsDisplayed()
         compose.onNodeWithContentDescription("Play").assertDoesNotExist()
+    }
+
+    @Test fun narrowCompactTransportKeepsTheSeekSliderVisible() {
+        compose.setContent {
+            MusicTheme {
+                Box(Modifier.width(320.dp)) {
+                    PlayerTransport(playback, {}, {}, {}, {}, {}, {}, compact = true)
+                }
+            }
+        }
+        compose.onNodeWithContentDescription("Playback position").assertIsDisplayed().assertWidthIsAtLeast(1.dp)
+        compose.onNodeWithContentDescription("Play").assertIsDisplayed()
+        compose.onNodeWithText("0:00").assertIsDisplayed()
+        compose.onNodeWithText("1:00").assertIsDisplayed()
     }
 
     @Test
