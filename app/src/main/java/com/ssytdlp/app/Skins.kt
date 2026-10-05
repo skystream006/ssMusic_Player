@@ -21,8 +21,7 @@ enum class AppSkin(val label: String, val description: String, @DrawableRes val 
     OCEAN_MOONLIGHT("Ocean Moonlight", "A bright moon reflected on the ocean horizon", R.drawable.skin_ocean_moonlight),
     GALAXY("Galaxy", "Three distant galaxies surrounded by stars", R.drawable.skin_galaxy),
     TROPICAL("Tropical", "A coconut palm overlooking a beach sunset", R.drawable.skin_tropical),
-    MECHANICS("Mechanics", "Interlocking gears and intricate metal mechanisms", R.drawable.skin_mechanics),
-    CARS("Cars", "A dark, angular supercar under cool night lights", R.drawable.skin_cars);
+    MECHANICS("Mechanics", "Interlocking gears and intricate metal mechanisms", R.drawable.skin_mechanics);
 
     companion object {
         fun fromPreference(value: String?): AppSkin = entries.find { it.name == value } ?: CHERRY_BLOSSOM
