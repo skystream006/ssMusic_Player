@@ -5,6 +5,19 @@ import org.junit.Assert.*
 import org.junit.Test
 
 class ModelsTest {
+    @Test fun `playlist renaming permits owners and admins but not contributors or shared users`() {
+        val playlist = LibraryPlaylist("playlist", initiatedBy = User("owner"),
+            contributors = listOf(User("contributor")))
+        listOf(User("owner"), User("admin", role = "admin")).forEach {
+            assertTrue(playlist.canRename(it))
+        }
+        listOf(null, User(""), User(" "), User("other"), User("contributor"),
+            User("owner", role = "shared"), User("admin", role = "SHARED")).forEach {
+            assertFalse(playlist.canRename(it))
+        }
+        assertFalse(playlist.canChangePrivacy(User("admin", role = "admin")))
+    }
+
     @Test fun `playlist sharing reads contributors and permits owners contributors and admins only`() {
         val playlist = ApiJson.decodeFromString<LibraryPlaylist>("""{
             "id":"playlist","jobId":"source","initiatedBy":{"id":"owner"},

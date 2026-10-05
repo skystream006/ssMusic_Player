@@ -103,6 +103,9 @@ internal fun Track.withReplacedFile(file: Track): Track = when {
     else -> this
 }
 
+internal data class PlaylistSaveResult(val id: String, val error: String? = null)
+internal data class PlaylistEditTarget(val id: String, val account: Account)
+
 class MusicViewModel @JvmOverloads constructor(application: Application, private val connectPlayback: Boolean = true) : AndroidViewModel(application) {
     private val app = application as MusicApplication
     val sessions = app.sessions
@@ -143,6 +146,11 @@ class MusicViewModel @JvmOverloads constructor(application: Application, private
         private set
     var busy by mutableStateOf(false)
         private set
+    internal var playlistSaveResult by mutableStateOf<PlaylistSaveResult?>(null)
+        private set
+    internal var playlistEditTarget by mutableStateOf<PlaylistEditTarget?>(null)
+        private set
+    private var playlistReloadRequired = false
     var signingIn by mutableStateOf(false)
         private set
     var backup by mutableStateOf<JsonObject?>(null)
@@ -163,6 +171,9 @@ class MusicViewModel @JvmOverloads constructor(application: Application, private
             sessions.account.distinctUntilChangedBy { account ->
                 account?.let { Triple(it.origin, it.user.id, it.session) }
             }.collectLatest { account ->
+                playlistSaveResult = null
+                playlistEditTarget = null
+                playlistReloadRequired = false
                 if (account == null) {
                     operation?.cancel()
                     trackRequest?.cancel()
@@ -455,17 +466,94 @@ class MusicViewModel @JvmOverloads constructor(application: Application, private
         require(current?.canChangePrivacy(sessions.account.value?.user) == true && !current.active) {
             "Only the owner of an idle playlist can change its privacy."
         }
+        updatePlaylistPrivacy(current, value)
+        refreshTracks()
+        message(if (value) "Playlist is private. Only the owner can access it." else "Playlist is no longer private.")
+    }
+
+    private suspend fun updatePlaylistPrivacy(playlist: LibraryPlaylist, value: Boolean) {
         transcriptionGeneration++
         trackRequest?.cancel()
         val updated = ApiJson.decodeFromJsonElement<Library>(api.request(
-            "/api/library/playlists/${encode(current.id)}/privacy", "PATCH", json("private" to value)))
+            "/api/library/playlists/${encode(playlist.id)}/privacy", "PATCH", json("private" to value)))
         library = library.withLibrary(updated)
-        updated.jobs.find { it.id == current.jobId }?.let { job ->
+        updated.jobs.find { it.id == playlist.jobId }?.let { job ->
             jobs = jobs.map { if (it.id == job.id) job else it }
             refreshPrivacyFiles(job)
         }
-        refreshTracks()
-        message(if (value) "Playlist is private. Only the owner can access it." else "Playlist is no longer private.")
+    }
+
+    internal fun openPlaylistEditor(id: String) {
+        val account = sessions.account.value ?: return
+        if (busy || account.user.isShared) return
+        playlistSaveResult = null
+        playlistEditTarget = PlaylistEditTarget(id, account)
+    }
+
+    internal fun closePlaylistEditor() { playlistEditTarget = null }
+
+    fun savePlaylist(id: String, title: String, isPrivate: Boolean, parentId: String?,
+        onSuccess: () -> Unit = {}, onError: (String) -> Unit = {}, move: Boolean = false) = launchAction {
+        val account = sessions.account.value
+        playlistSaveResult = null
+        try {
+            val user = account?.user
+            require(user != null && !user.isShared && user.id.isNotBlank()) { "This library is read-only." }
+            if (playlistReloadRequired) {
+                loadLibrary()
+                require(sessions.account.value == account) { "Account changed. Reopen the playlist editor." }
+                playlistReloadRequired = false
+            }
+            val entry = library.library.entries.find { it.id == id && it.type == "playlist" }
+            val playlist = library.library.playlists.find { it.id == id }
+            require(entry != null && playlist != null) { "Playlist not found." }
+            require(!playlist.active) { "Wait for the playlist's active job to finish." }
+            if (!entry.protected && playlist.canRename(user)) {
+                val name = title.trim()
+                require(name.length in 1..200 && name.none { it < ' ' || it == '\u007f' }) {
+                    "Playlist title must be between 1 and 200 characters without control characters."
+                }
+                if (name != playlist.playlistTitle) {
+                    val job = ApiJson.decodeFromJsonElement<Job>(api.request(
+                        "/api/jobs/${encode(playlist.jobId ?: id)}/title", "PATCH", json("playlistTitle" to name)))
+                    jobs = jobs.map { if (it.id == job.id) job else it }
+                }
+            }
+            if (playlist.canChangePrivacy(user) && isPrivate != playlist.isPrivate) {
+                updatePlaylistPrivacy(playlist, isPrivate)
+            }
+            loadLibrary()
+            require(sessions.account.value == account) { "Account changed. Reopen the playlist editor." }
+            val current = library.library.entries.find { it.id == id && it.type == "playlist" }
+            require(current != null) { "Playlist not found." }
+            if (move && parentId != current.parentId) {
+                require(parentId == null || library.library.entries.any { it.id == parentId && it.type == "folder" }) {
+                    "Destination folder not found."
+                }
+                val moved = ApiJson.decodeFromJsonElement<Library>(api.request("/api/library/entries", "POST", json(
+                    "version" to library.library.version, "action" to "move", "id" to id,
+                    "parentId" to parentId, "targetId" to null, "after" to false)))
+                library = library.withLibrary(library.library.copy(version = moved.version, entries = moved.entries))
+            }
+            refreshTracks()
+            playlistSaveResult = PlaylistSaveResult(id)
+            onSuccess()
+        } catch (failure: Exception) {
+            if (failure is CancellationException) throw failure
+            // Separate server mutations can partially succeed. Reload before allowing a retry.
+            if (sessions.account.value == account) {
+                playlistReloadRequired = true
+                try {
+                    loadLibrary()
+                    if (sessions.account.value == account) playlistReloadRequired = false
+                    refreshTracks()
+                }
+                catch (refreshFailure: Exception) { if (refreshFailure is CancellationException) throw refreshFailure }
+            }
+            val error = "Unable to save all playlist changes: ${failure.message ?: "Unable to contact the server."}"
+            if (sessions.account.value == account) playlistSaveResult = PlaylistSaveResult(id, error)
+            onError(error)
+        }
     }
 
     private suspend fun refreshPrivacyFiles(job: Job) {
