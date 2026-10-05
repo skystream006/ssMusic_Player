@@ -424,6 +424,22 @@ Native UI tests render login, library, and player previews into
 at 150% text size, and check visible artwork, text, and control bounds. The previews
 use sample track metadata, not account data.
 
+## Song and Playlist Privacy
+
+Owners can choose **Make song private** / **Make song public** from song options
+in Library, Now Playing, or the mini-player. Playlist options in the library
+browser provide **Make playlist private** / **Make playlist public**, including
+Individual Songs and Individual Videos. Contributors, shared accounts, and other
+administrators cannot change privacy.
+
+Private source playlists restrict their songs too; inherited privacy must be
+changed on the source playlist or original song. Making a playlist public again
+does not clear individually private songs. The Individual Songs/Videos setting
+only hides that library playlist, not its source files. Private songs cannot
+generate public share links, and existing links stop working while the source is
+private. Previously downloaded copies cannot be recalled. Requires a server with
+privacy support (ssMusic_Server PR #21).
+
 ## Permissions and Background Playback
 
 | Permission | Purpose |
