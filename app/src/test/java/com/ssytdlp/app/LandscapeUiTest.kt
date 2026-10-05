@@ -45,6 +45,7 @@ import org.junit.Test
 import org.junit.runner.RunWith
 import org.robolectric.RobolectricTestRunner
 import org.robolectric.annotation.Config
+import org.robolectric.annotation.GraphicsMode
 import org.robolectric.util.ReflectionHelpers
 import org.robolectric.util.ReflectionHelpers.ClassParameter
 
@@ -164,7 +165,9 @@ class LandscapeUiTest {
         compose.onNodeWithContentDescription("Play").assertDoesNotExist()
     }
 
-    @Test fun shortLandscapeLyricsKeepBothSourcesVisible() {
+    @Test
+    @GraphicsMode(GraphicsMode.Mode.NATIVE)
+    fun shortLandscapeLyricsKeepBothSourcesVisible() {
         val metadata = ReflectionHelpers.getField<MutableState<SongMetadata?>>(model, "metadata\$delegate")
         val preferUslt = mutableStateOf(false)
         compose.runOnIdle {
