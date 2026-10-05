@@ -47,9 +47,9 @@ class PlaybackService : MediaSessionService() {
     override fun onCreate() {
         super.onCreate()
         setMediaNotificationProvider(
-            DefaultMediaNotificationProvider.Builder(this)
-                .setSmallIcon(R.drawable.ic_notification)
-                .build()
+            DefaultMediaNotificationProvider.Builder(this).build().apply {
+                setSmallIcon(R.drawable.ic_notification)
+            }
         )
         val app = application as MusicApplication
         val source = OkHttpDataSource.Factory(app.api.authenticatedClient)
