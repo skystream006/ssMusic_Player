@@ -921,18 +921,20 @@ class NowPlayingScreenTest {
 
     private fun songHeading(title: String) = compose.onNode(hasText(title) and isSongHeading)
 
-    private fun assertOnlySongOverflowBesideTitle(track: Track) {
+    private fun assertOnlySongOverflowBesideTitle(track: Track, showPlaylist: Boolean = true) {
         compose.onNodeWithText("NOW PLAYING").assertIsDisplayed()
         compose.onAllNodesWithContentDescription("More song actions").assertCountEquals(1)
         val titleBounds = songHeading(track.displayTitle).assertIsDisplayed().fetchSemanticsNode().boundsInRoot
-        val contextBounds = compose.onNodeWithText(track.playlistTitle).assertIsDisplayed().fetchSemanticsNode().boundsInRoot
         val overflow = compose.onNodeWithContentDescription("More song actions")
             .assertIsDisplayed().fetchSemanticsNode().boundsInRoot
         assertTrue(titleBounds.width > 0f)
         assertTrue(titleBounds.right <= overflow.left)
         assertTrue(titleBounds.center.y in overflow.top..overflow.bottom)
-        assertTrue(titleBounds.bottom <= contextBounds.top)
-        assertTrue(contextBounds.right <= overflow.left)
+        if (showPlaylist) {
+            val contextBounds = compose.onNodeWithText(track.playlistTitle).assertIsDisplayed().fetchSemanticsNode().boundsInRoot
+            assertTrue(titleBounds.bottom <= contextBounds.top)
+            assertTrue(contextBounds.right <= overflow.left)
+        }
         listOf("Edit lyrics", "Edit metadata", "View song metadata", "Transcribe lyrics",
             "Replace File", "Share Media", "Save file").forEach {
             compose.onNodeWithContentDescription(it).assertDoesNotExist()
@@ -1346,8 +1348,8 @@ class NowPlayingScreenTest {
     }
 
     @Test
-    @Config(qualifiers = "w840dp-h800dp")
-    fun wideHeaderKeepsAllSongActionsInOverflowAcrossTabs() {
+    @Config(qualifiers = "w840dp-h800dp-land")
+    fun landscapeHeaderKeepsAllSongActionsInOverflowAcrossPlayerAndLyricsTabs() {
         val track = Track(jobId = "preview", name = "song.mp3", playlistTitle = "A long playlist title ".repeat(5))
         val metadata = ReflectionHelpers.getField<MutableState<SongMetadata?>>(model, "metadata\$delegate")
         val account = ReflectionHelpers.getField<MutableStateFlow<Account?>>(model.sessions, "mutableAccount")
@@ -1361,9 +1363,11 @@ class NowPlayingScreenTest {
             health.value = ApiJson.parseToJsonElement("""{"transcription":{"status":"active"}}""").jsonObject
         }
         compose.setContent { MusicTheme { NowPlayingScreen(model, PlaybackState(track = track)) { _, _ -> } } }
-        listOf("Player", "USLT Lyrics", "Queue").forEach { tab ->
+        compose.onNodeWithTag("now-playing-queue-pane").assertIsDisplayed()
+        compose.onNodeWithText("Queue").assertHasNoClickAction()
+        listOf("Player", "USLT Lyrics").forEach { tab ->
             compose.onNodeWithText(tab).performClick()
-            assertOnlySongOverflowBesideTitle(track)
+            assertOnlySongOverflowBesideTitle(track, showPlaylist = false)
             openSongActions()
             listOf("Edit metadata", "Transcribe lyrics", "Replace File", "Share Media", "Save file").forEach {
                 songAction(it).assertIsDisplayed().assertIsEnabled().assertHasClickAction()

@@ -3,6 +3,7 @@
 package com.ssytdlp.app
 
 import android.content.Intent
+import android.content.res.Configuration
 import android.net.Uri
 import androidx.activity.compose.BackHandler
 import androidx.activity.compose.rememberLauncherForActivityResult
@@ -32,6 +33,8 @@ import androidx.compose.ui.graphics.ImageBitmap
 import androidx.compose.ui.graphics.lerp
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalConfiguration
+import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.semantics.clearAndSetSemantics
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.Role
@@ -51,6 +54,10 @@ import com.ssytdlp.app.core.*
 import kotlinx.coroutines.delay
 
 val LocalWaveAppearance = staticCompositionLocalOf { true }
+
+@Composable
+internal fun isLandscape(): Boolean =
+    LocalConfiguration.current.orientation == Configuration.ORIENTATION_LANDSCAPE
 
 @Composable
 fun MusicTheme(preferences: Preferences = Preferences(), waveAppearance: Boolean = true,
@@ -149,6 +156,7 @@ private fun serverBlackColorScheme(dark: Boolean): ColorScheme {
 @Composable
 fun MusicApp(model: MusicViewModel, requestNotifications: () -> Unit) {
     UpdateNotification()
+    val landscape = isLandscape()
     val serverOrigin by model.serverOrigin.collectAsStateWithLifecycle()
     val account by model.sessions.account.collectAsStateWithLifecycle()
     val playback by model.playback.state.collectAsStateWithLifecycle()
@@ -200,14 +208,23 @@ fun MusicApp(model: MusicViewModel, requestNotifications: () -> Unit) {
                 if (account != null) {
                     if (screen == 0) LibraryTopBar(model.library, !model.busy,
                         onBrowse = { libraryBrowser = true }, onSearch = model::search,
-                        onRefresh = model::refresh, onSettings = openSettings)
+                        onRefresh = model::refresh, onSettings = openSettings, showBrowser = !landscape)
                     else MusicTopBar(account!!.user.name, !model.busy, model::refresh,
                         onSettings = openSettings, onBack = back)
                 }
             }, bottomBar = {
-                if (account != null) Column {
-                    if (playback.track != null && screen != 1) PlayerDock(playback, model, { screen = 1 }, requestNotifications, download)
-                    MusicNavigation(screen) { screen = it }
+                if (account != null) {
+                    if (landscape && playback.track != null && screen != 1) {
+                        Row(Modifier.windowInsetsPadding(WindowInsets.navigationBars), verticalAlignment = Alignment.CenterVertically) {
+                            Box(Modifier.weight(1f)) {
+                                PlayerDock(playback, model, { screen = 1 }, requestNotifications, download)
+                            }
+                            Column(Modifier.width(160.dp)) { MusicNavigation(screen) { screen = it } }
+                        }
+                    } else Column {
+                        if (playback.track != null && screen != 1) PlayerDock(playback, model, { screen = 1 }, requestNotifications, download)
+                        MusicNavigation(screen) { screen = it }
+                    }
                 }
             }) { padding ->
                 when {
@@ -218,7 +235,7 @@ fun MusicApp(model: MusicViewModel, requestNotifications: () -> Unit) {
                         when (screen) {
                             0 -> {
                                 LibraryScreen(model, playback, playLibrary, download)
-                                if (libraryBrowser) LibraryBrowser(model) { libraryBrowser = false }
+                                if (libraryBrowser && !landscape) LibraryBrowser(model) { libraryBrowser = false }
                             }
                             1 -> NowPlayingScreen(model, playback, download)
                             2 -> SettingsScreen(model, download, onJobs = { screen = 3 })
@@ -283,9 +300,15 @@ private fun AppSettingsSheet(onDismiss: () -> Unit) {
 fun LibraryScreen(model: MusicViewModel, playback: PlaybackState, onPlay: (Int) -> Unit, download: (String, String) -> Unit) {
     val account by model.sessions.account.collectAsStateWithLifecycle()
     var ratingTrack by remember { mutableStateOf<Track?>(null) }
-    LibraryContent(model.library, playback, onPlay = onPlay, onPage = model::page,
-        artwork = { rememberTrackArtwork(it, model.api, account) },
-        onRating = { ratingTrack = it }) { track, index -> TrackMenu(model, track, index, download) }
+    val songs: @Composable () -> Unit = {
+        LibraryContent(model.library, playback, onPlay = onPlay, onPage = model::page,
+            artwork = { rememberTrackArtwork(it, model.api, account) },
+            onRating = { ratingTrack = it }) { track, index -> TrackMenu(model, track, index, download) }
+    }
+    if (isLandscape()) Row(Modifier.fillMaxSize()) {
+        LibraryBrowserPane(model, Modifier.weight(0.35f).fillMaxHeight().testTag("library-playlists-pane"))
+        Box(Modifier.weight(0.65f).fillMaxHeight().testTag("library-songs-pane")) { songs() }
+    } else songs()
     ratingTrack?.let { track -> MetadataDialog(model, track, ratingOnly = true) { ratingTrack = null } }
 }
 
@@ -338,31 +361,38 @@ fun LibraryContent(state: LibraryState, playback: PlaybackState, onPlay: (Int) -
 
 @Composable
 fun LibraryBrowser(model: MusicViewModel, dismiss: () -> Unit) {
-    val library = model.library.library
-    var parent by remember { mutableStateOf<String?>(null) }
-    var create by remember { mutableStateOf(false) }
     ModalBottomSheet(onDismissRequest = dismiss, sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)) {
-        Column(Modifier.fillMaxHeight(0.85f)) {
-            Row(Modifier.fillMaxWidth().padding(horizontal = 16.dp), verticalAlignment = Alignment.CenterVertically) {
-                if (parent != null) ToolButton(Icons.AutoMirrored.Rounded.ArrowBack, "Parent folder") { parent = library.entries.find { it.id == parent }?.parentId }
-                Text(library.entries.find { it.id == parent }?.name ?: "Library", style = MaterialTheme.typography.titleLarge, modifier = Modifier.weight(1f), maxLines = 2)
-                ToolButton(Icons.Rounded.CreateNewFolder, "Create folder") { create = true }
-            }
-            ListItem(headlineContent = { Text(if (parent == null) "All Music" else "All music in this folder") },
-                supportingContent = { if (parent == null) Text("${library.songCount} tracks") }, leadingContent = { Icon(Icons.Rounded.LibraryMusic, null) },
-                modifier = Modifier.clickable { model.selectLibrary(parent); dismiss() })
-            HorizontalDivider()
-            LazyColumn {
-                items(library.entries.filter { it.parentId == parent }, key = { it.id }) { entry ->
-                    val playlist = library.playlists.find { it.id == entry.id }
-                    ListItem(headlineContent = { Text(playlist?.playlistTitle?.ifBlank { entry.name } ?: entry.name, maxLines = 2, overflow = TextOverflow.Ellipsis) },
-                        supportingContent = { Text(if (entry.type == "folder") "Folder" else "${playlist?.songCount ?: 0} tracks") },
-                        leadingContent = { Icon(if (entry.type == "folder") Icons.Rounded.Folder else Icons.AutoMirrored.Rounded.QueueMusic, null) },
-                        trailingContent = { EntryMenu(model, entry) }, modifier = Modifier.clickable {
-                            if (entry.type == "folder") parent = entry.id else { model.selectLibrary(entry.id); dismiss() }
-                        })
-                }
-            }
+        LibraryBrowserPane(model, Modifier.fillMaxHeight(0.85f), dismiss)
+    }
+}
+
+@Composable
+private fun LibraryBrowserPane(model: MusicViewModel, modifier: Modifier = Modifier, onSelect: () -> Unit = {}) {
+    val library = model.library.library
+    var parent by rememberSaveable { mutableStateOf<String?>(null) }
+    var create by remember { mutableStateOf(false) }
+    LazyColumn(modifier) {
+        item {
+        Row(Modifier.fillMaxWidth().padding(horizontal = 16.dp), verticalAlignment = Alignment.CenterVertically) {
+            if (parent != null) ToolButton(Icons.AutoMirrored.Rounded.ArrowBack, "Parent folder") { parent = library.entries.find { it.id == parent }?.parentId }
+            Text(library.entries.find { it.id == parent }?.name ?: "Library", style = MaterialTheme.typography.titleLarge, modifier = Modifier.weight(1f), maxLines = 2)
+            ToolButton(Icons.Rounded.CreateNewFolder, "Create folder") { create = true }
+        }
+        }
+        item {
+        ListItem(headlineContent = { Text(if (parent == null) "All Music" else "All music in this folder") },
+            supportingContent = { if (parent == null) Text("${library.songCount} tracks") }, leadingContent = { Icon(Icons.Rounded.LibraryMusic, null) },
+            modifier = Modifier.clickable { model.selectLibrary(parent); onSelect() })
+        HorizontalDivider()
+        }
+        items(library.entries.filter { it.parentId == parent }, key = { it.id }) { entry ->
+        val playlist = library.playlists.find { it.id == entry.id }
+        ListItem(headlineContent = { Text(playlist?.playlistTitle?.ifBlank { entry.name } ?: entry.name, maxLines = 2, overflow = TextOverflow.Ellipsis) },
+            supportingContent = { Text(if (entry.type == "folder") "Folder" else "${playlist?.songCount ?: 0} tracks") },
+            leadingContent = { Icon(if (entry.type == "folder") Icons.Rounded.Folder else Icons.AutoMirrored.Rounded.QueueMusic, null) },
+            trailingContent = { EntryMenu(model, entry) }, modifier = Modifier.clickable {
+                if (entry.type == "folder") parent = entry.id else { model.selectLibrary(entry.id); onSelect() }
+            })
         }
     }
     if (create) NameDialog("New folder", "", { create = false }) { name ->
