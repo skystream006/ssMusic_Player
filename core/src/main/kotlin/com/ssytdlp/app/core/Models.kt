@@ -42,6 +42,8 @@ data class LibraryPlaylist(
     val contributors: List<User> = emptyList()
 ) {
     fun canChangePrivacy(user: User?) = ownsMedia(user, initiatedBy)
+    fun canRename(user: User?) = user != null && !user.isShared && user.id.isNotBlank() &&
+        (user.role == "admin" || initiatedBy?.id == user.id)
     fun canShare(user: User?) = user != null && !user.isShared && user.id.isNotBlank() &&
         (user.role == "admin" || initiatedBy?.id == user.id || contributors.any { it.id == user.id })
     val active: Boolean get() = status == "queued" || status == "running"
