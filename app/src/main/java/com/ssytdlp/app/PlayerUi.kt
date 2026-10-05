@@ -872,60 +872,60 @@ private fun ShareLinkDialog(model: MusicViewModel, title: String, description: S
     val context = LocalContext.current
     val account by model.sessions.account.collectAsStateWithLifecycle()
     key(requestPath, account?.origin, account?.user?.id, account?.session) {
-    var generating by remember { mutableStateOf(false) }
-    var url by remember { mutableStateOf<String?>(null) }
-    var copied by remember { mutableStateOf(false) }
-    var error by remember { mutableStateOf<String?>(null) }
-    val scope = rememberCoroutineScope()
-    AlertDialog(onDismissRequest = { if (!generating) dismiss() }, title = { Text(title) }, text = {
-        Column(Modifier.verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(10.dp)) {
-            Text(description)
-            unavailableMessage?.let { Text(it) }
-            url?.takeIf { unavailableMessage == null }?.let {
-                OutlinedTextField(value = it, onValueChange = {}, readOnly = true, label = { Text(linkLabel) })
+        var generating by remember { mutableStateOf(false) }
+        var url by remember { mutableStateOf<String?>(null) }
+        var copied by remember { mutableStateOf(false) }
+        var error by remember { mutableStateOf<String?>(null) }
+        val scope = rememberCoroutineScope()
+        AlertDialog(onDismissRequest = { if (!generating) dismiss() }, title = { Text(title) }, text = {
+            Column(Modifier.verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                Text(description)
+                unavailableMessage?.let { Text(it) }
+                url?.takeIf { unavailableMessage == null }?.let {
+                    OutlinedTextField(value = it, onValueChange = {}, readOnly = true, label = { Text(linkLabel) })
+                }
+                error?.let { Text(it, color = MaterialTheme.colorScheme.error) }
             }
-            error?.let { Text(it, color = MaterialTheme.colorScheme.error) }
-        }
-    }, confirmButton = {
-        TextButton(enabled = !generating && !model.busy && unavailableMessage == null, onClick = {
-            val link = url
-            if (link != null) {
-                val clipboard = context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
-                clipboard.setPrimaryClip(ClipData.newPlainText(linkLabel, link))
-                copied = true
-            } else {
-                scope.launch {
-                    generating = true
-                    error = null
-                    try {
-                        val owner = requireNotNull(account) { "Sign in to share media." }
-                        val response = model.api.request(requestPath, method = "POST").jsonObject
-                        val path = response["url"]?.jsonPrimitive?.content
-                            ?: throw IllegalStateException("The server did not return a share link.")
-                        require(Regex("${Regex.escape(publicPath)}[A-Za-z0-9_-]{43}").matches(path)) {
-                            "The server returned an invalid share link."
+        }, confirmButton = {
+            TextButton(enabled = !generating && !model.busy && unavailableMessage == null, onClick = {
+                val link = url
+                if (link != null) {
+                    val clipboard = context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
+                    clipboard.setPrimaryClip(ClipData.newPlainText(linkLabel, link))
+                    copied = true
+                } else {
+                    scope.launch {
+                        generating = true
+                        error = null
+                        try {
+                            val owner = requireNotNull(account) { "Sign in to share media." }
+                            val response = model.api.request(requestPath, method = "POST").jsonObject
+                            val path = response["url"]?.jsonPrimitive?.content
+                                ?: throw IllegalStateException("The server did not return a share link.")
+                            require(Regex("${Regex.escape(publicPath)}[A-Za-z0-9_-]{43}").matches(path)) {
+                                "The server returned an invalid share link."
+                            }
+                            url = "${AuthProtocol.normalizeOrigin(owner.origin)}$path"
+                        } catch (failure: Exception) {
+                            if (failure is kotlinx.coroutines.CancellationException) throw failure
+                            error = failure.message ?: "Unable to create a public link."
+                        } finally {
+                            generating = false
                         }
-                        url = "${AuthProtocol.normalizeOrigin(owner.origin)}$path"
-                    } catch (failure: Exception) {
-                        if (failure is kotlinx.coroutines.CancellationException) throw failure
-                        error = failure.message ?: "Unable to create a public link."
-                    } finally {
-                        generating = false
                     }
                 }
+            }) {
+                Text(when {
+                    generating -> "Generating..."
+                    url == null -> "Generate public link"
+                    copied -> "Copied"
+                    else -> "Copy link"
+                })
             }
-        }) {
-            Text(when {
-                generating -> "Generating..."
-                url == null -> "Generate public link"
-                copied -> "Copied"
-                else -> "Copy link"
-            })
-            }
-        }
-    }, dismissButton = {
-        TextButton(enabled = !generating, onClick = dismiss) { Text(if (url == null) "Cancel" else "Done") }
-    })
+        }, dismissButton = {
+            TextButton(enabled = !generating, onClick = dismiss) { Text(if (url == null) "Cancel" else "Done") }
+        })
+    }
 }
 
 internal fun shareMediaPath(track: Track) =

@@ -307,6 +307,13 @@ the filter. There is no top-bar play button; tap a song to play the page.
 On each library page, `[NoVocals]/` tracks appear after originals in a collapsed
 **[NoVocals]** section. Expanding it keeps playback and track actions associated
 with the original page indices.
+In the playlist/folder browser, open a playlist's three-dot menu and choose
+**Share Playlist**, then **Generate public link** and **Copy link**. Owners,
+contributors, and administrators can share non-private playlists; shared accounts
+cannot. Anyone with the link can listen, read lyrics and metadata, and download
+eligible public audio without signing in, but cannot edit it. Private and
+unshareable songs are excluded, and the link reflects current playlist contents.
+This requires a server with playlist-sharing support.
 Open **Settings** from the upper-right gear, to the right of **Refresh**, and
 select **Jobs** there to add downloads or manage server jobs.
 In **Now Playing**, the Player, Lyrics, and Queue tabs retain all playback controls.
