@@ -1320,7 +1320,8 @@ class NowPlayingScreenTest {
         compose.onNodeWithText("USLT Lyrics").performClick()
         assertOnlySongOverflowBesideTitle(track)
         openSongActions()
-        val actions = listOf("Edit lyrics", "Edit metadata", "Transcribe lyrics", "Replace File", "Share Media", "Save file")
+        val actions = listOf("Edit lyrics", "Edit metadata", "Transcribe lyrics", "Replace File",
+            "Make song private", "Share Media", "Save file")
         actions.forEach {
             songAction(it).assertIsDisplayed().assertIsEnabled().assertHasClickAction()
         }
