@@ -44,7 +44,7 @@ internal fun EditPlaylistDialog(model: MusicViewModel, entry: LibraryEntry, play
     var name by rememberSaveable(playlist.id) { mutableStateOf(playlist.playlistTitle) }
     var isPrivate by rememberSaveable(playlist.id) { mutableStateOf(playlist.isPrivate) }
     var parentId by rememberSaveable(playlist.id) { mutableStateOf(entry.parentId) }
-    val originalParentId by rememberSaveable(playlist.id) { mutableStateOf(entry.parentId) }
+    var locationEdited by rememberSaveable(playlist.id) { mutableStateOf(false) }
     var choosingLocation by remember { mutableStateOf(false) }
     val result = model.playlistSaveResult?.takeIf { it.id == playlist.id }
     val currentDismiss by rememberUpdatedState(dismiss)
@@ -83,11 +83,12 @@ internal fun EditPlaylistDialog(model: MusicViewModel, entry: LibraryEntry, play
         }
     }, confirmButton = {
         TextButton(onClick = {
-            model.savePlaylist(playlist.id, name, isPrivate, parentId, move = parentId != originalParentId)
+            model.savePlaylist(playlist.id, name, isPrivate, parentId, move = locationEdited)
         }, enabled = enabled && (!canRename || validName)) { Text("Save changes") }
     }, dismissButton = { TextButton(onClick = dismiss, enabled = !model.busy) { Text("Cancel") } })
     if (choosingLocation) DestinationDialog("Location", locations, { choosingLocation = false }) {
         parentId = it
+        locationEdited = true
         choosingLocation = false
     }
 }

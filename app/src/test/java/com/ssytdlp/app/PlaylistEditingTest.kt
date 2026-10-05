@@ -358,6 +358,29 @@ class PlaylistEditingTest {
     }
 
     @Config(qualifiers = "w320dp-h800dp")
+    @Test fun retryCanExplicitlyMoveBackToOriginalLocationAfterLostResponse() {
+        val loseResponse = AtomicBoolean(true)
+        startModel { request ->
+            if (request.method == "POST" && request.url.encodedPath == "/api/library/entries" &&
+                loseResponse.getAndSet(false)) {
+                catalog.set(catalog.get().copy(version = 8,
+                    entries = listOf(entry.copy(parentId = "child")) + folders))
+                500 to """{"error":"Response lost after moving"}"""
+            } else null
+        }
+        openEdit()
+        chooseFolder()
+        save()
+        assertEquals("child", model.library.library.entries.first().parentId)
+        compose.onNodeWithText("Collection / Favorites").performScrollTo().performClick()
+        compose.onNodeWithText("Library").performScrollTo().performClick()
+        save()
+        compose.onNode(isDialog()).assertDoesNotExist()
+        assertNull(model.library.library.entries.first().parentId)
+        assertEquals(JsonNull, body(requests.last { it.method == "POST" })["parentId"])
+    }
+
+    @Config(qualifiers = "w320dp-h800dp")
     @Test fun failedRecoveryRequiresFreshCatalogBeforeRetryingPrivacy() {
         catalog.set(catalog.get().copy(playlists = listOf(playlist.copy(isPrivate = true)),
             jobs = listOf(job.copy(isPrivate = true))))
