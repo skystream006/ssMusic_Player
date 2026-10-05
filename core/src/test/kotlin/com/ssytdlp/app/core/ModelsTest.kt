@@ -5,6 +5,31 @@ import org.junit.Assert.*
 import org.junit.Test
 
 class ModelsTest {
+    @Test fun `playlist sharing reads contributors and permits owners contributors and admins only`() {
+        val playlist = ApiJson.decodeFromString<LibraryPlaylist>("""{
+            "id":"playlist","jobId":"source","initiatedBy":{"id":"owner"},
+            "contributors":[{"id":"contributor"}]
+        }""")
+        listOf(User("owner"), User("contributor"), User("admin", role = "admin")).forEach {
+            assertTrue(playlist.canShare(it))
+        }
+        listOf(null, User("stranger"), User(""), User(" "),
+            User("owner", role = "shared"), User("contributor", role = "SHARED")).forEach {
+            assertFalse(playlist.canShare(it))
+        }
+        assertEquals(playlist, ApiJson.decodeFromString<LibraryPlaylist>(ApiJson.encodeToString(playlist)))
+    }
+
+    @Test fun `synthetic playlists can be shared without a backing job and legacy contributors default empty`() {
+        val playlist = ApiJson.decodeFromString<LibraryPlaylist>(
+            """{"id":"individual-songs","jobId":null,"initiatedBy":{"id":"owner"}}""")
+        assertTrue(playlist.contributors.isEmpty())
+        assertTrue(playlist.canShare(User("owner")))
+        assertTrue(playlist.canShare(User("admin", role = "admin")))
+        assertFalse(playlist.canShare(User("other")))
+        assertFalse(ApiJson.decodeFromString<LibraryPlaylist>("""{"id":"legacy"}""").canShare(User("owner")))
+    }
+
     @Test fun `preferences default to Green and resolve legacy Porcelain without changing mode`() {
         assertEquals("green", Preferences().theme)
         assertEquals("green", ApiJson.decodeFromString<Preferences>("{}").effectiveTheme)
