@@ -367,9 +367,17 @@ dark mode, and gray/white surfaces with darker gold accents in light mode.
 the color themes. Skins are off by default. The selected skin name appears beside
 the toggle, even when skins are off. Turn skins on and tap the name to open a
 scrollable preview dialog, then select a skin to apply it and close the dialog:
-**Cherry Blossom Sunset** (flowing blossoms and windblown petals over a sunset) or
-**Starry City Sunset** (a star-filled sky above a city skyline and sunset).
-Both are original bundled vector images, available offline without downloads.
+
+- **Cherry Blossom Sunset** — flowing blossoms and windblown petals over a sunset.
+- **Starry City Sunset** — a star-filled sky above a city skyline and sunset.
+- **Ocean Wave** — a whale, dolphin, and anchovies swimming through a wave at sunset.
+- **Ocean Moonlight** — a bright moon above the ocean horizon, reflected on the water.
+- **Galaxy** — three different galaxies amid a field of stars.
+- **Tropical** — a coconut palm in front of a beach sunset.
+- **Mechanics** — interlocking gears and metal mechanisms.
+- **Cars** — a dark, low-slung, angular supercar.
+
+All are original bundled vector images, available offline without downloads.
 The toggle and selected skin are remembered on this device; turning skins off
 restores the normal background without forgetting the selection. Skins work with
 Blue Wave and every server color theme in light or dark mode, without changing

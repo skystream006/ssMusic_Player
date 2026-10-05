@@ -92,16 +92,17 @@ class SettingsUiTest {
             compose.runOnIdle { assertEquals(option, skin.value) }
             AppSkin.entries.forEach { compose.onNodeWithText(it.description).assertDoesNotExist() }
         }
+        val selected = AppSkin.entries.last()
         compose.onNodeWithContentDescription("Skins").performClick().assertIsOff()
-        compose.onNodeWithText(AppSkin.STARRY_CITY.label).assertIsDisplayed().assertIsNotEnabled()
+        compose.onNodeWithText(selected.label).assertIsDisplayed().assertIsNotEnabled()
         compose.onNodeWithContentDescription("Skins").performClick().assertIsOn()
-        compose.onNodeWithText(AppSkin.STARRY_CITY.label).performClick()
-        skinOption(AppSkin.STARRY_CITY).assertIsSelected()
+        compose.onNodeWithText(selected.label).performClick()
+        skinOption(selected).assertIsSelected()
         skinOption(AppSkin.CHERRY_BLOSSOM).assertIsNotSelected()
         compose.onNodeWithText("Close").performClick()
         compose.onNode(isDialog()).assertDoesNotExist()
-        compose.onNodeWithText(AppSkin.STARRY_CITY.label).assertIsDisplayed()
-        compose.runOnIdle { assertEquals(AppSkin.STARRY_CITY, skin.value) }
+        compose.onNodeWithText(selected.label).assertIsDisplayed()
+        compose.runOnIdle { assertEquals(selected, skin.value) }
     }
 
     @Test fun skinPickerSurvivesStateRestorationAndClosesWhenSkinsAreDisabled() {
@@ -170,15 +171,15 @@ class SettingsUiTest {
                     models.put("restored", restored)
                     restored.viewModelScope.cancel()
                     assertTrue(restored.skinsEnabled)
-                    assertEquals(AppSkin.STARRY_CITY, restored.skin)
+                    assertEquals(AppSkin.entries.last(), restored.skin)
                     restored.chooseSkins(false)
                     val disabled = MusicViewModel(initial.getApplication(), connectPlayback = false)
                     models.put("disabled", disabled)
                     disabled.viewModelScope.cancel()
                     assertFalse(disabled.skinsEnabled)
-                    assertEquals(AppSkin.STARRY_CITY, disabled.skin)
+                    assertEquals(AppSkin.entries.last(), disabled.skin)
                     disabled.chooseSkins(true)
-                    assertEquals(AppSkin.STARRY_CITY, disabled.skin)
+                    assertEquals(AppSkin.entries.last(), disabled.skin)
                     assertTrue(preferences.getBoolean("skins_enabled", false))
                     assertEquals(theme, initial.preferences)
                     assertEquals(wave, initial.waveAppearance)

@@ -124,13 +124,13 @@ class MusicUiTest {
         listOf("dark", "light").forEach { appearance ->
             compose.runOnIdle { mode.value = appearance }
             assertTrue(pixels().all { it == background.toArgb() })
-            compose.runOnIdle { skin.value = AppSkin.CHERRY_BLOSSOM }
-            val cherry = pixels()
-            assertTrue(cherry.toSet().size > 3)
-            compose.runOnIdle { skin.value = AppSkin.STARRY_CITY }
-            val city = pixels()
-            assertTrue(city.toSet().size > 3)
-            assertNotEquals(cherry, city)
+            val rendered = AppSkin.entries.map { option ->
+                compose.runOnIdle { skin.value = option }
+                pixels().also {
+                    assertTrue("${option.label} must render a detailed background in $appearance mode", it.toSet().size > 3)
+                }
+            }
+            assertEquals("Each skin must have distinct artwork", AppSkin.entries.size, rendered.toSet().size)
             compose.runOnIdle { skin.value = null }
             assertTrue(pixels().all { it == background.toArgb() })
         }

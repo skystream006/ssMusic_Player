@@ -16,7 +16,13 @@ import androidx.compose.ui.res.painterResource
 
 enum class AppSkin(val label: String, val description: String, @DrawableRes val drawable: Int) {
     CHERRY_BLOSSOM("Cherry Blossom Sunset", "Windblown blossoms and petals over a warm sunset", R.drawable.skin_cherry_blossom),
-    STARRY_CITY("Starry City Sunset", "A star-filled night above a city skyline at sunset", R.drawable.skin_starry_city);
+    STARRY_CITY("Starry City Sunset", "A star-filled night above a city skyline at sunset", R.drawable.skin_starry_city),
+    OCEAN_WAVE("Ocean Wave", "Whale, dolphin, and anchovies in a sunset wave", R.drawable.skin_ocean_wave),
+    OCEAN_MOONLIGHT("Ocean Moonlight", "A bright moon reflected on the ocean horizon", R.drawable.skin_ocean_moonlight),
+    GALAXY("Galaxy", "Three distant galaxies surrounded by stars", R.drawable.skin_galaxy),
+    TROPICAL("Tropical", "A coconut palm overlooking a beach sunset", R.drawable.skin_tropical),
+    MECHANICS("Mechanics", "Interlocking gears and intricate metal mechanisms", R.drawable.skin_mechanics),
+    CARS("Cars", "A dark, angular supercar under cool night lights", R.drawable.skin_cars);
 
     companion object {
         fun fromPreference(value: String?): AppSkin = entries.find { it.name == value } ?: CHERRY_BLOSSOM
