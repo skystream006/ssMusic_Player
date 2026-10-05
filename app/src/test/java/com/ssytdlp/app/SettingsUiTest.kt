@@ -344,6 +344,124 @@ class SettingsUiTest {
     }
 
     @Test
+    @Config(qualifiers = "w960dp-h600dp-land")
+    fun landscapeSettingsUseEqualWidthPanesAndKeepSectionsInTheirGroups() {
+        withSettingsModel { model ->
+            setPermissions(notifications = true, unrestrictedBattery = true)
+            showSettings(model)
+            val root = compose.onRoot().getUnclippedBoundsInRoot()
+            val left = compose.onNodeWithTag("settings-left-pane").getUnclippedBoundsInRoot()
+            val right = compose.onNodeWithTag("settings-right-pane").getUnclippedBoundsInRoot()
+            assertEquals(root.width.value / 2, left.width.value, 1f)
+            assertEquals(root.width.value / 2, right.width.value, 1f)
+            assertEquals(root.left, left.left)
+            assertEquals(left.right, right.left)
+            assertEquals(root.right, right.right)
+            assertEquals(left.top, right.top)
+            assertEquals(left.bottom, right.bottom)
+            compose.onAllNodes(hasScrollAction()).assertCountEquals(2)
+            compose.onNodeWithTag("settings-portrait-pane").assertDoesNotExist()
+
+            val inLeft = hasAnyAncestor(hasTestTag("settings-left-pane"))
+            val inRight = hasAnyAncestor(hasTestTag("settings-right-pane"))
+            listOf("Settings", "App updates", "Preview", "https://music.example.com",
+                "Session expires 2099-01-01", "Appearance", "Blue Wave", "Server theme").forEach {
+                compose.onNode(hasText(it) and inLeft).assertExists()
+            }
+            listOf("Skins", "Edge lighting").forEach {
+                compose.onNode(hasContentDescription(it) and inLeft).assertExists()
+            }
+            listOf("Jobs", "Library backup", "Device", "Server", "Debug logging",
+                "ssMusic Player ${BuildConfig.VERSION_NAME}").forEach {
+                compose.onNode(hasText(it) and inRight).assertExists()
+            }
+        }
+    }
+
+    @Test
+    @Config(qualifiers = "w640dp-h320dp-land")
+    fun shortLandscapePanesScrollIndependentlyWithLargeText() {
+        withSettingsModel { model ->
+            compose.runOnUiThread {
+                model.chooseWaveAppearance(false)
+                model.chooseEdgeLighting(true)
+            }
+            setPermissions(notifications = false, unrestrictedBattery = false)
+            showSettings(model, fontScale = 1.5f)
+            val left = compose.onNodeWithTag("settings-left-pane")
+            val right = compose.onNodeWithTag("settings-right-pane")
+            assertEquals(0f, scrollPosition(left), 0f)
+            assertEquals(0f, scrollPosition(right), 0f)
+
+            compose.onNodeWithContentDescription("Skins").performScrollTo().assertIsDisplayed()
+                .performClick().assertIsOn()
+            compose.onNodeWithText("Vibration").performScrollTo().assertIsDisplayed()
+                .performClick().assertIsSelected()
+            val leftPosition = scrollPosition(left)
+            assertTrue(leftPosition > 0)
+            assertEquals(0f, scrollPosition(right), 0f)
+
+            compose.onNodeWithText("Server").performScrollTo().performClick()
+            compose.onNodeWithText("Sign out").performScrollTo().assertIsDisplayed()
+            compose.onNodeWithText("Debug logging").performScrollTo().assertIsDisplayed()
+            val rightPosition = scrollPosition(right)
+            assertTrue(rightPosition > 0)
+            assertEquals(leftPosition, scrollPosition(left), 0f)
+
+            compose.onNodeWithText("App updates").performScrollTo().assertIsDisplayed()
+            assertTrue(scrollPosition(left) < leftPosition)
+            assertEquals(rightPosition, scrollPosition(right), 0f)
+        }
+    }
+
+    @Test
+    @Config(qualifiers = "w480dp-h320dp-land")
+    fun narrowLandscapeBackupActionsWrapAndRemainReachable() {
+        withSettingsModel { model ->
+            setPermissions(notifications = true, unrestrictedBattery = true)
+            showSettings(model, fontScale = 1.5f)
+            val right = compose.onNodeWithTag("settings-right-pane").getUnclippedBoundsInRoot()
+            compose.onNodeWithText("Library backup").performScrollTo().performClick()
+            compose.onNodeWithText("iTunes").performScrollTo().performClick().assertIsSelected()
+            compose.onNodeWithText("iTunes extraction folder").performScrollTo().assertIsDisplayed()
+            listOf(
+                compose.onNodeWithText("Back up"),
+                compose.onNodeWithContentDescription("Save latest backup"),
+                compose.onNodeWithContentDescription("Backup schedule")
+            ).forEach { action ->
+                val bounds = action.performScrollTo().assertIsDisplayed().getUnclippedBoundsInRoot()
+                assertTrue(bounds.left >= right.left && bounds.right <= right.right)
+            }
+            compose.onNodeWithContentDescription("Backup schedule").performClick()
+            compose.onNodeWithText("Backup schedule").assertIsDisplayed()
+            compose.onNodeWithText("Cancel").performClick()
+            compose.onNodeWithText("iTunes").performScrollTo().assertIsSelected()
+        }
+    }
+
+    @Test
+    @Config(qualifiers = "w640dp-h320dp-land")
+    fun landscapeSharedSettingsKeepRoleRestrictionsAndDevicePermissionActions() {
+        withSettingsModel(role = "shared") { model ->
+            setPermissions(notifications = false, unrestrictedBattery = false)
+            showSettings(model)
+            compose.onNodeWithText("Jobs").assertDoesNotExist()
+            compose.onNodeWithText("Library backup").assertDoesNotExist()
+            compose.onNodeWithText("Notifications").performScrollTo().assertIsDisplayed().performClick()
+            val notificationIntent = shadowOf(compose.activity).nextStartedActivity
+            assertEquals(Settings.ACTION_APP_NOTIFICATION_SETTINGS, notificationIntent.action)
+            assertEquals(compose.activity.packageName, notificationIntent.getStringExtra(Settings.EXTRA_APP_PACKAGE))
+            compose.onNodeWithText("Battery and background activity").performScrollTo().assertIsDisplayed().performClick()
+            val batteryIntent = shadowOf(compose.activity).nextStartedActivity
+            assertEquals(Settings.ACTION_APPLICATION_DETAILS_SETTINGS, batteryIntent.action)
+            assertEquals("package:${compose.activity.packageName}", batteryIntent.dataString)
+            compose.onNodeWithText("Server").performScrollTo().performClick()
+            compose.onNodeWithText("Passkeys and account").performScrollTo().assertIsDisplayed()
+            compose.onNodeWithText("Sign out").performScrollTo().assertIsDisplayed()
+        }
+    }
+
+    @Test
     @Config(qualifiers = "w800dp-h1600dp")
     fun settingsPlaceJobsAfterAppearanceAndCollapseBackupAndServerByDefault() {
         withSettingsModel { model ->
@@ -356,15 +474,23 @@ class SettingsUiTest {
                     MusicTheme { SettingsScreen(model, { _, _ -> }) { jobsOpened = true } }
                 }
             }
+            compose.onNodeWithTag("settings-left-pane").assertDoesNotExist()
+            compose.onNodeWithTag("settings-right-pane").assertDoesNotExist()
+            compose.onAllNodes(hasScrollAction()).assertCountEquals(1)
+            val pane = compose.onNodeWithTag("settings-portrait-pane").getUnclippedBoundsInRoot()
+            assertEquals(compose.onRoot().getUnclippedBoundsInRoot().width, pane.width)
             val collapsed = SemanticsMatcher.expectValue(SemanticsProperties.StateDescription, "Collapsed")
             compose.onNodeWithText("Library backup").assert(collapsed)
             compose.onNodeWithText("Server").assert(collapsed)
             compose.onNodeWithText("Back up").assertDoesNotExist()
             compose.onNodeWithText("Sign out").assertDoesNotExist()
+            val updates = compose.onNodeWithText("App updates").getUnclippedBoundsInRoot()
+            val info = compose.onNodeWithText("Preview").getUnclippedBoundsInRoot()
             val appearance = compose.onNodeWithText("Appearance").getUnclippedBoundsInRoot()
             val edge = compose.onNodeWithContentDescription("Edge lighting").getUnclippedBoundsInRoot()
             val jobs = compose.onNodeWithText("Jobs").getUnclippedBoundsInRoot()
             val backup = compose.onNodeWithText("Library backup").getUnclippedBoundsInRoot()
+            assertTrue(updates.bottom < info.top && info.bottom < appearance.top)
             assertTrue(appearance.bottom < edge.top && edge.bottom < jobs.top && jobs.bottom < backup.top)
             compose.onNodeWithText("Jobs").performClick()
             compose.runOnIdle { assertTrue(jobsOpened) }
@@ -570,6 +696,21 @@ class SettingsUiTest {
         shadowOf(compose.activity.getSystemService(PowerManager::class.java))
             .setIgnoringBatteryOptimizations(compose.activity.packageName, unrestrictedBattery)
     }
+
+    private fun showSettings(model: MusicViewModel, fontScale: Float = 1f) {
+        compose.runOnUiThread { owner.lifecycle.currentState = Lifecycle.State.CREATED }
+        compose.setContent {
+            CompositionLocalProvider(
+                LocalLifecycleOwner provides owner,
+                LocalDensity provides Density(LocalDensity.current.density, fontScale)
+            ) {
+                MusicTheme { SettingsScreen(model, { _, _ -> }) {} }
+            }
+        }
+    }
+
+    private fun scrollPosition(pane: SemanticsNodeInteraction): Float =
+        pane.fetchSemanticsNode().config[SemanticsProperties.VerticalScrollAxisRange].value()
 
     private fun withSettingsModel(role: String = "user", test: (MusicViewModel) -> Unit) {
         val context = ApplicationProvider.getApplicationContext<Application>()

@@ -29,6 +29,7 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.selected
@@ -61,7 +62,7 @@ fun SettingsScreen(model: MusicViewModel, download: (String, String) -> Unit, on
             while (true) { model.pollSettings(); delay(5_000) }
         }
     }
-    Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(horizontal = 20.dp, vertical = 12.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+    SettingsLayout(primary = {
         Text("Settings", style = MaterialTheme.typography.titleLarge)
         UpdateSettings()
         HorizontalDivider()
@@ -96,6 +97,7 @@ fun SettingsScreen(model: MusicViewModel, download: (String, String) -> Unit, on
         SkinSetting(model.skinsEnabled, model.skin, model::chooseSkin, model::chooseSkins)
         EdgeLightingSetting(model.edgeLightingEnabled, model.edgeLightingStyle,
             model::chooseEdgeLightingStyle, model::chooseEdgeLighting)
+    }, secondary = {
         if (showJobsAndBackup) {
             HorizontalDivider()
             JobsSetting(onJobs)
@@ -116,7 +118,8 @@ fun SettingsScreen(model: MusicViewModel, download: (String, String) -> Unit, on
                 val latest = backup?.get("latest") as? JsonObject
                 if (latest != null) Text("Latest: ${latest["createdAt"]?.jsonPrimitive?.content?.substringBefore('T')}  /  ${latest["songCount"]?.jsonPrimitive?.content} songs")
                 (backup?.get("error") as? JsonPrimitive)?.contentOrNull?.let { Text(it, color = MaterialTheme.colorScheme.error) }
-                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    verticalArrangement = Arrangement.spacedBy(8.dp)) {
                     FilledTonalButton(onClick = { model.startBackup(backupFormat, destination) }, enabled = !model.busy && !running && (backupFormat == "android" || destination.isNotBlank())) {
                         Icon(Icons.Rounded.Backup, null); Spacer(Modifier.width(8.dp)); Text("Back up")
                     }
@@ -147,9 +150,41 @@ fun SettingsScreen(model: MusicViewModel, download: (String, String) -> Unit, on
         HorizontalDivider()
         DebugLogSettings()
         Text("ssMusic Player ${BuildConfig.VERSION_NAME}", style = MaterialTheme.typography.labelSmall, modifier = Modifier.padding(bottom = 20.dp))
-    }
+    })
     if (logout) ConfirmDialog("Sign out?", "Playback will stop and this device's server session will be revoked.", { logout = false }) { logout = false; model.logout() }
     if (schedule && showJobsAndBackup) BackupScheduleDialog(model) { schedule = false }
+}
+
+@Composable
+private fun SettingsLayout(
+    primary: @Composable ColumnScope.() -> Unit,
+    secondary: @Composable ColumnScope.() -> Unit
+) {
+    if (isLandscape()) {
+        Row(Modifier.fillMaxSize()) {
+            Column(
+                Modifier.weight(1f).fillMaxHeight().testTag("settings-left-pane")
+                    .verticalScroll(rememberScrollState()).padding(horizontal = 20.dp, vertical = 12.dp),
+                verticalArrangement = Arrangement.spacedBy(12.dp),
+                content = primary
+            )
+            Column(
+                Modifier.weight(1f).fillMaxHeight().testTag("settings-right-pane")
+                    .verticalScroll(rememberScrollState()).padding(horizontal = 20.dp, vertical = 12.dp),
+                verticalArrangement = Arrangement.spacedBy(12.dp),
+                content = secondary
+            )
+        }
+    } else {
+        Column(
+            Modifier.fillMaxSize().testTag("settings-portrait-pane")
+                .verticalScroll(rememberScrollState()).padding(horizontal = 20.dp, vertical = 12.dp),
+            verticalArrangement = Arrangement.spacedBy(12.dp)
+        ) {
+            primary()
+            secondary()
+        }
+    }
 }
 
 @Composable

@@ -82,12 +82,16 @@ fun MusicTopBar(userName: String, refreshEnabled: Boolean, onRefresh: () -> Unit
 
 @Composable
 fun MusicNavigation(selected: Int, onSelect: (Int) -> Unit) {
+    val landscape = isLandscape()
     HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.6f))
-    NavigationBar(containerColor = appBackgroundColor(), tonalElevation = 0.dp) {
+    NavigationBar(
+        modifier = if (landscape) Modifier.windowInsetsPadding(NavigationBarDefaults.windowInsets).height(56.dp) else Modifier,
+        windowInsets = if (landscape) WindowInsets(0) else NavigationBarDefaults.windowInsets,
+        containerColor = appBackgroundColor(), tonalElevation = 0.dp) {
         listOf("Library" to Icons.Rounded.LibraryMusic, "Now Playing" to Icons.Rounded.GraphicEq)
             .forEachIndexed { index, (label, icon) ->
                 NavigationBarItem(selected = selected == index, onClick = { onSelect(index) }, icon = { Icon(icon, label, Modifier.size(22.dp)) },
-                    label = { Text(label) }, colors = NavigationBarItemDefaults.colors(
+                    label = if (landscape) null else ({ Text(label) }), colors = NavigationBarItemDefaults.colors(
                         selectedIconColor = MaterialTheme.colorScheme.primary, selectedTextColor = MaterialTheme.colorScheme.primary,
                         indicatorColor = MaterialTheme.colorScheme.primary.copy(alpha = 0.09f),
                         unselectedIconColor = MaterialTheme.colorScheme.onSurfaceVariant, unselectedTextColor = MaterialTheme.colorScheme.onSurfaceVariant))
@@ -98,7 +102,8 @@ fun MusicNavigation(selected: Int, onSelect: (Int) -> Unit) {
 @Composable
 fun LibraryTopBar(state: LibraryState, refreshEnabled: Boolean,
     onBrowse: () -> Unit, onSearch: (String) -> Unit,
-    onRefresh: () -> Unit, onSettings: () -> Unit, windowInsets: WindowInsets = TopAppBarDefaults.windowInsets) {
+    onRefresh: () -> Unit, onSettings: () -> Unit, windowInsets: WindowInsets = TopAppBarDefaults.windowInsets,
+    showBrowser: Boolean = true) {
     val selected = state.library.entries.find { it.id == state.selectedId }
     val title = selected?.let { entry -> state.library.playlists.find { it.id == entry.id }?.playlistTitle?.ifBlank { null } ?: entry.name } ?: "All Music"
     var searchExpanded by rememberSaveable { mutableStateOf(state.search.isNotEmpty()) }
@@ -112,14 +117,14 @@ fun LibraryTopBar(state: LibraryState, refreshEnabled: Boolean,
         TopAppBar(windowInsets = windowInsets,
             colors = TopAppBarDefaults.topAppBarColors(containerColor = appBackgroundColor()),
             title = {
-                Row(Modifier.heightIn(min = 48.dp).clickable(role = Role.Button, onClick = onBrowse),
+                Row(Modifier.heightIn(min = 48.dp).clickable(enabled = showBrowser, role = Role.Button, onClick = onBrowse),
                     verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(4.dp)) {
                     Column(Modifier.weight(1f, fill = false)) {
                         Text(title, style = MaterialTheme.typography.titleMedium, maxLines = 1, overflow = TextOverflow.Ellipsis)
                         Text("${state.tracks.total} tracks", style = MaterialTheme.typography.labelSmall,
                             color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 1, overflow = TextOverflow.Ellipsis)
                     }
-                    Icon(Icons.Rounded.ExpandMore, "Browse library", Modifier.size(20.dp), tint = MaterialTheme.colorScheme.primary)
+                    if (showBrowser) Icon(Icons.Rounded.ExpandMore, "Browse library", Modifier.size(20.dp), tint = MaterialTheme.colorScheme.primary)
                 }
             }, actions = {
                 ToolButton(if (searchExpanded) Icons.Rounded.Close else Icons.Rounded.Search,

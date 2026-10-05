@@ -51,6 +51,7 @@ import androidx.compose.ui.input.nestedscroll.nestedScroll
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.heading
@@ -198,10 +199,12 @@ private fun RepeatButton(mode: Int, repeat: () -> Unit) {
 @androidx.annotation.OptIn(UnstableApi::class)
 @Composable
 fun NowPlayingScreen(model: MusicViewModel, state: PlaybackState, download: (String, String) -> Unit) {
+    val landscape = isLandscape()
     var tab by rememberSaveable { mutableIntStateOf(0) }
+    val visibleTab = if (landscape && tab == 2) 0 else tab
     var ratingTrack by remember { mutableStateOf<Track?>(null) }
     val account by model.sessions.account.collectAsStateWithLifecycle()
-    var editingLyrics by remember(tab, state.track == null, account?.origin, account?.user?.id, account?.session) {
+    var editingLyrics by remember(visibleTab, state.track == null, account?.origin, account?.user?.id, account?.session) {
         mutableStateOf<Triple<Track, SongMetadata, Boolean>?>(null)
     }
     var preferUslt by rememberSaveable(state.track?.key) { mutableStateOf(false) }
@@ -209,80 +212,94 @@ fun NowPlayingScreen(model: MusicViewModel, state: PlaybackState, download: (Str
     val hasSylt = metadata?.sylt?.isNotEmpty() == true
     val hasUslt = !metadata?.uslt.isNullOrBlank()
     val showUslt = hasUslt && (preferUslt || !hasSylt)
-    val canEditLyrics = tab == 1 && state.track?.name?.endsWith(".mp3", true) == true &&
+    val canEditLyrics = visibleTab == 1 && state.track?.name?.endsWith(".mp3", true) == true &&
         metadata?.canEdit == true && account?.user?.isShared == false
-    var artworkDrag by remember(state.track?.key, tab) { mutableFloatStateOf(0f) }
-    val artworkOffset by key(state.track?.key, tab) {
+    var artworkDrag by remember(state.track?.key, visibleTab) { mutableFloatStateOf(0f) }
+    val artworkOffset by key(state.track?.key, visibleTab) {
         animateFloatAsState(artworkDrag, animationSpec = if (artworkDrag == 0f) spring() else snap(),
             label = "Artwork swipe")
     }
-    Column(Modifier.fillMaxSize().playerTrackSwipes(
-        enabled = tab == 0 && state.track != null, nextEnabled = state.queue.size > 1,
-        previous = model.playback::previousTrack, next = model.playback::next,
-        trackKey = state.track?.key, onDragDistanceChanged = { artworkDrag = it }
-    )) {
-        Row(Modifier.fillMaxWidth().padding(horizontal = 20.dp, vertical = 12.dp),
-            verticalAlignment = Alignment.CenterVertically) {
-            Column(Modifier.weight(1f)) {
-                Text("NOW PLAYING", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.primary)
-                state.track?.let { track ->
-                    key(track.key) {
-                        Text(track.displayTitle,
-                            modifier = Modifier.fillMaxWidth().semantics { heading() }.basicMarquee(iterations = Int.MAX_VALUE),
-                            style = MaterialTheme.typography.titleLarge, maxLines = 1, softWrap = false, overflow = TextOverflow.Clip)
-                    }
+    val queue: @Composable (Modifier) -> Unit = { modifier ->
+        LazyColumn(modifier) {
+            itemsIndexed(state.queue, key = { index, item -> "${item.key}:$index" }) { index, queued ->
+                TrackRow(queued.copy(rating = model.library.rating(queued)), active = index == state.index,
+                    artwork = { rememberTrackArtwork(queued.copy(artworkUrl = model.library.artworkUrl(queued)), model.api, account) },
+                    transcription = model.library.transcription(queued),
+                    onRatingClick = { ratingTrack = queued },
+                    onClick = { model.playback.select(index) }) {
+                    ToolButton(Icons.Rounded.Close, "Remove from queue") { model.playback.remove(index) }
                 }
-                Text(state.track?.playlistTitle?.ifBlank { null } ?: "Your queue",
-                    style = if (state.track == null) MaterialTheme.typography.titleLarge else MaterialTheme.typography.bodySmall,
-                    maxLines = 1, overflow = TextOverflow.Ellipsis)
             }
-            SongActionsMenu(model, state.track, download, menuKey = tab,
-                editLyrics = if (canEditLyrics && metadata != null) ({ track ->
-                    editingLyrics = Triple(track, metadata, showUslt)
-                }) else null)
         }
-        if (state.track == null) {
-            Box(Modifier.weight(1f).fillMaxWidth(), contentAlignment = Alignment.Center) {
-                Text("Choose a song from Library to start playing.", Modifier.padding(24.dp),
-                    textAlign = TextAlign.Center)
-            }
-        } else {
-            val lyricsTabTitle = when {
-                showUslt -> "USLT Lyrics"
-                hasSylt -> "SYLT Lyrics"
-                else -> "Lyrics"
-            }
-            PrimaryTabRow(selectedTabIndex = tab, containerColor = MaterialTheme.colorScheme.surface) {
-                listOf("Player", lyricsTabTitle, "Queue").forEachIndexed { index, title ->
-                    Tab(selected = tab == index, onClick = {
-                        if (index == 1 && tab == 1 && hasSylt && hasUslt) preferUslt = !preferUslt
-                        tab = index
-                    }, text = { Text(title) })
-                }
-            }
-            when (tab) {
-                0 -> PlayerArtwork(state, model.metadata, Modifier.weight(1f), model.playback.controller,
-                    artworkOffset = { artworkOffset }, transcription = model.library.transcription(state.track),
-                    showVisualizer = model.audioVisualizerEnabled, onShowVisualizer = model::chooseAudioVisualizer,
-                    visualizerStyle = model.audioVisualizerStyle, onVisualizerStyle = model::chooseAudioVisualizerStyle) {
-                    model.playback.play(listOfNotNull(state.track?.noVocalsVersion))
-                }
-                1 -> Lyrics(model, state, Modifier.weight(1f), showUslt,
-                    toggleSource = if (hasSylt && hasUslt) ({ preferUslt = !preferUslt }) else null)
-                else -> LazyColumn(Modifier.weight(1f)) {
-                    itemsIndexed(state.queue, key = { index, item -> "${item.key}:$index" }) { index, queued ->
-                        TrackRow(queued.copy(rating = model.library.rating(queued)), active = index == state.index,
-                            artwork = { rememberTrackArtwork(queued.copy(artworkUrl = model.library.artworkUrl(queued)), model.api, account) },
-                            transcription = model.library.transcription(queued),
-                            onRatingClick = { ratingTrack = queued },
-                            onClick = { model.playback.select(index) }) {
-                            ToolButton(Icons.Rounded.Close, "Remove from queue") { model.playback.remove(index) }
+    }
+    Row(Modifier.fillMaxSize()) {
+        Column(Modifier.weight(if (landscape) 0.65f else 1f).fillMaxHeight().testTag("now-playing-pane").playerTrackSwipes(
+            enabled = visibleTab == 0 && state.track != null, nextEnabled = state.queue.size > 1,
+            previous = model.playback::previousTrack, next = model.playback::next,
+            trackKey = state.track?.key, onDragDistanceChanged = { artworkDrag = it }
+        )) {
+            Row(Modifier.fillMaxWidth().padding(horizontal = 20.dp, vertical = if (landscape) 0.dp else 12.dp),
+                verticalAlignment = Alignment.CenterVertically) {
+                Column(Modifier.weight(1f)) {
+                    Text("NOW PLAYING", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.primary)
+                    state.track?.let { track ->
+                        key(track.key) {
+                            Text(track.displayTitle,
+                                modifier = Modifier.fillMaxWidth().semantics { heading() }.basicMarquee(iterations = Int.MAX_VALUE),
+                                style = if (landscape) MaterialTheme.typography.titleMedium else MaterialTheme.typography.titleLarge,
+                                maxLines = 1, softWrap = false, overflow = TextOverflow.Clip)
                         }
                     }
+                    if (!landscape || state.track == null) Text(state.track?.playlistTitle?.ifBlank { null } ?: "Your queue",
+                        style = if (state.track == null) MaterialTheme.typography.titleLarge else MaterialTheme.typography.bodySmall,
+                        maxLines = 1, overflow = TextOverflow.Ellipsis)
                 }
+                SongActionsMenu(model, state.track, download, menuKey = visibleTab,
+                    editLyrics = if (canEditLyrics && metadata != null) ({ track ->
+                        editingLyrics = Triple(track, metadata, showUslt)
+                    }) else null)
             }
-            PlayerTransport(state, model.playback::seek, model.playback::previous, model.playback::toggle,
-                model.playback::next, model.playback::shuffle, model.playback::repeat)
+            if (state.track == null) {
+                Box(Modifier.weight(1f).fillMaxWidth(), contentAlignment = Alignment.Center) {
+                    Text("Choose a song from Library to start playing.", Modifier.padding(24.dp),
+                        textAlign = TextAlign.Center)
+                }
+            } else {
+                val lyricsTabTitle = when {
+                    showUslt -> "USLT Lyrics"
+                    hasSylt -> "SYLT Lyrics"
+                    else -> "Lyrics"
+                }
+                PrimaryTabRow(selectedTabIndex = visibleTab, containerColor = MaterialTheme.colorScheme.surface) {
+                    val tabs = if (landscape) listOf("Player", lyricsTabTitle) else listOf("Player", lyricsTabTitle, "Queue")
+                    tabs.forEachIndexed { index, title ->
+                        Tab(selected = visibleTab == index, onClick = {
+                            if (index == 1 && visibleTab == 1 && hasSylt && hasUslt) preferUslt = !preferUslt
+                            tab = index
+                        }, text = { Text(title) })
+                    }
+                }
+                when (visibleTab) {
+                    0 -> PlayerArtwork(state, model.metadata, Modifier.weight(1f), model.playback.controller,
+                        artworkOffset = { artworkOffset }, transcription = model.library.transcription(state.track),
+                        showVisualizer = model.audioVisualizerEnabled, onShowVisualizer = model::chooseAudioVisualizer,
+                        visualizerStyle = model.audioVisualizerStyle, onVisualizerStyle = model::chooseAudioVisualizerStyle) {
+                        model.playback.play(listOfNotNull(state.track?.noVocalsVersion))
+                    }
+                    1 -> Lyrics(model, state, Modifier.weight(1f), showUslt,
+                        toggleSource = if (hasSylt && hasUslt) ({ preferUslt = !preferUslt }) else null)
+                    else -> queue(Modifier.weight(1f))
+                }
+                PlayerTransport(state, model.playback::seek, model.playback::previous, model.playback::toggle,
+                    model.playback::next, model.playback::shuffle, model.playback::repeat, compact = landscape)
+            }
+        }
+        if (landscape) Column(Modifier.weight(0.35f).fillMaxHeight().testTag("now-playing-queue-pane")) {
+            Text("Queue", Modifier.fillMaxWidth().heightIn(min = 48.dp).padding(horizontal = 16.dp, vertical = 12.dp)
+                .semantics { heading() }, style = MaterialTheme.typography.titleMedium)
+            HorizontalDivider()
+            if (state.queue.isEmpty()) Text("Your queue is empty.", Modifier.padding(16.dp))
+            else queue(Modifier.weight(1f))
         }
     }
     ratingTrack?.let { track -> MetadataDialog(model, track, ratingOnly = true) { ratingTrack = null } }
@@ -412,47 +429,49 @@ internal fun PlayerArtwork(state: PlaybackState, metadata: SongMetadata?, modifi
     onShowVisualizer: (Boolean) -> Unit = {}, visualizerStyle: AudioVisualizerStyle = AudioVisualizerStyle.WAVEFORM,
     onVisualizerStyle: (AudioVisualizerStyle) -> Unit = {}, onInstrumental: () -> Unit = {}) {
     val track = state.track
-    Column(modifier.fillMaxWidth().verticalScroll(rememberScrollState()).padding(horizontal = 28.dp, vertical = 24.dp),
-        horizontalAlignment = Alignment.CenterHorizontally) {
-        if (track?.mediaType == "video") AndroidView(factory = { context -> PlayerView(context).apply { useController = false; player = controller } },
-            update = { it.player = controller }, onRelease = { it.player = null }, modifier = Modifier.fillMaxWidth().aspectRatio(16f / 9f))
-        else {
-            if (track != null) {
-                Row(Modifier.widthIn(max = 320.dp).fillMaxWidth()
-                    .semantics { contentDescription = "Audio visualizer" }
-                    .toggleable(value = showVisualizer, role = Role.Switch, onValueChange = onShowVisualizer)
-                    .padding(bottom = 8.dp), verticalAlignment = Alignment.CenterVertically) {
-                    Text(if (showVisualizer) "Audio visualizer" else "Album artwork", Modifier.weight(1f),
-                        style = MaterialTheme.typography.labelLarge)
-                    Switch(checked = showVisualizer, onCheckedChange = null)
-                }
-                if (showVisualizer) {
-                    var expanded by remember { mutableStateOf(false) }
-                    Box(Modifier.padding(bottom = 12.dp)) {
-                        OutlinedButton(onClick = { expanded = true },
-                            modifier = Modifier.semantics { contentDescription = "Visualizer style" }) {
-                            Text(visualizerStyle.label)
-                            Icon(Icons.Rounded.ArrowDropDown, null)
-                        }
-                        DropdownMenu(expanded = expanded, onDismissRequest = { expanded = false }) {
-                            AudioVisualizerStyle.entries.forEach { style ->
-                                DropdownMenuItem(text = { Text(style.label) },
-                                    trailingIcon = {
-                                        if (style == visualizerStyle) Icon(Icons.Rounded.Check, "Selected")
-                                    }, onClick = { onVisualizerStyle(style); expanded = false })
-                            }
+    val landscape = isLandscape()
+    val options: @Composable () -> Unit = {
+        if (track != null && track.mediaType != "video") {
+            Row(Modifier.widthIn(max = 320.dp).fillMaxWidth()
+                .semantics { contentDescription = "Audio visualizer" }
+                .toggleable(value = showVisualizer, role = Role.Switch, onValueChange = onShowVisualizer)
+                .padding(bottom = 8.dp), verticalAlignment = Alignment.CenterVertically) {
+                Text(if (showVisualizer) "Audio visualizer" else "Album artwork", Modifier.weight(1f),
+                    style = MaterialTheme.typography.labelLarge)
+                Switch(checked = showVisualizer, onCheckedChange = null)
+            }
+            if (showVisualizer) {
+                var expanded by remember { mutableStateOf(false) }
+                Box(Modifier.padding(bottom = 12.dp)) {
+                    OutlinedButton(onClick = { expanded = true },
+                        modifier = Modifier.semantics { contentDescription = "Visualizer style" }) {
+                        Text(visualizerStyle.label)
+                        Icon(Icons.Rounded.ArrowDropDown, null)
+                    }
+                    DropdownMenu(expanded = expanded, onDismissRequest = { expanded = false }) {
+                        AudioVisualizerStyle.entries.forEach { style ->
+                            DropdownMenuItem(text = { Text(style.label) },
+                                trailingIcon = {
+                                    if (style == visualizerStyle) Icon(Icons.Rounded.Check, "Selected")
+                                }, onClick = { onVisualizerStyle(style); expanded = false })
                         }
                     }
                 }
             }
-            val visualModifier = Modifier.absoluteOffset { IntOffset(artworkOffset().roundToInt(), 0) }
-                .widthIn(max = 320.dp).fillMaxWidth().aspectRatio(1f)
+        }
+    }
+    val visual: @Composable (Modifier) -> Unit = { visualModifier ->
+        if (track?.mediaType == "video") AndroidView(factory = { context -> PlayerView(context).apply { useController = false; player = controller } },
+            update = { it.player = controller }, onRelease = { it.player = null }, modifier = visualModifier)
+        else {
+            val artworkModifier = visualModifier.absoluteOffset { IntOffset(artworkOffset().roundToInt(), 0) }
             if (showVisualizer && track != null) key(track.key) {
                 PlaybackAudioVisualizer(state.playing && !state.buffering && state.error == null,
-                    visualizerStyle, visualModifier)
-            } else AlbumArtwork(metadata?.artwork, visualModifier)
+                    visualizerStyle, artworkModifier)
+            } else AlbumArtwork(metadata?.artwork, artworkModifier)
         }
-        Spacer(Modifier.height(28.dp))
+    }
+    val details: @Composable () -> Unit = {
         Text(metadata?.title?.ifBlank { null } ?: track?.displayTitle.orEmpty(), style = MaterialTheme.typography.headlineSmall,
             textAlign = TextAlign.Center, maxLines = 3, overflow = TextOverflow.Ellipsis)
         Text(metadata?.artist?.ifBlank { null } ?: track?.displayArtist.orEmpty(), style = MaterialTheme.typography.bodyMedium,
@@ -466,13 +485,32 @@ internal fun PlayerArtwork(state: PlaybackState, metadata: SongMetadata?, modifi
             Icon(Icons.Rounded.MicOff, null); Spacer(Modifier.width(8.dp)); Text("Instrumental version")
         }
     }
+    if (landscape) BoxWithConstraints(modifier.fillMaxWidth().padding(8.dp)) {
+        val visualSize = minOf(maxHeight, maxWidth * 0.4f, 200.dp)
+        Row(Modifier.fillMaxSize(), verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+            visual(Modifier.size(visualSize).testTag("landscape-player-artwork"))
+            Column(Modifier.weight(1f).fillMaxHeight().verticalScroll(rememberScrollState()),
+                horizontalAlignment = Alignment.CenterHorizontally) {
+                options()
+                details()
+            }
+        }
+    } else Column(modifier.fillMaxWidth().verticalScroll(rememberScrollState()).padding(horizontal = 28.dp, vertical = 24.dp),
+        horizontalAlignment = Alignment.CenterHorizontally) {
+        options()
+        visual(if (track?.mediaType == "video") Modifier.fillMaxWidth().aspectRatio(16f / 9f)
+            else Modifier.widthIn(max = 320.dp).fillMaxWidth().aspectRatio(1f))
+        Spacer(Modifier.height(28.dp))
+        details()
+    }
 }
 
 @Composable
 fun PlayerTransport(state: PlaybackState, onSeek: (Long) -> Unit, previous: () -> Unit, toggle: () -> Unit,
-    next: () -> Unit, shuffle: () -> Unit, repeat: () -> Unit) {
+    next: () -> Unit, shuffle: () -> Unit, repeat: () -> Unit, compact: Boolean = false) {
     var seeking by remember(state.track?.key) { mutableStateOf<Float?>(null) }
-    Column(Modifier.fillMaxWidth().padding(horizontal = 24.dp).padding(bottom = 20.dp)) {
+    val position: @Composable () -> Unit = {
         Slider(value = seeking ?: state.position.toFloat().coerceIn(0f, state.duration.toFloat().coerceAtLeast(1f)),
             onValueChange = { seeking = it }, onValueChangeFinished = { seeking?.let { onSeek(it.toLong()) }; seeking = null },
             valueRange = 0f..state.duration.toFloat().coerceAtLeast(1f), enabled = state.duration > 0,
@@ -481,15 +519,26 @@ fun PlayerTransport(state: PlaybackState, onSeek: (Long) -> Unit, previous: () -
             Text(timestamp(seeking?.toLong() ?: state.position), style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
             Text(timestamp(state.duration), style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
         }
-        Row(Modifier.fillMaxWidth().padding(top = 14.dp), horizontalArrangement = Arrangement.SpaceEvenly, verticalAlignment = Alignment.CenterVertically) {
+    }
+    val controls: @Composable () -> Unit = {
+        Row(if (compact) Modifier else Modifier.fillMaxWidth().padding(top = 14.dp),
+            horizontalArrangement = Arrangement.SpaceEvenly, verticalAlignment = Alignment.CenterVertically) {
             ShuffleButton(state.shuffle, shuffle)
             ToolButton(Icons.Rounded.SkipPrevious, "Previous track", onClick = previous)
-            FilledIconButton(onClick = toggle, modifier = Modifier.size(64.dp), shape = CircleShape) {
+            FilledIconButton(onClick = toggle, modifier = Modifier.size(if (compact) 48.dp else 64.dp), shape = CircleShape) {
                 Icon(if (state.playing) Icons.Rounded.Pause else Icons.Rounded.PlayArrow, if (state.playing) "Pause" else "Play", Modifier.size(32.dp))
             }
             ToolButton(Icons.Rounded.SkipNext, "Next track", enabled = state.queue.size > 1, onClick = next)
             RepeatButton(state.repeat, repeat)
         }
+    }
+    if (compact) Row(Modifier.fillMaxWidth().padding(horizontal = 8.dp),
+        verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+        Column(Modifier.weight(1f)) { position() }
+        controls()
+    } else Column(Modifier.fillMaxWidth().padding(horizontal = 24.dp).padding(bottom = 20.dp)) {
+        position()
+        controls()
     }
 }
 
