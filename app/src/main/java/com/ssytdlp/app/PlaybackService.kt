@@ -19,6 +19,7 @@ import androidx.media3.exoplayer.audio.TeeAudioProcessor
 import androidx.media3.exoplayer.source.DefaultMediaSourceFactory
 import androidx.media3.session.MediaSession
 import androidx.media3.session.MediaSessionService
+import androidx.media3.session.DefaultMediaNotificationProvider
 import com.google.common.util.concurrent.Futures
 import com.google.common.util.concurrent.ListenableFuture
 import com.ssytdlp.app.core.ApiJson
@@ -45,6 +46,11 @@ class PlaybackService : MediaSessionService() {
 
     override fun onCreate() {
         super.onCreate()
+        setMediaNotificationProvider(
+            DefaultMediaNotificationProvider.Builder(this)
+                .setSmallIcon(R.drawable.ic_notification)
+                .build()
+        )
         val app = application as MusicApplication
         val source = OkHttpDataSource.Factory(app.api.authenticatedClient)
         val renderers = object : DefaultRenderersFactory(this) {
