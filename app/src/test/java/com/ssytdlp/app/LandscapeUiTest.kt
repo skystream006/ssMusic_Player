@@ -14,6 +14,8 @@ import androidx.compose.runtime.snapshots.Snapshot
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.semantics.SemanticsProperties
 import androidx.compose.ui.test.*
 import androidx.compose.ui.test.junit4.StateRestorationTester
 import androidx.compose.ui.test.junit4.createAndroidComposeRule
@@ -135,8 +137,9 @@ class LandscapeUiTest {
             }
         }
         assertSplit("now-playing-pane", "now-playing-queue-pane", 0.65f)
-        compose.onAllNodes(isSelectable()).assertCountEquals(2)
+        compose.onAllNodes(SemanticsMatcher.expectValue(SemanticsProperties.Role, Role.Tab)).assertCountEquals(2)
         compose.onNodeWithText("Player").assertIsSelected()
+        compose.onNodeWithTag("landscape-player-artwork").assertIsDisplayed().assertHeightIsAtLeast(1.dp)
         compose.onNodeWithText("Second song").assertIsDisplayed().assertHasClickAction()
         compose.onNodeWithContentDescription("Play").assertIsDisplayed()
         compose.onNodeWithContentDescription("Playback position").assertIsDisplayed()

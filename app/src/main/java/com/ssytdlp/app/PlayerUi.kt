@@ -233,7 +233,7 @@ fun NowPlayingScreen(model: MusicViewModel, state: PlaybackState, download: (Str
         }
     }
     Row(Modifier.fillMaxSize()) {
-        Column(Modifier.weight(if (landscape) 0.65f else 1f).fillMaxHeight().testTag("now-playing-pane").playerTrackSwipes(
+        Column(Modifier.weight(if (landscape) 0.65f else 1f).fillMaxHeight().clipToBounds().testTag("now-playing-pane").playerTrackSwipes(
             enabled = visibleTab == 0 && state.track != null, nextEnabled = state.queue.size > 1,
             previous = model.playback::previousTrack, next = model.playback::next,
             trackKey = state.track?.key, onDragDistanceChanged = { artworkDrag = it }
