@@ -307,6 +307,15 @@ the filter. There is no top-bar play button; tap a song to play the page.
 On each library page, `[NoVocals]/` tracks appear after originals in a collapsed
 **[NoVocals]** section. Expanding it keeps playback and track actions associated
 with the original page indices.
+Choose **Edit playlist** from a playlist's three-dot menu to change its name,
+privacy, or folder location. Owners and administrators can rename ordinary
+playlists; only owners can change privacy. Contributors can change location in
+their own library, but cannot rename or change privacy. Protected Individual
+Songs/Videos keep their fixed names. Shared accounts cannot edit, and active
+downloads must finish first. Changes are applied only with **Save changes**;
+sharing is disabled until edits are saved or discarded. Saves use separate server
+requests: if one fails, the dialog stays open with an error and reloads the
+library before retrying, since earlier changes may already have succeeded.
 In the playlist/folder browser, open a playlist's three-dot menu and choose
 **Share Playlist**, then **Generate public link** and **Copy link**. Owners,
 contributors, and administrators can share non-private playlists; shared accounts
