@@ -845,30 +845,53 @@ private fun SongPrivacyMenuItem(model: MusicViewModel, track: Track, close: () -
 
 @Composable
 internal fun ShareMediaDialog(model: MusicViewModel, track: Track, dismiss: () -> Unit) {
+    ShareLinkDialog(model, title = "Share Media",
+        description = "${track.displayTitle}\n\nAnyone with this link can listen, read lyrics and metadata, and save this file without signing in. They cannot edit it. Only share content you have permission to share.",
+        requestPath = shareMediaPath(track), publicPath = "/share/", linkLabel = "Public media link",
+        unavailableMessage = if (model.songPrivacy(track).isPrivate)
+            "Private songs cannot be shared. Only the owner can access this song." else null,
+        dismiss = dismiss)
+}
+
+@Composable
+internal fun SharePlaylistDialog(model: MusicViewModel, playlist: LibraryPlaylist, dismiss: () -> Unit) {
+    ShareLinkDialog(model, title = "Share Playlist",
+        description = "${playlist.playlistTitle}\n\nAnyone with this link can listen to this playlist, read lyrics and metadata, and download its public audio files without signing in. They cannot edit it. Private and unshareable songs are excluded. Only share content you have permission to share.",
+        requestPath = "/api/library/playlists/${encode(playlist.id)}/share",
+        publicPath = "/share/playlist/", linkLabel = "Public playlist link",
+        unavailableMessage = when {
+            playlist.isPrivate -> "Private playlists cannot be shared. Only the owner can access this playlist."
+            playlist.songCount == 0 -> "This playlist has no songs to share."
+            else -> null
+        }, dismiss = dismiss)
+}
+
+@Composable
+private fun ShareLinkDialog(model: MusicViewModel, title: String, description: String,
+    requestPath: String, publicPath: String, linkLabel: String, unavailableMessage: String?, dismiss: () -> Unit) {
     val context = LocalContext.current
     val account by model.sessions.account.collectAsStateWithLifecycle()
-    var generating by remember(track.key) { mutableStateOf(false) }
-    var url by remember(track.key) { mutableStateOf<String?>(null) }
-    var copied by remember(track.key) { mutableStateOf(false) }
-    var error by remember(track.key) { mutableStateOf<String?>(null) }
-    val isPrivate = model.songPrivacy(track).isPrivate
+    key(requestPath, account?.origin, account?.user?.id, account?.session) {
+    var generating by remember { mutableStateOf(false) }
+    var url by remember { mutableStateOf<String?>(null) }
+    var copied by remember { mutableStateOf(false) }
+    var error by remember { mutableStateOf<String?>(null) }
     val scope = rememberCoroutineScope()
-    AlertDialog(onDismissRequest = { if (!generating) dismiss() }, title = { Text("Share Media") }, text = {
-        Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
-            Text("${track.displayTitle}\n\nAnyone with this link can listen, read lyrics and metadata, and save this file without signing in. They cannot edit it. Only share content you have permission to share.")
-            if (isPrivate) Text("Private songs cannot be shared. Only the owner can access this song.")
-            url?.takeUnless { isPrivate }?.let {
-                OutlinedTextField(value = it, onValueChange = {}, readOnly = true, label = { Text("Public media link") })
+    AlertDialog(onDismissRequest = { if (!generating) dismiss() }, title = { Text(title) }, text = {
+        Column(Modifier.verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+            Text(description)
+            unavailableMessage?.let { Text(it) }
+            url?.takeIf { unavailableMessage == null }?.let {
+                OutlinedTextField(value = it, onValueChange = {}, readOnly = true, label = { Text(linkLabel) })
             }
             error?.let { Text(it, color = MaterialTheme.colorScheme.error) }
         }
     }, confirmButton = {
-        TextButton(enabled = !generating && !isPrivate, onClick = {
-            if (model.songPrivacy(track).isPrivate) return@TextButton
+        TextButton(enabled = !generating && !model.busy && unavailableMessage == null, onClick = {
             val link = url
             if (link != null) {
                 val clipboard = context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
-                clipboard.setPrimaryClip(ClipData.newPlainText("Public media link", link))
+                clipboard.setPrimaryClip(ClipData.newPlainText(linkLabel, link))
                 copied = true
             } else {
                 scope.launch {
@@ -876,10 +899,10 @@ internal fun ShareMediaDialog(model: MusicViewModel, track: Track, dismiss: () -
                     error = null
                     try {
                         val owner = requireNotNull(account) { "Sign in to share media." }
-                        val response = model.api.request(shareMediaPath(track), method = "POST").jsonObject
+                        val response = model.api.request(requestPath, method = "POST").jsonObject
                         val path = response["url"]?.jsonPrimitive?.content
                             ?: throw IllegalStateException("The server did not return a share link.")
-                        require(Regex("^/share/[A-Za-z0-9_-]{43}$").matches(path)) {
+                        require(Regex("${Regex.escape(publicPath)}[A-Za-z0-9_-]{43}").matches(path)) {
                             "The server returned an invalid share link."
                         }
                         url = "${AuthProtocol.normalizeOrigin(owner.origin)}$path"
@@ -898,6 +921,7 @@ internal fun ShareMediaDialog(model: MusicViewModel, track: Track, dismiss: () -
                 copied -> "Copied"
                 else -> "Copy link"
             })
+            }
         }
     }, dismissButton = {
         TextButton(enabled = !generating, onClick = dismiss) { Text(if (url == null) "Cancel" else "Done") }

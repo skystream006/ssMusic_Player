@@ -410,6 +410,7 @@ fun EntryMenu(model: MusicViewModel, entry: LibraryEntry) {
     var rename by remember { mutableStateOf(false) }
     var remove by remember { mutableStateOf(false) }
     var move by remember { mutableStateOf(false) }
+    var share by remember(entry.id, account?.origin, account?.user?.id, account?.session) { mutableStateOf(false) }
     Box {
         ToolButton(Icons.Rounded.MoreVert, "Options for ${entry.name}", enabled = !model.busy) { open = true }
         DropdownMenu(open, { open = false }) {
@@ -421,6 +422,12 @@ fun EntryMenu(model: MusicViewModel, entry: LibraryEntry) {
                         model.setPlaylistPrivate(playlist, !playlist.isPrivate)
                     })
             }
+            if (entry.type == "playlist" && playlist?.canShare(account?.user) == true) {
+                DropdownMenuItem(text = { Text("Share Playlist") },
+                    leadingIcon = { Icon(Icons.Rounded.Share, null) },
+                    enabled = !model.busy && !playlist.isPrivate && playlist.songCount > 0,
+                    onClick = { open = false; share = true })
+            }
             if (entry.type == "folder") DropdownMenuItem(text = { Text("Rename") }, onClick = { open = false; rename = true }, leadingIcon = { Icon(Icons.Rounded.Edit, null) })
             DropdownMenuItem(text = { Text("Move to folder") }, onClick = { open = false; move = true }, leadingIcon = { Icon(Icons.AutoMirrored.Rounded.DriveFileMove, null) })
             if (entry.type == "folder") DropdownMenuItem(text = { Text("Remove folder") }, onClick = { open = false; remove = true }, leadingIcon = { Icon(Icons.Rounded.DeleteOutline, null) })
@@ -430,6 +437,9 @@ fun EntryMenu(model: MusicViewModel, entry: LibraryEntry) {
     if (remove) ConfirmDialog("Remove folder?", "Contents will move to its parent folder.", { remove = false }) { model.folder(entry.name, entry, true); remove = false }
     if (move) DestinationDialog("Move to folder", listOf(null to "Library root") + model.library.library.entries
         .filter { it.type == "folder" && it.id != entry.id }.map { it.id to it.name }, { move = false }) { model.moveEntry(entry, it); move = false }
+    if (share && entry.type == "playlist" && playlist?.canShare(account?.user) == true) {
+        SharePlaylistDialog(model, playlist) { share = false }
+    }
 }
 
 @Composable
