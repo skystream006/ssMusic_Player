@@ -391,7 +391,6 @@ scrollable preview dialog, then select a skin to apply it and close the dialog:
 - **Galaxy** — three different galaxies amid a field of stars.
 - **Tropical** — a coconut palm in front of a beach sunset.
 - **Mechanics** — interlocking gears and metal mechanisms.
-- **Cars** — a dark, low-slung, angular supercar.
 
 All are original bundled vector images, available offline without downloads.
 The toggle and selected skin are remembered on this device; turning skins off

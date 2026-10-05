@@ -84,6 +84,7 @@ class SettingsUiTest {
         AppSkin.entries.forEach { option ->
             compose.onNodeWithText(skin.value.label).assertIsEnabled().performClick()
             compose.onNode(isDialog()).assertIsDisplayed()
+            compose.onNodeWithText("Cars").assertDoesNotExist()
             skinOption(skin.value).assertIsSelected()
             AppSkin.entries.filter { it != skin.value }.forEach { skinOption(it).assertIsNotSelected() }
             skinOption(option).performScrollTo().assertIsDisplayed().performClick()
@@ -185,12 +186,14 @@ class SettingsUiTest {
                     assertEquals(theme, initial.preferences)
                     assertEquals(wave, initial.waveAppearance)
                     assertEquals(wave, disabled.waveAppearance)
-                    preferences.edit().putString("skin", "unknown-skin").commit()
-                    val unknown = MusicViewModel(initial.getApplication(), connectPlayback = false)
-                    models.put("unknown", unknown)
-                    unknown.viewModelScope.cancel()
-                    assertTrue(unknown.skinsEnabled)
-                    assertEquals(AppSkin.CHERRY_BLOSSOM, unknown.skin)
+                    listOf("unknown-skin", "CARS").forEach { unavailableSkin ->
+                        preferences.edit().putString("skin", unavailableSkin).commit()
+                        val unknown = MusicViewModel(initial.getApplication(), connectPlayback = false)
+                        models.put(unavailableSkin, unknown)
+                        unknown.viewModelScope.cancel()
+                        assertTrue(unknown.skinsEnabled)
+                        assertEquals(AppSkin.CHERRY_BLOSSOM, unknown.skin)
+                    }
                     assertEquals(AppSkin.CHERRY_BLOSSOM, AppSkin.fromPreference(null))
                 }
             }
