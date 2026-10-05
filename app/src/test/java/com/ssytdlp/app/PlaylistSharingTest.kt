@@ -130,6 +130,8 @@ class PlaylistSharingTest {
         assertTrue(requests.isEmpty())
     }
 
+    // Robolectric #8460: text fields in dialogs loop at widths above the default 320dp.
+    @Config(qualifiers = "w320dp-h800dp")
     @Test fun generatesOnlyAfterConsentAndCopiesValidatedServerLinkWithoutRegenerating() {
         openShare()
         generate()
@@ -157,6 +159,7 @@ class PlaylistSharingTest {
         compose.onNodeWithText("Generate public link").assertDoesNotExist()
     }
 
+    @Config(qualifiers = "w320dp-h800dp")
     @Test fun failedRequestsShowServerErrorsAndAllowRetry() {
         openShare()
         for (status in listOf(403, 404, 500)) {
@@ -187,6 +190,7 @@ class PlaylistSharingTest {
         }
     }
 
+    @Config(qualifiers = "w320dp-h800dp")
     @Test fun privacyChangesHideGeneratedLinksAndDisableCopying() {
         openShare()
         generate()
@@ -197,6 +201,7 @@ class PlaylistSharingTest {
         assertEquals(1, requests.size)
     }
 
+    @Config(qualifiers = "w320dp-h800dp")
     @Test fun accountChangesDiscardTheShareDialogAndItsLink() {
         openShare()
         generate()
@@ -208,6 +213,7 @@ class PlaylistSharingTest {
         assertEquals(1, requests.size)
     }
 
+    @Config(qualifiers = "w320dp-h800dp")
     @Test fun songSharingKeepsItsExistingEndpointAndPublicPath() {
         val track = Track("job /?", "folder/song #1.mp3", title = "Song")
         val songPath = "/share/" + "s".repeat(43)
