@@ -561,7 +561,7 @@ fun Lyrics(model: MusicViewModel, state: PlaybackState, modifier: Modifier, pref
     Box(modifier.fillMaxWidth().background(MaterialTheme.colorScheme.surface)) {
         LyricsContent(metadata, state.position, track?.key, model.playback::seek, Modifier.fillMaxSize(),
             model.metadataError, track?.mediaType == "video", preferUslt, model.lyricsTextScale, model::zoomLyrics,
-            endPadding = 56.dp)
+            endPadding = 56.dp, compact = isLandscape())
         Box(Modifier.align(Alignment.TopEnd)) {
             ToolButton(Icons.Rounded.Fullscreen, "Expand lyrics to full screen",
                 modifier = Modifier.background(MaterialTheme.colorScheme.surface.copy(alpha = 0.9f), CircleShape)) {
@@ -602,7 +602,7 @@ fun Lyrics(model: MusicViewModel, state: PlaybackState, modifier: Modifier, pref
 @Composable
 internal fun LyricsContent(lyrics: SongMetadata?, position: Long, trackKey: String?, onSeek: (Long) -> Unit,
     modifier: Modifier = Modifier, error: String? = null, isVideo: Boolean = false, preferUslt: Boolean = false,
-    textScale: Float = 1f, onZoom: (Float) -> Unit = {}, endPadding: Dp = 28.dp) {
+    textScale: Float = 1f, onZoom: (Float) -> Unit = {}, endPadding: Dp = 28.dp, compact: Boolean = false) {
     val scale = normalizeLyricsTextScale(textScale)
     key(trackKey, lyrics?.sylt, lyrics?.uslt, preferUslt) {
         var pinching by remember { mutableStateOf(false) }
@@ -664,9 +664,10 @@ internal fun LyricsContent(lyrics: SongMetadata?, position: Long, trackKey: Stri
                     listState.animateScrollToItem(target)
             }
             LazyColumn(zoomModifier.fillMaxWidth().nestedScroll(scrollConnection), state = listState,
-                contentPadding = PaddingValues(start = 28.dp, top = 24.dp, end = endPadding, bottom = 24.dp)) {
+                contentPadding = PaddingValues(start = 28.dp, top = if (compact) 8.dp else 24.dp,
+                    end = endPadding, bottom = if (compact) 8.dp else 24.dp)) {
                 itemsIndexed(lyrics.sylt) { index, line ->
-                    Row(modifier = Modifier.fillMaxWidth().padding(vertical = 12.dp),
+                    Row(modifier = Modifier.fillMaxWidth().padding(vertical = if (compact) 4.dp else 12.dp),
                         verticalAlignment = Alignment.CenterVertically) {
                         Text(formatLyricTimestamp(line.time), style = MaterialTheme.typography.labelMedium,
                             color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.width(48.dp))
@@ -685,7 +686,8 @@ internal fun LyricsContent(lyrics: SongMetadata?, position: Long, trackKey: Stri
                 }
             }
         } else Column(zoomModifier.fillMaxWidth().verticalScroll(rememberScrollState())
-            .padding(start = 28.dp, top = 28.dp, end = endPadding, bottom = 28.dp)) {
+            .padding(start = 28.dp, top = if (compact) 8.dp else 28.dp,
+                end = endPadding, bottom = if (compact) 8.dp else 28.dp)) {
             Text(lyrics?.uslt?.ifBlank { null } ?: error ?: if (lyrics == null && !isVideo) "Loading lyrics..." else "No lyrics available",
                 style = MaterialTheme.typography.bodyLarge.scaledLyrics(if (lyrics?.uslt.isNullOrBlank()) 1f else scale))
         }

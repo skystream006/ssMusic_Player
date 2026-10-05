@@ -29,6 +29,7 @@ import androidx.test.core.app.ApplicationProvider
 import com.ssytdlp.app.core.Library
 import com.ssytdlp.app.core.LibraryEntry
 import com.ssytdlp.app.core.LibraryPlaylist
+import com.ssytdlp.app.core.LyricLine
 import com.ssytdlp.app.core.SongMetadata
 import com.ssytdlp.app.core.Track
 import com.ssytdlp.app.core.TrackPage
@@ -161,6 +162,34 @@ class LandscapeUiTest {
         compose.onNodeWithText("Choose a song from Library to start playing.").assertIsDisplayed()
         compose.onNodeWithText("Your queue is empty.").assertIsDisplayed()
         compose.onNodeWithContentDescription("Play").assertDoesNotExist()
+    }
+
+    @Test fun shortLandscapeLyricsKeepBothSourcesVisible() {
+        val metadata = ReflectionHelpers.getField<MutableState<SongMetadata?>>(model, "metadata\$delegate")
+        val preferUslt = mutableStateOf(false)
+        compose.runOnIdle {
+            metadata.value = SongMetadata(sylt = listOf(LyricLine(0.0, "Synchronized lyrics")),
+                uslt = "Plain lyrics")
+        }
+        compose.setContent {
+            MusicTheme {
+                Box(Modifier.height(40.dp).testTag("screen")) {
+                    Lyrics(model, playback, Modifier.fillMaxSize(), preferUslt.value)
+                }
+            }
+        }
+        fun assertLyricsVisible(text: String) {
+            val screen = compose.onNodeWithTag("screen").getUnclippedBoundsInRoot()
+            val lyrics = compose.onNodeWithText(text).assertIsDisplayed().getUnclippedBoundsInRoot()
+            assertTrue(lyrics.top >= screen.top)
+            assertTrue(lyrics.bottom <= screen.bottom)
+        }
+        assertLyricsVisible("Synchronized lyrics")
+        compose.runOnIdle {
+            preferUslt.value = true
+            Snapshot.sendApplyNotifications()
+        }
+        assertLyricsVisible("Plain lyrics")
     }
 
     @Test fun narrowCompactTransportKeepsTheSeekSliderVisible() {
