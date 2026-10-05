@@ -411,7 +411,7 @@ fun EntryMenu(model: MusicViewModel, entry: LibraryEntry) {
     var remove by remember { mutableStateOf(false) }
     var move by remember { mutableStateOf(false) }
     var share by remember(entry.id, account?.origin, account?.user?.id, account?.session) { mutableStateOf(false) }
-    var edit by remember(entry.id, account?.origin, account?.user?.id, account?.session) { mutableStateOf(false) }
+    var edit by rememberSaveable(entry.id, account?.origin, account?.user?.id, account?.session) { mutableStateOf(false) }
     val canEdit = entry.type == "playlist" && playlist != null &&
         account?.user?.let { !it.isShared && it.id.isNotBlank() } == true
     Box {
@@ -420,7 +420,7 @@ fun EntryMenu(model: MusicViewModel, entry: LibraryEntry) {
             if (canEdit) DropdownMenuItem(text = { Text("Edit playlist") },
                 leadingIcon = { Icon(Icons.Rounded.Edit, null) },
                 enabled = !model.busy && playlist?.active == false,
-                onClick = { open = false; edit = true })
+                onClick = { open = false; model.clearPlaylistSaveResult(); edit = true })
             if (entry.type == "playlist" && playlist?.canChangePrivacy(account?.user) == true) {
                 DropdownMenuItem(text = { Text(if (playlist.isPrivate) "Make playlist public" else "Make playlist private") },
                     leadingIcon = { Icon(if (playlist.isPrivate) Icons.Rounded.Lock else Icons.Rounded.LockOpen, null) },

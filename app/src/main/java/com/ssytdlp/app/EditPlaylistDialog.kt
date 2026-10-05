@@ -25,8 +25,13 @@ internal fun EditPlaylistDialog(model: MusicViewModel, entry: LibraryEntry, play
     var name by rememberSaveable(playlist.id) { mutableStateOf(playlist.playlistTitle) }
     var isPrivate by rememberSaveable(playlist.id) { mutableStateOf(playlist.isPrivate) }
     var parentId by rememberSaveable(playlist.id) { mutableStateOf(entry.parentId) }
+    val originalParentId by rememberSaveable(playlist.id) { mutableStateOf(entry.parentId) }
     var choosingLocation by remember { mutableStateOf(false) }
-    var error by remember { mutableStateOf<String?>(null) }
+    val result = model.playlistSaveResult?.takeIf { it.id == playlist.id }
+    val currentDismiss by rememberUpdatedState(dismiss)
+    LaunchedEffect(result) {
+        if (result != null && result.error == null) currentDismiss()
+    }
     val locations = playlistLocations(model.library.library.entries)
     val dirty = (canRename && name.trim() != playlist.playlistTitle) ||
         (canChangePrivacy && isPrivate != playlist.isPrivate) || parentId != entry.parentId
@@ -51,7 +56,7 @@ internal fun EditPlaylistDialog(model: MusicViewModel, entry: LibraryEntry, play
             }, enabled = enabled) { Text("Open job details") }
             TextButton(onClick = share, enabled = enabled && !dirty && !playlist.isPrivate &&
                 playlist.songCount > 0 && playlist.canShare(user)) { Text("Share Playlist") }
-            error?.let { Text(it, color = MaterialTheme.colorScheme.error) }
+            result?.error?.let { Text(it, color = MaterialTheme.colorScheme.error) }
             if (model.busy) {
                 LinearProgressIndicator(Modifier.fillMaxWidth())
                 Text("Saving...")
@@ -59,8 +64,7 @@ internal fun EditPlaylistDialog(model: MusicViewModel, entry: LibraryEntry, play
         }
     }, confirmButton = {
         TextButton(onClick = {
-            error = null
-            model.savePlaylist(playlist.id, name, isPrivate, parentId, dismiss, { error = it })
+            model.savePlaylist(playlist.id, name, isPrivate, parentId, move = parentId != originalParentId)
         }, enabled = enabled && (!canRename || validName)) { Text("Save changes") }
     }, dismissButton = { TextButton(onClick = dismiss, enabled = !model.busy) { Text("Cancel") } })
     if (choosingLocation) DestinationDialog("Location", locations, { choosingLocation = false }) {

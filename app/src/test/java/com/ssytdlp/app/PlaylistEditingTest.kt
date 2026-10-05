@@ -7,6 +7,7 @@ import androidx.activity.ComponentActivity
 import androidx.compose.runtime.MutableState
 import androidx.compose.ui.test.*
 import androidx.compose.ui.test.junit4.createAndroidComposeRule
+import androidx.compose.ui.test.junit4.StateRestorationTester
 import androidx.lifecycle.ViewModelStore
 import androidx.lifecycle.viewModelScope
 import androidx.test.core.app.ApplicationProvider
@@ -159,6 +160,15 @@ class PlaylistEditingTest {
         compose.onNodeWithText("Playlist name").assertTextContains("Playlist")
         compose.onNode(isToggleable()).assertIsOff()
         compose.onNodeWithText("Library").assertExists()
+        compose.runOnIdle {
+            ReflectionHelpers.getField<MutableState<Boolean>>(model, "busy\$delegate").value = true
+        }
+        compose.onNodeWithText("Playlist name").assertIsNotEnabled()
+        compose.onNode(isToggleable()).assertIsNotEnabled()
+        for (label in listOf("Library", "Share Playlist", "Save changes", "Cancel")) {
+            compose.onNodeWithText(label).assertIsNotEnabled()
+        }
+        assertTrue(requests.isEmpty())
     }
 
     @Config(qualifiers = "w320dp-h800dp")
@@ -227,7 +237,7 @@ class PlaylistEditingTest {
         startModel(User("contributor"))
         var completed = false
         compose.runOnUiThread {
-            model.savePlaylist(entry.id, "Not permitted", true, null, { completed = true }, { fail(it) })
+            model.savePlaylist(entry.id, "Not permitted", true, null, { completed = true }, { fail(it) }, move = true)
         }
         waitFor { !model.busy && !model.library.loading }
         assertTrue(completed)
@@ -270,6 +280,70 @@ class PlaylistEditingTest {
             assertTrue(error.orEmpty().contains("between 1 and 200 characters without control characters"))
             assertTrue(requests.all { it.method == "GET" })
         }
+    }
+
+    @Config(qualifiers = "w320dp-h800dp")
+    @Test fun draftAndSaveErrorsSurviveStateRestoration() {
+        startModel { request ->
+            if (request.url.encodedPath == titlePath) 409 to """{"error":"Playlist busy"}""" else null
+        }
+        val restoration = StateRestorationTester(compose)
+        restoration.setContent { MusicTheme { EntryMenu(model, model.library.library.entries.first()) } }
+        contentSet = true
+        openEdit()
+        compose.onNodeWithText("Playlist name").performTextReplacement("Unsaved title")
+        chooseFolder()
+        save()
+        restoration.emulateSavedInstanceStateRestore()
+        compose.onNodeWithText("Playlist name").assertTextContains("Unsaved title")
+        compose.onNodeWithText("Collection / Favorites").assertExists()
+        compose.onNodeWithText("Unable to save all playlist changes: Playlist busy").assertExists()
+        compose.onNodeWithText("Save changes").assertIsEnabled()
+    }
+
+    @Config(qualifiers = "w320dp-h800dp")
+    @Test fun savingNameOnlyDoesNotUndoAnotherClientsMove() {
+        startModel()
+        openEdit()
+        compose.onNodeWithText("Playlist name").performTextReplacement("Renamed")
+        catalog.set(catalog.get().copy(version = 11,
+            entries = listOf(entry.copy(parentId = "child")) + folders))
+        save()
+        compose.onNode(isDialog()).assertDoesNotExist()
+        assertFalse(requests.any { it.url.encodedPath == "/api/library/entries" })
+        assertEquals("child", model.library.library.entries.first().parentId)
+        assertEquals("Renamed", model.library.library.playlists.single().playlistTitle)
+    }
+
+    @Config(qualifiers = "w320dp-h800dp")
+    @Test fun failedRecoveryRequiresFreshCatalogBeforeRetryingPrivacy() {
+        catalog.set(catalog.get().copy(playlists = listOf(playlist.copy(isPrivate = true)),
+            jobs = listOf(job.copy(isPrivate = true))))
+        val failRecovery = AtomicBoolean(false)
+        startModel { request ->
+            when {
+                request.url.encodedPath == privacyPath && !body(request).getValue("private").jsonPrimitive.boolean -> {
+                    catalog.set(catalog.get().copy(playlists = listOf(playlist), jobs = listOf(job)))
+                    failRecovery.set(true)
+                    500 to """{"error":"Response lost after saving"}"""
+                }
+                request.url.encodedPath == "/api/library" && failRecovery.get() ->
+                    503 to """{"error":"Library unavailable"}"""
+                else -> null
+            }
+        }
+        openEdit()
+        compose.onNode(isToggleable()).performClick()
+        save()
+        compose.onNodeWithText("Unable to save all playlist changes:", substring = true).assertExists()
+        compose.onNode(isToggleable()).performScrollTo().performClick()
+        failRecovery.set(false)
+        requests.clear()
+        save()
+        compose.onNode(isDialog()).assertDoesNotExist()
+        assertEquals("/api/library", requests.first().url.encodedPath)
+        assertEquals(json("private" to true), body(requests.single { it.method == "PATCH" }))
+        assertTrue(model.library.library.playlists.single().isPrivate)
     }
 
     @Config(qualifiers = "w320dp-h800dp")

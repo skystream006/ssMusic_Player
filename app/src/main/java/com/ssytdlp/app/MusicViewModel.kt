@@ -103,6 +103,8 @@ internal fun Track.withReplacedFile(file: Track): Track = when {
     else -> this
 }
 
+internal data class PlaylistSaveResult(val id: String, val error: String? = null)
+
 class MusicViewModel @JvmOverloads constructor(application: Application, private val connectPlayback: Boolean = true) : AndroidViewModel(application) {
     private val app = application as MusicApplication
     val sessions = app.sessions
@@ -143,6 +145,9 @@ class MusicViewModel @JvmOverloads constructor(application: Application, private
         private set
     var busy by mutableStateOf(false)
         private set
+    internal var playlistSaveResult by mutableStateOf<PlaylistSaveResult?>(null)
+        private set
+    private var playlistReloadRequired = false
     var signingIn by mutableStateOf(false)
         private set
     var backup by mutableStateOf<JsonObject?>(null)
@@ -163,6 +168,8 @@ class MusicViewModel @JvmOverloads constructor(application: Application, private
             sessions.account.distinctUntilChangedBy { account ->
                 account?.let { Triple(it.origin, it.user.id, it.session) }
             }.collectLatest { account ->
+                playlistSaveResult = null
+                playlistReloadRequired = false
                 if (account == null) {
                     operation?.cancel()
                     trackRequest?.cancel()
@@ -472,12 +479,20 @@ class MusicViewModel @JvmOverloads constructor(application: Application, private
         }
     }
 
+    internal fun clearPlaylistSaveResult() { playlistSaveResult = null }
+
     fun savePlaylist(id: String, title: String, isPrivate: Boolean, parentId: String?,
-        onSuccess: () -> Unit, onError: (String) -> Unit) = launchAction {
+        onSuccess: () -> Unit = {}, onError: (String) -> Unit = {}, move: Boolean = false) = launchAction {
         val account = sessions.account.value
+        playlistSaveResult = null
         try {
             val user = account?.user
             require(user != null && !user.isShared && user.id.isNotBlank()) { "This library is read-only." }
+            if (playlistReloadRequired) {
+                loadLibrary()
+                require(sessions.account.value == account) { "Account changed. Reopen the playlist editor." }
+                playlistReloadRequired = false
+            }
             val entry = library.library.entries.find { it.id == id && it.type == "playlist" }
             val playlist = library.library.playlists.find { it.id == id }
             require(entry != null && playlist != null) { "Playlist not found." }
@@ -497,9 +512,10 @@ class MusicViewModel @JvmOverloads constructor(application: Application, private
                 updatePlaylistPrivacy(playlist, isPrivate)
             }
             loadLibrary()
+            require(sessions.account.value == account) { "Account changed. Reopen the playlist editor." }
             val current = library.library.entries.find { it.id == id && it.type == "playlist" }
             require(current != null) { "Playlist not found." }
-            if (parentId != current.parentId) {
+            if (move && parentId != current.parentId) {
                 require(parentId == null || library.library.entries.any { it.id == parentId && it.type == "folder" }) {
                     "Destination folder not found."
                 }
@@ -509,15 +525,23 @@ class MusicViewModel @JvmOverloads constructor(application: Application, private
                 library = library.withLibrary(library.library.copy(version = moved.version, entries = moved.entries))
             }
             refreshTracks()
+            playlistSaveResult = PlaylistSaveResult(id)
             onSuccess()
         } catch (failure: Exception) {
             if (failure is CancellationException) throw failure
             // Separate server mutations can partially succeed. Reload before allowing a retry.
             if (sessions.account.value == account) {
-                try { loadLibrary(); refreshTracks() }
+                playlistReloadRequired = true
+                try {
+                    loadLibrary()
+                    if (sessions.account.value == account) playlistReloadRequired = false
+                    refreshTracks()
+                }
                 catch (refreshFailure: Exception) { if (refreshFailure is CancellationException) throw refreshFailure }
             }
-            onError("Unable to save all playlist changes: ${failure.message ?: "Unable to contact the server."}")
+            val error = "Unable to save all playlist changes: ${failure.message ?: "Unable to contact the server."}"
+            if (sessions.account.value == account) playlistSaveResult = PlaylistSaveResult(id, error)
+            onError(error)
         }
     }
 
