@@ -510,14 +510,24 @@ internal fun PlayerArtwork(state: PlaybackState, metadata: SongMetadata?, modifi
 fun PlayerTransport(state: PlaybackState, onSeek: (Long) -> Unit, previous: () -> Unit, toggle: () -> Unit,
     next: () -> Unit, shuffle: () -> Unit, repeat: () -> Unit, compact: Boolean = false) {
     var seeking by remember(state.track?.key) { mutableStateOf<Float?>(null) }
-    val position: @Composable () -> Unit = {
+    val slider: @Composable (Modifier) -> Unit = { modifier ->
         Slider(value = seeking ?: state.position.toFloat().coerceIn(0f, state.duration.toFloat().coerceAtLeast(1f)),
             onValueChange = { seeking = it }, onValueChangeFinished = { seeking?.let { onSeek(it.toLong()) }; seeking = null },
             valueRange = 0f..state.duration.toFloat().coerceAtLeast(1f), enabled = state.duration > 0,
-            modifier = Modifier.semantics { contentDescription = "Playback position" })
-        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-            Text(timestamp(seeking?.toLong() ?: state.position), style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-            Text(timestamp(state.duration), style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            modifier = modifier.semantics { contentDescription = "Playback position" })
+    }
+    val position: @Composable () -> Unit = {
+        BoxWithConstraints {
+            val inline = compact && maxWidth >= 160.dp
+            Column {
+                if (!inline) slider(Modifier)
+                Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = if (inline) Arrangement.spacedBy(4.dp) else Arrangement.SpaceBetween) {
+                    Text(timestamp(seeking?.toLong() ?: state.position), style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    if (inline) slider(Modifier.weight(1f))
+                    Text(timestamp(state.duration), style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                }
+            }
         }
     }
     val controls: @Composable () -> Unit = {

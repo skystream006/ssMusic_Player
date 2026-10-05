@@ -37,7 +37,7 @@ class DebugLogTest {
     }
 
     @RunWith(RobolectricTestRunner::class)
-    @Config(sdk = [34], application = Application::class)
+    @Config(sdk = [34], application = Application::class, qualifiers = "w320dp-h800dp")
     class DebugLogUiTest {
         @get:Rule val compose = createAndroidComposeRule<ComponentActivity>()
         private var previousHandler: Thread.UncaughtExceptionHandler? = null
@@ -74,7 +74,7 @@ class DebugLogTest {
             assertEquals(DebugLogMode.REACTIVE, DebugLog.mode.value)
             compose.onNodeWithContentDescription("Debug logging").performClick()
             compose.waitUntil { !DebugLog.enabled.value }
-            compose.onNodeWithText("View logs").performClick()
+            compose.onNodeWithText("View logs").assertIsDisplayed().assertIsEnabled().performClick()
             waitForLogDialog()
             compose.onNodeWithText("Refresh").assertIsDisplayed()
             compose.onNodeWithText("Share snapshot").assertIsDisplayed()
@@ -89,7 +89,7 @@ class DebugLogTest {
             compose.onNodeWithContentDescription("Debug logging").assertDoesNotExist()
             compose.onNodeWithText("Debug logging").performClick()
             compose.onNodeWithContentDescription("Debug logging").assertIsOff()
-            compose.onNodeWithText("View logs").performClick()
+            compose.onNodeWithText("View logs").assertIsDisplayed().assertIsEnabled().performClick()
             waitForLogDialog()
             compose.onNodeWithText("LOGGING_ENABLED", substring = true).assertIsDisplayed()
             compose.onNodeWithText("Close").performClick()
@@ -116,7 +116,6 @@ class DebugLogTest {
 
         private fun waitForLogDialog() {
             compose.waitUntil(5_000) {
-                compose.waitForIdle()
                 compose.onAllNodesWithText("Refresh").fetchSemanticsNodes().isNotEmpty()
             }
         }
