@@ -30,10 +30,25 @@ data class LibraryState(
     val transcriptions: Map<String, Transcription?> = emptyMap(),
     val ratings: Map<String, Int> = emptyMap(),
     val transcriptionLocks: Map<String, Boolean> = emptyMap(),
-    val artworkUrls: Map<String, String?> = emptyMap()
+    val artworkUrls: Map<String, String?> = emptyMap(),
+    val filePrivacy: Map<String, Boolean> = emptyMap(),
+    val privacyJobs: Map<String, Job> = emptyMap()
 ) {
     fun withLibrary(result: Library): LibraryState = copy(
-        library = result, selectedId = selectedId?.takeIf { id -> result.entries.any { it.id == id } })
+        library = result, selectedId = selectedId?.takeIf { id -> result.entries.any { it.id == id } },
+        privacyJobs = privacyJobs + result.jobs.associateBy { it.id })
+
+    fun privacyJob(track: Track): Job? =
+        privacyJobs[track.jobId] ?: library.jobs.find { it.id == track.jobId } ?: track.sourceJob
+
+    fun privacy(track: Track, job: Job? = privacyJob(track)): FilePrivacy =
+        track.copy(isPrivate = filePrivacy[track.key] ?: track.isPrivate).privacy(job)
+
+    fun withPrivacyFiles(files: List<Track>): LibraryState {
+        val all = files.flatMap { listOfNotNull(it, it.noVocalsVersion) }
+        return copy(filePrivacy = filePrivacy + all.associate { it.key to it.isPrivate },
+            privacyJobs = privacyJobs + all.mapNotNull { it.sourceJob }.associateBy { it.id })
+    }
 
     fun transcription(track: Track): Transcription? = pendingTranscriptions[track.key]
         ?: if (transcriptions.containsKey(track.key)) transcriptions[track.key]
@@ -45,7 +60,7 @@ data class LibraryState(
 
     fun transcriptionLocked(track: Track): Boolean = transcriptionLocks[track.key] ?: track.transcriptionLocked
 
-    fun withTrackPage(result: TrackPage): LibraryState = copy(
+    fun withTrackPage(result: TrackPage): LibraryState = withPrivacyFiles(result.files).copy(
         tracks = result, page = result.page,
         ratings = ratings + result.files.associate { it.key to it.rating },
         artworkUrls = artworkUrls + result.files.associate { it.key to it.artworkUrl },
@@ -388,6 +403,57 @@ class MusicViewModel @JvmOverloads constructor(application: Application, private
         message(if ((result as? JsonObject)?.get("fileDeleted")?.jsonPrimitive?.booleanOrNull == true)
             "Song deleted: ${track.displayTitle} after removing the last playlist link."
         else "Removed ${track.displayTitle} from the playlist.")
+    }
+
+    fun privacyJob(track: Track): Job? = library.privacyJob(track) ?: jobs.find { it.id == track.jobId }
+
+    fun songPrivacy(track: Track): FilePrivacy = library.privacy(track, privacyJob(track))
+
+    fun setSongPrivate(track: Track, value: Boolean) = launchAction {
+        val job = privacyJob(track)
+        require(job?.canChangePrivacy(sessions.account.value?.user) == true && !job.active) {
+            "Only the owner of an idle song can change its privacy."
+        }
+        require(!songPrivacy(track).inherited) { "Change privacy on the source playlist or original song." }
+        transcriptionGeneration++
+        trackRequest?.cancel()
+        val updated = ApiJson.decodeFromJsonElement<Job>(api.request(
+            "/api/jobs/${encode(track.jobId)}/files/${encode(track.name)}/privacy", "PATCH", json("private" to value)))
+        library = library.copy(privacyJobs = library.privacyJobs + (updated.id to updated),
+            filePrivacy = library.filePrivacy + (track.key to value))
+        jobs = jobs.map { if (it.id == updated.id) updated else it }
+        refreshPrivacyFiles(updated)
+        loadLibrary()
+        refreshTracks()
+        message(if (value) "Song is private. Only the owner can access it." else "Song is no longer private.")
+    }
+
+    fun setPlaylistPrivate(playlist: LibraryPlaylist, value: Boolean) = launchAction {
+        val current = library.library.playlists.find { it.id == playlist.id }
+        require(current?.canChangePrivacy(sessions.account.value?.user) == true && !current.active) {
+            "Only the owner of an idle playlist can change its privacy."
+        }
+        transcriptionGeneration++
+        trackRequest?.cancel()
+        val updated = ApiJson.decodeFromJsonElement<Library>(api.request(
+            "/api/library/playlists/${encode(current.id)}/privacy", "PATCH", json("private" to value)))
+        library = library.withLibrary(updated)
+        updated.jobs.find { it.id == current.jobId }?.let { job ->
+            jobs = jobs.map { if (it.id == job.id) job else it }
+            refreshPrivacyFiles(job)
+        }
+        refreshTracks()
+        message(if (value) "Playlist is private. Only the owner can access it." else "Playlist is no longer private.")
+    }
+
+    private suspend fun refreshPrivacyFiles(job: Job) {
+        val result = ApiJson.decodeFromJsonElement<TrackPage>(api.request("/api/jobs/${encode(job.id)}/files"))
+        transcriptionGeneration++
+        trackRequest?.cancel()
+        library = library.withPrivacyFiles(result.files.map { file ->
+            file.copy(jobId = job.id, sourceJob = job,
+                noVocalsVersion = file.noVocalsVersion?.copy(jobId = job.id, sourceJob = job))
+        })
     }
 
     private fun mutate(path: String, body: JsonObject, onSuccess: (JsonElement) -> Unit = {}) = launchAction {

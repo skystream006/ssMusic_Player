@@ -388,7 +388,8 @@ private fun LibraryBrowserPane(model: MusicViewModel, modifier: Modifier = Modif
         items(library.entries.filter { it.parentId == parent }, key = { it.id }) { entry ->
         val playlist = library.playlists.find { it.id == entry.id }
         ListItem(headlineContent = { Text(playlist?.playlistTitle?.ifBlank { entry.name } ?: entry.name, maxLines = 2, overflow = TextOverflow.Ellipsis) },
-            supportingContent = { Text(if (entry.type == "folder") "Folder" else "${playlist?.songCount ?: 0} tracks") },
+            supportingContent = { Text(if (entry.type == "folder") "Folder"
+                else "${playlist?.songCount ?: 0} tracks" + if (playlist?.isPrivate == true) " · Private" else "") },
             leadingContent = { Icon(if (entry.type == "folder") Icons.Rounded.Folder else Icons.AutoMirrored.Rounded.QueueMusic, null) },
             trailingContent = { EntryMenu(model, entry) }, modifier = Modifier.clickable {
                 if (entry.type == "folder") parent = entry.id else { model.selectLibrary(entry.id); onSelect() }
@@ -403,6 +404,8 @@ private fun LibraryBrowserPane(model: MusicViewModel, modifier: Modifier = Modif
 
 @Composable
 fun EntryMenu(model: MusicViewModel, entry: LibraryEntry) {
+    val account by model.sessions.account.collectAsStateWithLifecycle()
+    val playlist = model.library.library.playlists.find { it.id == entry.id }
     var open by remember { mutableStateOf(false) }
     var rename by remember { mutableStateOf(false) }
     var remove by remember { mutableStateOf(false) }
@@ -410,6 +413,14 @@ fun EntryMenu(model: MusicViewModel, entry: LibraryEntry) {
     Box {
         ToolButton(Icons.Rounded.MoreVert, "Options for ${entry.name}", enabled = !model.busy) { open = true }
         DropdownMenu(open, { open = false }) {
+            if (entry.type == "playlist" && playlist?.canChangePrivacy(account?.user) == true) {
+                DropdownMenuItem(text = { Text(if (playlist.isPrivate) "Make playlist public" else "Make playlist private") },
+                    leadingIcon = { Icon(if (playlist.isPrivate) Icons.Rounded.Lock else Icons.Rounded.LockOpen, null) },
+                    enabled = !model.busy && !playlist.active, onClick = {
+                        open = false
+                        model.setPlaylistPrivate(playlist, !playlist.isPrivate)
+                    })
+            }
             if (entry.type == "folder") DropdownMenuItem(text = { Text("Rename") }, onClick = { open = false; rename = true }, leadingIcon = { Icon(Icons.Rounded.Edit, null) })
             DropdownMenuItem(text = { Text("Move to folder") }, onClick = { open = false; move = true }, leadingIcon = { Icon(Icons.AutoMirrored.Rounded.DriveFileMove, null) })
             if (entry.type == "folder") DropdownMenuItem(text = { Text("Remove folder") }, onClick = { open = false; remove = true }, leadingIcon = { Icon(Icons.Rounded.DeleteOutline, null) })

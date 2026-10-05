@@ -359,8 +359,9 @@ private fun SongActionsMenu(model: MusicViewModel, track: Track?, download: (Str
                         leadingIcon = { Icon(Icons.Rounded.UploadFile, null) },
                         onClick = { moreActions = false; replacingTrack = track })
                 }
+                SongPrivacyMenuItem(model, track) { moreActions = false }
                 if (canShare) {
-                    DropdownMenuItem(text = { Text("Share Media") }, enabled = !model.busy,
+                    DropdownMenuItem(text = { Text("Share Media") }, enabled = !model.busy && !model.songPrivacy(track).isPrivate,
                         leadingIcon = { Icon(Icons.Rounded.Share, null) },
                         onClick = { moreActions = false; sharingTrack = track })
                 }
@@ -784,7 +785,9 @@ fun TrackMenu(model: MusicViewModel, track: Track, index: Int, download: (String
             DropdownMenuItem(text = { Text("Add to queue") }, leadingIcon = { Icon(Icons.AutoMirrored.Rounded.PlaylistAdd, null) }, onClick = { open = false; model.playback.enqueue(track) })
             DropdownMenuItem(text = { Text("Save file") }, leadingIcon = { Icon(Icons.Rounded.Download, null) }, onClick = { open = false; download(track.downloadUrl ?: songPath(track, "download"), track.name) })
             if (canModify && track.mediaType == "audio") DropdownMenuItem(text = { Text("Share Media") },
+                enabled = !model.busy && !model.songPrivacy(track).isPrivate,
                 leadingIcon = { Icon(Icons.Rounded.Share, null) }, onClick = { open = false; share = true })
+            SongPrivacyMenuItem(model, track) { open = false }
             if (canTransfer) {
                 DropdownMenuItem(text = { Text("Add to playlist") }, leadingIcon = { Icon(Icons.Rounded.LibraryAdd, null) }, onClick = { open = false; transfer = "link" })
                 DropdownMenuItem(text = { Text("Move to playlist") }, leadingIcon = { Icon(Icons.AutoMirrored.Rounded.DriveFileMove, null) }, onClick = { open = false; transfer = "move" })
@@ -823,6 +826,24 @@ fun TrackMenu(model: MusicViewModel, track: Track, index: Int, download: (String
 }
 
 @Composable
+private fun SongPrivacyMenuItem(model: MusicViewModel, track: Track, close: () -> Unit) {
+    val account by model.sessions.account.collectAsStateWithLifecycle()
+    val job = model.privacyJob(track)
+    val privacy = model.songPrivacy(track)
+    if (job?.canChangePrivacy(account?.user) == true) {
+        DropdownMenuItem(text = { Text(when {
+            privacy.inherited -> "Private — inherited from source"
+            privacy.isPrivate -> "Make song public"
+            else -> "Make song private"
+        }) }, leadingIcon = { Icon(if (privacy.isPrivate) Icons.Rounded.Lock else Icons.Rounded.LockOpen, null) },
+            enabled = !model.busy && !job.active && !privacy.inherited, onClick = {
+                close()
+                model.setSongPrivate(track, !privacy.isPrivate)
+            })
+    }
+}
+
+@Composable
 internal fun ShareMediaDialog(model: MusicViewModel, track: Track, dismiss: () -> Unit) {
     val context = LocalContext.current
     val account by model.sessions.account.collectAsStateWithLifecycle()
@@ -830,17 +851,20 @@ internal fun ShareMediaDialog(model: MusicViewModel, track: Track, dismiss: () -
     var url by remember(track.key) { mutableStateOf<String?>(null) }
     var copied by remember(track.key) { mutableStateOf(false) }
     var error by remember(track.key) { mutableStateOf<String?>(null) }
+    val isPrivate = model.songPrivacy(track).isPrivate
     val scope = rememberCoroutineScope()
     AlertDialog(onDismissRequest = { if (!generating) dismiss() }, title = { Text("Share Media") }, text = {
         Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
             Text("${track.displayTitle}\n\nAnyone with this link can listen, read lyrics and metadata, and save this file without signing in. They cannot edit it. Only share content you have permission to share.")
-            url?.let {
+            if (isPrivate) Text("Private songs cannot be shared. Only the owner can access this song.")
+            url?.takeUnless { isPrivate }?.let {
                 OutlinedTextField(value = it, onValueChange = {}, readOnly = true, label = { Text("Public media link") })
             }
             error?.let { Text(it, color = MaterialTheme.colorScheme.error) }
         }
     }, confirmButton = {
-        TextButton(enabled = !generating, onClick = {
+        TextButton(enabled = !generating && !isPrivate, onClick = {
+            if (model.songPrivacy(track).isPrivate) return@TextButton
             val link = url
             if (link != null) {
                 val clipboard = context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager

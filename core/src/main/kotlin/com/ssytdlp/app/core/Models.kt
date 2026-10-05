@@ -31,13 +31,18 @@ data class UserResponse(val user: User)
 @Serializable
 data class LibraryEntry(
     val id: String, val type: String, val name: String = "", val parentId: String? = null,
-    val protected: Boolean = false
+    val protected: Boolean = false, @SerialName("private") val isPrivate: Boolean = false
 )
 
 @Serializable
 data class LibraryPlaylist(
-    val id: String, val playlistTitle: String = "", val songCount: Int = 0, val jobId: String? = null
-)
+    val id: String, val playlistTitle: String = "", val songCount: Int = 0, val jobId: String? = null,
+    @SerialName("private") val isPrivate: Boolean = false,
+    val initiatedBy: User? = null, val status: String = ""
+) {
+    fun canChangePrivacy(user: User?) = ownsMedia(user, initiatedBy)
+    val active: Boolean get() = status == "queued" || status == "running"
+}
 
 @Serializable
 data class Library(
@@ -55,7 +60,8 @@ data class Track(
     val playlistTitle: String = "", val streamUrl: String? = null, val downloadUrl: String? = null,
     val isPlayable: Boolean = true, val mediaType: String = "audio", val sizeBytes: Long = 0,
     val noVocalsVersion: Track? = null, val transcription: Transcription? = null,
-    val transcriptionLocked: Boolean = false, val artworkUrl: String? = null
+    val transcriptionLocked: Boolean = false, val artworkUrl: String? = null,
+    @SerialName("private") val isPrivate: Boolean = false, val sourceJob: Job? = null
 ) {
     val key: String get() = ApiJson.encodeToString(listOf(jobId, name))
     val displayTitle: String get() = title.ifBlank { name.substringAfterLast('/').substringBeforeLast('.') }
@@ -85,11 +91,24 @@ data class Job(
     val url: String = "", val error: String? = null, val files: List<String> = emptyList(),
     val initiatedBy: User? = null, val contributors: List<User> = emptyList(), val updatedAt: String = "",
     val isPlaylist: Boolean = true,
-    val transcriptions: Map<String, Transcription> = emptyMap()
+    val transcriptions: Map<String, Transcription> = emptyMap(),
+    @SerialName("private") val isPrivate: Boolean = false, val privateFiles: List<String>? = null
 ) {
     val active: Boolean get() = status == "queued" || status == "running"
     fun canModify(user: User) = user.role == "admin" || isMember(user)
     fun isMember(user: User) = initiatedBy?.id == user.id || contributors.any { it.id == user.id }
+    fun canChangePrivacy(user: User?) = ownsMedia(user, initiatedBy)
+}
+
+private fun ownsMedia(user: User?, owner: User?) =
+    user != null && !user.isShared && user.id.isNotBlank() && user.id == owner?.id
+
+data class FilePrivacy(val isPrivate: Boolean, val inherited: Boolean)
+
+fun Track.privacy(job: Job? = sourceJob): FilePrivacy {
+    val inherited = job?.isPrivate == true ||
+        (isPrivate && job?.privateFiles != null && name !in job.privateFiles)
+    return FilePrivacy(inherited || isPrivate || job?.privateFiles?.contains(name) == true, inherited)
 }
 
 @Serializable
