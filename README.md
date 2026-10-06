@@ -303,9 +303,10 @@ stop in the background; metering also stays off when edge lighting is disabled
 and no audio visualizer is displayed.
 These changes reduce background network traffic, CPU work, and storage writes
 without stopping the playback service.
-Tap the mini-player to open the dedicated **Now Playing** page, and use the
-toolbar or system **Back** button to return to **Library**. There is no bottom
-navigation bar in portrait or landscape.
+Tap the mini-player's artwork or song information to expand the dedicated
+**Now Playing** page from the mini-player. The toolbar or system **Back** button
+collapses it back to **Library**. The transition respects Android's animation
+duration setting. There is no bottom navigation bar in portrait or landscape.
 The Library top bar contains a content-width playlist/folder selector and a
 **Search** icon. Tap Search to expand and focus the input; closing search clears
 the filter. There is no top-bar play button; tap a song to play the page.
