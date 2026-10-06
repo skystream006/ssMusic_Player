@@ -11,6 +11,9 @@ Open this folder as a project in Android Studio, select a Java 17 Gradle JDK,
 install Android SDK Platform 36, and let Gradle sync. Alternatively, with Java 17
 on `JAVA_HOME` and the SDK on `ANDROID_HOME`:
 
+Also install JDK 21 for app unit tests: the bundled AVIF decoder contains Java 21
+bytecode. Gradle runs those tests on JDK 21 while compilation still targets Java 17.
+
 ```powershell
 cd ssMusicPlayer
 .\gradlew.bat :core:test :app:testDebugUnitTest :app:lintDebug :app:assembleDebug
@@ -28,6 +31,7 @@ On Windows, install or update the JDKs with WinGet:
 ```powershell
 winget install --id EclipseAdoptium.Temurin.26.JDK --exact --source winget
 winget install --id EclipseAdoptium.Temurin.17.JDK --exact --source winget
+winget install --id EclipseAdoptium.Temurin.21.JDK --exact --source winget
 ```
 
 Keep `JAVA_HOME` and Android Studio's **Settings > Build, Execution, Deployment >
