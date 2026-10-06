@@ -14,7 +14,9 @@ enum class DebugEvent {
     LOGGING_ENABLED, APP_STARTED, API_STATUS, API_FAILURE, API_INVALID_RESPONSE,
     PLAYBACK_CONNECTING, PLAYBACK_CONNECTED, PLAYBACK_DISCONNECTED, PLAYBACK_FAILURE, APP_CRASH,
     UPDATE_CHECK_STARTED, UPDATE_CHECK_COMPLETED, UPDATE_DOWNLOAD_STARTED, UPDATE_DOWNLOAD_COMPLETED,
-    UPDATE_PERMISSION_REQUIRED, UPDATE_INSTALL_REQUESTED, UPDATE_FAILURE
+    UPDATE_PERMISSION_REQUIRED, UPDATE_INSTALL_REQUESTED, UPDATE_FAILURE,
+    METADATA_REQUESTED, METADATA_DOWNLOAD, METADATA_JSON, METADATA_CONVERTED, METADATA_CACHE_HIT,
+    ARTWORK_DECODED, ARTWORK_CACHE_HIT, ARTWORK_DISPLAYED
 }
 
 enum class DebugLogMode { FULL, REACTIVE }
@@ -59,6 +61,14 @@ object DebugLog {
         runCatching { writer.execute { logger.event(event, status, error, generation) } }
     }
 
+    internal fun timing(event: DebugEvent, startedNanos: Long) {
+        val logger = store ?: return
+        if (!logger.enabled) return
+        val generation = logger.generation
+        val durationMicros = ((System.nanoTime() - startedNanos) / 1_000).coerceAtLeast(0)
+        runCatching { writer.execute { logger.event(event, expectedGeneration = generation, durationMicros = durationMicros) } }
+    }
+
     @Synchronized
     fun read(): String = store?.read().orEmpty()
 
@@ -98,13 +108,15 @@ internal class DebugLogStore(context: Context) {
     }
 
     @Synchronized
-    fun event(event: DebugEvent, status: Int? = null, error: Throwable? = null, expectedGeneration: Long? = null) {
+    fun event(event: DebugEvent, status: Int? = null, error: Throwable? = null, expectedGeneration: Long? = null,
+        durationMicros: Long? = null) {
         if (frozen || !enabled || expectedGeneration != null && expectedGeneration != generation) return
         // Only enum labels, numbers and class names can enter the file. Never stringify a throwable.
         runCatching {
             val line = buildString {
                 append(System.currentTimeMillis()).append(' ').append(event.name)
                 status?.let { append(" status=").append(it) }
+                durationMicros?.let { append(" duration_us=").append(it.coerceAtLeast(0)) }
                 error?.let {
                     append(" exception=").append(it.javaClass.name
                         .filter { char -> char in 'A'..'Z' || char in 'a'..'z' || char in '0'..'9' || char in "._$" }

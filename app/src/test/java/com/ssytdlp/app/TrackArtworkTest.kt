@@ -93,6 +93,19 @@ class TrackArtworkTest {
         assertFalse(avifSourceFitsMemoryBudget(192, 192, 16))
     }
 
+    @Test fun albumDecoderUsesDisplayPixelsWithoutReducingFullPlayerQuality() {
+        val bytes = imageBytes(2048, 1024, Bitmap.CompressFormat.JPEG)
+        val mini = decodeArtworkBitmap(bytes, targetPixels = 128)!!
+        assertEquals(128, mini.width)
+        assertEquals(64, mini.height)
+        val player = decodeArtworkBitmap(bytes, targetPixels = 700)!!
+        assertEquals(1024, player.width)
+        assertEquals(512, player.height)
+        assertNull(decodeArtworkBitmap(ByteArray(2 * 1024 * 1024 + 1), targetPixels = 64))
+        mini.recycle()
+        player.recycle()
+    }
+
     @Test fun libraryLoadsArtworkWithoutMetadataReadsAndKeepsPlaybackRatingAndHiddenGroups() {
         val api = api()
         val missing = track.copy(name = "missing.mp3", title = "Missing",

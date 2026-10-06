@@ -198,6 +198,10 @@ class ServerApi(
     }
 
     private suspend fun executeJson(call: Call): JsonElement = suspendCancellableCoroutine { continuation ->
+        val measureMetadata = call.request().method == "GET" &&
+            Regex("/api/jobs/[^/]+/lyrics/[^/]+").matches(call.request().url.encodedPath)
+        val started = System.nanoTime()
+        if (measureMetadata) DebugLog.event(DebugEvent.METADATA_REQUESTED)
         // Keep cancellation attached through body parsing, not only until response headers arrive.
         continuation.invokeOnCancellation { call.cancel() }
         call.enqueue(object : Callback {
@@ -208,7 +212,10 @@ class ServerApi(
                 try {
                     val result = response.use {
                         val text = response.body?.string().orEmpty()
+                        if (measureMetadata) DebugLog.timing(DebugEvent.METADATA_DOWNLOAD, started)
+                        val parseStarted = System.nanoTime()
                         val data = runCatching { ApiJson.parseToJsonElement(text) }.getOrNull()
+                        if (measureMetadata) DebugLog.timing(DebugEvent.METADATA_JSON, parseStarted)
                         if (!response.isSuccessful) {
                             val payload = data as? JsonObject
                             throw ApiException(response.code, payload?.get("error")?.jsonPrimitive?.content

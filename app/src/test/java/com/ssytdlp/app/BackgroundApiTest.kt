@@ -89,6 +89,24 @@ class BackgroundApiTest {
         assertEquals("/api/health", server.takeRequest(2, TimeUnit.SECONDS)!!.path)
     }
 
+    @Test fun `speculative lyrics explicitly require foreground and cancel without replay on pause`() = runBlocking {
+        val path = "/api/jobs/job/lyrics/next.mp3"
+        server.enqueue(MockResponse().setBody("""{"title":"Next"}""").setBodyDelay(2, TimeUnit.SECONDS))
+        val prefetch = async(Dispatchers.IO, start = CoroutineStart.UNDISPATCHED) {
+            runCatching { gate.onceWhileResumed { api.request(path) } }
+        }
+        assertNull(server.takeRequest(150, TimeUnit.MILLISECONDS))
+        gate.activityResumed(activity)
+        assertEquals(path, server.takeRequest(5, TimeUnit.SECONDS)!!.path)
+        withTimeout(5_000) { headers.receive() }
+        gate.activityPaused(activity)
+        withTimeout(5_000) { failures.receive() }
+        assertTrue(withTimeout(5_000) { prefetch.await() }.exceptionOrNull() is CancellationException)
+        gate.activityResumed(activity)
+        assertNull(server.takeRequest(150, TimeUnit.MILLISECONDS))
+        assertEquals(1, server.requestCount)
+    }
+
     @Test fun `inflight safe poll is cancelled then retried only on resume`() = runBlocking {
         gate.activityResumed(activity)
         server.enqueue(MockResponse().setSocketPolicy(SocketPolicy.NO_RESPONSE))

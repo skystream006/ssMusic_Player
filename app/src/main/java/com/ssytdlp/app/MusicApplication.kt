@@ -20,6 +20,7 @@ class MusicApplication : Application() {
         private set
     lateinit var api: ServerApi
         private set
+    internal val artworkCache get() = sessions.artworkCache
 
     override fun onCreate() {
         super.onCreate()

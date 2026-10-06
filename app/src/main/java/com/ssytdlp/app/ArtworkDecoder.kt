@@ -5,13 +5,13 @@ import android.graphics.BitmapFactory
 import java.nio.ByteBuffer
 import org.aomedia.avif.android.AvifDecoder
 
-internal fun decodeArtworkBitmap(bytes: ByteArray, thumbnail: Boolean = false): Bitmap? {
+internal fun decodeArtworkBitmap(bytes: ByteArray, thumbnail: Boolean = false, targetPixels: Int = 1024): Bitmap? {
     val maxBytes = if (thumbnail) 64 * 1024 else 2 * 1024 * 1024
     if (bytes.isEmpty() || bytes.size > maxBytes) return null
     val dimensions = BitmapFactory.Options().apply { inJustDecodeBounds = true }
     BitmapFactory.decodeByteArray(bytes, 0, bytes.size, dimensions)
     if (dimensions.outWidth > 0 && dimensions.outHeight > 0) {
-        val sample = artworkSampleSize(dimensions.outWidth, dimensions.outHeight, thumbnail) ?: return null
+        val sample = artworkSampleSize(dimensions.outWidth, dimensions.outHeight, thumbnail, targetPixels) ?: return null
         BitmapFactory.decodeByteArray(bytes, 0, bytes.size,
             BitmapFactory.Options().apply { inSampleSize = sample })?.let { return it }
     }
@@ -21,7 +21,7 @@ internal fun decodeArtworkBitmap(bytes: ByteArray, thumbnail: Boolean = false): 
         if (!AvifDecoder.isAvifImage(encoded)) return null
         val info = AvifDecoder.Info()
         if (!AvifDecoder.getInfo(encoded, bytes.size, info)) return null
-        val sample = artworkSampleSize(info.width, info.height, thumbnail) ?: return null
+        val sample = artworkSampleSize(info.width, info.height, thumbnail, targetPixels) ?: return null
         // libavif decodes the source before scaling; bound that allocation as well.
         if (!avifSourceFitsMemoryBudget(info.width, info.height, info.depth)) return null
         val bitmap = Bitmap.createBitmap((info.width / sample).coerceAtLeast(1),
@@ -45,10 +45,12 @@ internal fun avifSourceFitsMemoryBudget(width: Int, height: Int, depth: Int): Bo
     return width.toLong() * height <= (32L * 1024 * 1024) / bytesPerPixel
 }
 
-private fun artworkSampleSize(width: Int, height: Int, thumbnail: Boolean): Int? {
+private fun artworkSampleSize(width: Int, height: Int, thumbnail: Boolean, targetPixels: Int): Int? {
     if (width <= 0 || height <= 0) return null
     if (thumbnail) return if (width <= 192 && height <= 192) 1 else null
+    val target = targetPixels.coerceIn(1, 1024)
     var sample = 1
     while (width / sample > 1024 || height / sample > 1024) sample *= 2
+    while (maxOf(width, height) / (sample * 2) >= target) sample *= 2
     return sample
 }

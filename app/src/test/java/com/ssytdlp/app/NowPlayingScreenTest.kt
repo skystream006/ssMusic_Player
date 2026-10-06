@@ -1290,6 +1290,8 @@ class NowPlayingScreenTest {
         compose.runOnIdle { account.value = account.value!!.copy(user = User(id = "another-owner")) }
         compose.onNode(isDialog()).assertDoesNotExist()
         openSongActions()
+        songAction("Edit lyrics").assertDoesNotExist()
+        compose.runOnIdle { metadata.value = SongMetadata(canEdit = true) }
         songAction("Edit lyrics").performClick()
         compose.onNodeWithTag("sylt-editor").assertTextContains("")
         compose.runOnIdle { state.value = PlaybackState() }
