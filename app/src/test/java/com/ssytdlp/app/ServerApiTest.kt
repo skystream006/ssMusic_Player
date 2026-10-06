@@ -204,7 +204,7 @@ class ServerApiTest {
         account = account!!.copy(user = account!!.user.copy(role = "shared"))
         val bytes = byteArrayOf(0, 1, 2, 3, -1)
         val path = "/api/jobs/source/artwork/%5BNoVocals%5D%2Fa%20%26%20b.mp3?v=123.45"
-        server.enqueue(MockResponse().setHeader("Content-Type", "image/webp")
+        server.enqueue(MockResponse().setHeader("Content-Type", "image/avif")
             .setHeader("Cache-Control", "private, no-cache").setBody(okio.Buffer().write(bytes)))
         assertArrayEquals(bytes, api.artwork(path))
         val request = server.takeRequest(2, TimeUnit.SECONDS)!!

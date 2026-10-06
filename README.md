@@ -177,7 +177,7 @@ it does not prove an installed app's identity. Authorize only sign-ins you start
 
 | Area | Implemented |
 | --- | --- |
-| Library | All Music, server-side search and 50-track pages, folder navigation, playlist counts, linked tracks, cached album-art thumbnails in Library and Queue |
+| Library | All Music, server-side search and 50-track pages, folder navigation, playlist counts, linked tracks, cached 192px AVIF audio/video thumbnails in Library and Queue (including Android 8+, with legacy JPEG/PNG/WebP support) |
 | Organization | Create/rename/remove/move folders, move playlists, add/move/remove song memberships, reorder complete unfiltered playlists |
 | Playback | Authenticated audio/video streams, persistent mini-player, full player, seek, next/previous, queue editing, shuffle, repeat, instrumental companions |
 | Lyrics and tags | Album artwork, expandable full-screen SYLT/USLT lyrics, timestamp-highlighted seekable SYLT lyrics, plain USLT lyrics, editing both lyric formats and MP3 tags/ratings, transcription requests and locking |
