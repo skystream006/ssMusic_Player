@@ -739,7 +739,7 @@ fun AlbumArtwork(artwork: String?, modifier: Modifier = Modifier) {
     val scope = rememberCoroutineScope()
     val cache = LocalMetadataArtworkCache.current ?: app?.artworkCache ?: remember { MetadataArtworkCache(scope) }
     val generation by cache.generation.collectAsState()
-    val owner = LocalMetadataArtworkOwner.current ?: app?.sessions?.account?.value?.let(::MetadataOwner)
+    val owner = LocalMetadataArtworkOwner.current
     val source = artwork.takeIf { owner == null || cache.belongsTo(owner) }
     var pixels by remember { mutableIntStateOf(0) }
     key(cache, generation, source) {
