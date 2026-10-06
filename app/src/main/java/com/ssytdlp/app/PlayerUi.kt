@@ -2,7 +2,6 @@
 
 package com.ssytdlp.app
 
-import android.graphics.BitmapFactory
 import android.content.ClipData
 import android.content.ClipboardManager
 import android.content.Context
@@ -743,13 +742,7 @@ fun AlbumArtwork(artwork: String?, modifier: Modifier = Modifier) {
             runCatching {
                 if (artwork == null || artwork.length > 2_800_000 || !artwork.startsWith("data:image/")) return@runCatching null
                 val bytes = Base64.decode(artwork.substringAfter(","), Base64.DEFAULT)
-                val dimensions = BitmapFactory.Options().apply { inJustDecodeBounds = true }
-                BitmapFactory.decodeByteArray(bytes, 0, bytes.size, dimensions)
-                val options = BitmapFactory.Options().apply {
-                    inSampleSize = 1
-                    while (dimensions.outWidth / inSampleSize > 1024 || dimensions.outHeight / inSampleSize > 1024) inSampleSize *= 2
-                }
-                BitmapFactory.decodeByteArray(bytes, 0, bytes.size, options)?.asImageBitmap()
+                decodeArtworkBitmap(bytes)?.asImageBitmap()
             }.getOrNull()
         }
     }

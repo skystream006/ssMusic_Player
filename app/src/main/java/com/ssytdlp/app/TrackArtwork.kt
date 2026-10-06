@@ -1,6 +1,5 @@
 package com.ssytdlp.app
 
-import android.graphics.BitmapFactory
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
@@ -36,7 +35,7 @@ internal fun rememberTrackArtwork(track: Track, api: ServerApi, account: Account
     key(api, account?.origin, account?.user?.id, account?.session, track.artworkUrl, track.mediaType) {
         val bitmap by produceState<ImageBitmap?>(null) {
             val path = track.artworkUrl?.takeIf { it.isNotBlank() }
-            if (account != null && path != null && track.mediaType == "audio") {
+            if (account != null && path != null && (track.mediaType == "audio" || track.mediaType == "video")) {
                 try {
                     val bytes = api.artwork(path)
                     value = withContext(Dispatchers.Default) { decodeTrackArtwork(bytes) }
@@ -48,13 +47,8 @@ internal fun rememberTrackArtwork(track: Track, api: ServerApi, account: Account
         bitmap
     }
 
-internal fun decodeTrackArtwork(bytes: ByteArray): ImageBitmap? {
-    if (bytes.isEmpty() || bytes.size > 64 * 1024) return null
-    val dimensions = BitmapFactory.Options().apply { inJustDecodeBounds = true }
-    BitmapFactory.decodeByteArray(bytes, 0, bytes.size, dimensions)
-    if (dimensions.outWidth !in 1..96 || dimensions.outHeight !in 1..96) return null
-    return BitmapFactory.decodeByteArray(bytes, 0, bytes.size)?.asImageBitmap()
-}
+internal fun decodeTrackArtwork(bytes: ByteArray): ImageBitmap? =
+    decodeArtworkBitmap(bytes, thumbnail = true)?.asImageBitmap()
 
 @Composable
 internal fun TrackArtwork(track: Track, active: Boolean, bitmap: ImageBitmap?) {
