@@ -3,8 +3,10 @@ package com.ssytdlp.app
 import android.app.Application
 import android.content.Context
 import android.content.Intent
+import android.os.Looper
 import androidx.activity.ComponentActivity
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.runtime.snapshots.Snapshot
 import androidx.compose.ui.test.*
 import androidx.compose.ui.test.junit4.createAndroidComposeRule
 import androidx.test.core.app.ApplicationProvider
@@ -19,6 +21,7 @@ import org.junit.Rule
 import org.junit.Test
 import org.junit.runner.RunWith
 import org.robolectric.RobolectricTestRunner
+import org.robolectric.Shadows.shadowOf
 import org.robolectric.annotation.Config
 
 @RunWith(RobolectricTestRunner::class)
@@ -116,6 +119,8 @@ class DebugLogTest {
 
         private fun waitForLogDialog() {
             compose.waitUntil(5_000) {
+                shadowOf(Looper.getMainLooper()).idle()
+                Snapshot.sendApplyNotifications()
                 compose.onAllNodesWithText("Refresh").fetchSemanticsNodes().isNotEmpty()
             }
         }
