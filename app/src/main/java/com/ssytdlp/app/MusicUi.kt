@@ -214,17 +214,9 @@ fun MusicApp(model: MusicViewModel, requestNotifications: () -> Unit) {
                         onSettings = openSettings, onBack = back)
                 }
             }, bottomBar = {
-                if (account != null) {
-                    if (landscape && playback.track != null && screen != 1) {
-                        Row(Modifier.windowInsetsPadding(WindowInsets.navigationBars), verticalAlignment = Alignment.CenterVertically) {
-                            Box(Modifier.weight(1f)) {
-                                PlayerDock(playback, model, { screen = 1 }, requestNotifications, download)
-                            }
-                            Column(Modifier.width(160.dp)) { MusicNavigation(screen) { screen = it } }
-                        }
-                    } else Column {
-                        if (playback.track != null && screen != 1) PlayerDock(playback, model, { screen = 1 }, requestNotifications, download)
-                        MusicNavigation(screen) { screen = it }
+                if (account != null && playback.track != null && screen != 1) {
+                    Box(Modifier.windowInsetsPadding(WindowInsets.navigationBars)) {
+                        PlayerDock(playback, model, { screen = 1 }, requestNotifications, download)
                     }
                 }
             }) { padding ->

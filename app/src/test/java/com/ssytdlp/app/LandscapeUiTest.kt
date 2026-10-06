@@ -23,19 +23,24 @@ import androidx.compose.ui.test.junit4.createAndroidComposeRule
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.height
 import androidx.compose.ui.unit.width
+import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.ViewModelStore
 import androidx.lifecycle.viewModelScope
 import androidx.test.core.app.ApplicationProvider
+import com.ssytdlp.app.core.Account
 import com.ssytdlp.app.core.Library
 import com.ssytdlp.app.core.LibraryEntry
 import com.ssytdlp.app.core.LibraryPlaylist
 import com.ssytdlp.app.core.LyricLine
+import com.ssytdlp.app.core.Session
 import com.ssytdlp.app.core.SongMetadata
 import com.ssytdlp.app.core.Track
 import com.ssytdlp.app.core.TrackPage
+import com.ssytdlp.app.core.User
 import java.security.Provider
 import java.security.Security
 import kotlinx.coroutines.cancel
+import kotlinx.coroutines.flow.MutableStateFlow
 import org.junit.After
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
@@ -77,6 +82,16 @@ class LandscapeUiTest {
     @After fun cleanup() {
         compose.runOnUiThread { models.clear() }
         Security.removeProvider(provider.name)
+    }
+
+    @Test fun landscapeAppUsesMiniPlayerAndBackWithoutBottomNavigation() {
+        assertAppNavigationWithoutBottomBar()
+    }
+
+    @Test
+    @Config(qualifiers = "w360dp-h800dp-port")
+    fun portraitAppUsesMiniPlayerAndBackWithoutBottomNavigation() {
+        assertAppNavigationWithoutBottomBar()
     }
 
     @Test fun libraryUsesThirtyFiveSixtyFiveSplitAndKeepsPlaylistSelectionInline() {
@@ -246,6 +261,49 @@ class LandscapeUiTest {
         compose.onNodeWithText("Lyrics").assertIsSelected()
         compose.onNodeWithText("Queue").assertHasClickAction()
         compose.onNodeWithTag("now-playing-queue-pane").assertDoesNotExist()
+    }
+
+    private fun assertAppNavigationWithoutBottomBar() {
+        val state = ReflectionHelpers.getField<MutableStateFlow<PlaybackState>>(model.playback, "mutableState")
+        compose.runOnUiThread {
+            ViewModelProvider(compose.activity)[AppUpdater::class.java].viewModelScope.cancel()
+            model.getApplication<MusicApplication>().serverConfig.set("https://music.example.com")
+            ReflectionHelpers.getField<MutableStateFlow<Account?>>(model.sessions, "mutableAccount").value =
+                Account("https://music.example.com", User(name = "Listener"),
+                    Session("test-session", "2099-01-01T00:00:00Z"))
+        }
+        compose.setContent { MusicApp(model) {} }
+        fun assertNoBottomNavigation() {
+            compose.onNodeWithContentDescription("Library").assertDoesNotExist()
+            compose.onNodeWithContentDescription("Now Playing").assertDoesNotExist()
+            compose.onNodeWithText("Now Playing").assertDoesNotExist()
+        }
+        fun assertLibrary() {
+            compose.onNodeWithText("TRACKS").assertIsDisplayed()
+            compose.onNodeWithContentDescription("Back").assertDoesNotExist()
+            assertNoBottomNavigation()
+        }
+        assertLibrary()
+        compose.onNodeWithContentDescription("Playback position").assertDoesNotExist()
+        compose.runOnIdle { state.value = playback }
+        compose.onNodeWithContentDescription("Playback position").assertIsDisplayed()
+        assertLibrary()
+        compose.onNodeWithText("First song").performClick()
+        compose.onNodeWithTag("now-playing-pane").assertIsDisplayed()
+        compose.onNodeWithText("Player").assertIsSelected()
+        assertNoBottomNavigation()
+        compose.onNodeWithContentDescription("Settings").performClick()
+        compose.onNodeWithTag("now-playing-pane").assertDoesNotExist()
+        assertNoBottomNavigation()
+        compose.onNodeWithContentDescription("Back").performClick()
+        compose.onNodeWithTag("now-playing-pane").assertIsDisplayed()
+        compose.onNodeWithContentDescription("Back").performClick()
+        assertLibrary()
+        compose.onNodeWithText("First song").performClick()
+        compose.onNodeWithTag("now-playing-pane").assertIsDisplayed()
+        compose.runOnUiThread { compose.activity.onBackPressedDispatcher.onBackPressed() }
+        assertLibrary()
+        compose.onNodeWithText("First song").assertIsDisplayed()
     }
 
     private fun assertSplit(leftTag: String, rightTag: String, leftFraction: Float) {
