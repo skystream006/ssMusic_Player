@@ -48,7 +48,11 @@ class ServerApi(
     private class RequestOwner(val account: Account)
 
     constructor(sessions: SessionStore, uiActivity: UiActivityGate? = null) :
-        this({ sessions.account.value }, { sessions.clear(it) }, uiActivity = uiActivity)
+        this({ sessions.account.value }, { sessions.clear(it) }, uiActivity = uiActivity) {
+        trackArtworkCache.observeAccount(sessions.account)
+    }
+
+    internal val trackArtworkCache = TrackArtworkCache(currentAccount, { owner, path -> artwork(path, owner) })
 
     private val transport = client.newBuilder()
         .addInterceptor { chain ->
@@ -151,6 +155,11 @@ class ServerApi(
 
     suspend fun artwork(path: String): ByteArray {
         val owner = currentAccount() ?: throw ApiException(401, "Sign in with your passkey.")
+        return artwork(path, owner)
+    }
+
+    private suspend fun artwork(path: String, owner: Account): ByteArray {
+        requireOwner(owner)
         val request = Request.Builder().url(ServerResource.resolve(owner.origin, path))
             .tag(RequestOwner::class.java, RequestOwner(owner)).build()
         suspend fun execute(): ByteArray {

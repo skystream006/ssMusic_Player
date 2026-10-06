@@ -14,6 +14,7 @@ import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.LazyListState
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -162,25 +163,31 @@ fun MusicApp(model: MusicViewModel, requestNotifications: () -> Unit) {
     val playback by model.playback.state.collectAsStateWithLifecycle()
     val snackbar = remember { SnackbarHostState() }
     var screen by rememberSaveable { mutableIntStateOf(0) }
+    var playerExpanded by rememberSaveable(account?.origin, account?.user?.id) { mutableStateOf(false) }
     var settingsReturnScreen by rememberSaveable { mutableIntStateOf(0) }
     var libraryBrowser by rememberSaveable(screen) { mutableStateOf(false) }
+    val libraryUi = key(account?.origin, account?.user?.id) { rememberLibraryBrowsingState(model.library) }
     val lifecycle = LocalLifecycleOwner.current.lifecycle
+    LaunchedEffect(account, playback.connected, playback.track) {
+        if (account == null || (playback.connected && playback.track == null)) playerExpanded = false
+    }
     LaunchedEffect(account?.user?.isShared, screen) {
         if (account?.user?.isShared == true && screen == 3) screen = 2
     }
-    LaunchedEffect(lifecycle, account, screen) {
-        if (account != null && screen in 0..1) lifecycle.repeatOnLifecycle(Lifecycle.State.RESUMED) {
+    LaunchedEffect(lifecycle, account, screen, playerExpanded) {
+        if (account != null && (screen == 0 || playerExpanded)) lifecycle.repeatOnLifecycle(Lifecycle.State.RESUMED) {
             while (true) { model.pollTranscriptions(); delay(10_000) }
         }
     }
     val back: () -> Unit = {
-        screen = when (screen) {
+        if (playerExpanded) playerExpanded = false
+        else screen = when (screen) {
             3 -> 2
             2 -> settingsReturnScreen
             else -> 0
         }
     }
-    BackHandler(enabled = account != null && screen != 0, onBack = back)
+    BackHandler(enabled = account != null && (screen != 0 || playerExpanded), onBack = back)
     var downloadPath by rememberSaveable { mutableStateOf<String?>(null) }
     val saveFile = rememberLauncherForActivityResult(ActivityResultContracts.CreateDocument("application/octet-stream")) { uri ->
         if (uri != null) downloadPath?.let { model.saveDownload(it, uri) }
@@ -193,6 +200,7 @@ fun MusicApp(model: MusicViewModel, requestNotifications: () -> Unit) {
         if (model.notice == message) model.message(null)
     }
     val openSettings: () -> Unit = {
+        playerExpanded = false
         if (screen < 2) settingsReturnScreen = screen
         screen = 2
     }
@@ -204,10 +212,12 @@ fun MusicApp(model: MusicViewModel, requestNotifications: () -> Unit) {
       MusicTheme(model.preferences, waveAppearance = model.waveAppearance, skin = model.skin.takeIf { model.skinsEnabled }) {
         SystemBarAppearance()
         Box(Modifier.fillMaxSize()) {
-          PlayerScreenTransition(screen, account != null && playback.track != null) { visibleScreen, pageModifier, dockModifier ->
+          key(account?.origin, account?.user?.id) {
+          PlayerScreenTransition(screen, playerExpanded,
+              account != null && (playback.track != null || playerExpanded && !playback.connected)) { visibleScreen, pageModifier, dock ->
             SkinBackground(pageModifier.fillMaxSize()) {
             Scaffold(containerColor = appBackgroundColor(), contentColor = MaterialTheme.colorScheme.onBackground,
-                snackbarHost = { SnackbarHost(snackbar) }, topBar = {
+                snackbarHost = { if (visibleScreen == 1 || !playerExpanded) SnackbarHost(snackbar) }, topBar = {
                 if (account != null) {
                     if (visibleScreen == 0) LibraryTopBar(model.library, !model.busy,
                         onBrowse = { libraryBrowser = true }, onSearch = model::search,
@@ -218,8 +228,8 @@ fun MusicApp(model: MusicViewModel, requestNotifications: () -> Unit) {
             }, bottomBar = {
                 if (account != null && playback.track != null && visibleScreen != 1) {
                     Box(Modifier.windowInsetsPadding(WindowInsets.navigationBars)) {
-                      Box(dockModifier) {
-                        PlayerDock(playback, model, { screen = 1 }, requestNotifications, download)
+                      dock {
+                        PlayerDock(playback, model, { playerExpanded = true }, requestNotifications, download)
                       }
                     }
                 }
@@ -231,9 +241,9 @@ fun MusicApp(model: MusicViewModel, requestNotifications: () -> Unit) {
                         if (model.busy) LinearProgressIndicator(Modifier.fillMaxWidth())
                         when (visibleScreen) {
                             0 -> {
-                                LibraryScreen(model, playback, playLibrary, download)
-                                if (libraryBrowser && !landscape && model.playlistEditTarget == null) {
-                                    LibraryBrowser(model) { libraryBrowser = false }
+                                LibraryScreen(model, playback, playLibrary, download, libraryUi)
+                                if (libraryBrowser && !playerExpanded && !landscape && model.playlistEditTarget == null) {
+                                    LibraryBrowser(model, libraryUi) { libraryBrowser = false }
                                 }
                             }
                             1 -> NowPlayingScreen(model, playback, download)
@@ -244,6 +254,7 @@ fun MusicApp(model: MusicViewModel, requestNotifications: () -> Unit) {
                 }
             }
             }
+          }
           }
             PlaybackEdgeLighting(account != null && playback.playing, Modifier.matchParentSize(),
                 enabled = model.edgeLightingEnabled, style = model.edgeLightingStyle)
@@ -301,29 +312,56 @@ private fun AppSettingsSheet(onDismiss: () -> Unit) {
 
 @Composable
 fun LibraryScreen(model: MusicViewModel, playback: PlaybackState, onPlay: (Int) -> Unit, download: (String, String) -> Unit) {
+    LibraryScreen(model, playback, onPlay, download, rememberLibraryBrowsingState(model.library))
+}
+
+@Composable
+fun LibraryScreen(model: MusicViewModel, playback: PlaybackState, onPlay: (Int) -> Unit, download: (String, String) -> Unit,
+    browsing: LibraryBrowsingState) {
     val account by model.sessions.account.collectAsStateWithLifecycle()
     var ratingTrack by remember { mutableStateOf<Track?>(null) }
     val songs: @Composable () -> Unit = {
         LibraryContent(model.library, playback, onPlay = onPlay, onPage = model::page,
+            browsing = browsing,
             artwork = { rememberTrackArtwork(it, model.api, account) },
             onRating = { ratingTrack = it }) { track, index -> TrackMenu(model, track, index, download) }
     }
     if (isLandscape()) Row(Modifier.fillMaxSize()) {
-        LibraryBrowserPane(model, Modifier.weight(0.35f).fillMaxHeight().testTag("library-playlists-pane"))
+        LibraryBrowserPane(model, Modifier.weight(0.35f).fillMaxHeight().testTag("library-playlists-pane"), browsing)
         Box(Modifier.weight(0.65f).fillMaxHeight().testTag("library-songs-pane")) { songs() }
     } else songs()
     ratingTrack?.let { track -> MetadataDialog(model, track, ratingOnly = true) { ratingTrack = null } }
+}
+
+@Stable
+class LibraryBrowsingState internal constructor(
+    val tracks: LazyListState,
+    val browser: LazyListState,
+    private val expanded: MutableState<Boolean>,
+    private val folder: MutableState<String?>
+) {
+    var showNoVocals by expanded
+    var parent by folder
+}
+
+@Composable
+fun rememberLibraryBrowsingState(state: LibraryState): LibraryBrowsingState {
+    val tracks = rememberSaveable(state.selectedId, state.search, state.page, saver = LazyListState.Saver) { LazyListState() }
+    val browser = rememberSaveable(saver = LazyListState.Saver) { LazyListState() }
+    val expanded = rememberSaveable(state.selectedId, state.search, state.page) { mutableStateOf(false) }
+    val parent = rememberSaveable { mutableStateOf<String?>(null) }
+    return remember(tracks, browser, expanded, parent) { LibraryBrowsingState(tracks, browser, expanded, parent) }
 }
 
 @Composable
 fun LibraryContent(state: LibraryState, playback: PlaybackState, onPlay: (Int) -> Unit,
     onPage: (Int) -> Unit, onRating: (Track) -> Unit = {},
     artwork: @Composable (Track) -> ImageBitmap? = { null },
+    browsing: LibraryBrowsingState = rememberLibraryBrowsingState(state),
     trackActions: @Composable (Track, Int) -> Unit) {
     val groups = remember(state.tracks.files) {
         state.tracks.files.withIndex().partition { !it.value.name.startsWith("[NoVocals]/", ignoreCase = true) }
     }
-    var showNoVocals by rememberSaveable(state.selectedId, state.search, state.page) { mutableStateOf(false) }
     val row: @Composable (IndexedValue<Track>) -> Unit = { (index, track) ->
         TrackRow(track.copy(rating = state.rating(track)), active = playback.track?.key == track.key,
             enabled = playback.connected && !state.loading, transcription = state.transcription(track),
@@ -338,7 +376,8 @@ fun LibraryContent(state: LibraryState, playback: PlaybackState, onPlay: (Int) -
             Text("${state.page} / ${state.tracks.totalPages}", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
         }
         if (state.loading) LinearProgressIndicator(Modifier.fillMaxWidth())
-        LazyColumn(Modifier.weight(1f), contentPadding = PaddingValues(bottom = 12.dp)) {
+        LazyColumn(Modifier.weight(1f).testTag("library-tracks"), state = browsing.tracks,
+            contentPadding = PaddingValues(bottom = 12.dp)) {
             if (state.tracks.files.isEmpty() && !state.loading) item {
                 EmptyState(Icons.Rounded.LibraryMusic, if (state.search.isNotBlank()) "No matching music" else "Your library is empty")
             }
@@ -346,11 +385,11 @@ fun LibraryContent(state: LibraryState, playback: PlaybackState, onPlay: (Int) -
             if (groups.second.isNotEmpty()) {
                 item(key = "no-vocals-header") {
                     ListItem(headlineContent = { Text("[NoVocals] (${groups.second.size})") },
-                        trailingContent = { Icon(if (showNoVocals) Icons.Rounded.ExpandLess else Icons.Rounded.ExpandMore,
-                            if (showNoVocals) "Collapse NoVocals" else "Expand NoVocals") },
-                        modifier = Modifier.clickable(role = Role.Button) { showNoVocals = !showNoVocals })
+                        trailingContent = { Icon(if (browsing.showNoVocals) Icons.Rounded.ExpandLess else Icons.Rounded.ExpandMore,
+                            if (browsing.showNoVocals) "Collapse NoVocals" else "Expand NoVocals") },
+                        modifier = Modifier.clickable(role = Role.Button) { browsing.showNoVocals = !browsing.showNoVocals })
                 }
-                if (showNoVocals) items(groups.second, key = { it.value.key }) { row(it) }
+                if (browsing.showNoVocals) items(groups.second, key = { it.value.key }) { row(it) }
             }
         }
         if (state.tracks.totalPages > 1) Row(Modifier.fillMaxWidth().padding(horizontal = 20.dp),
@@ -363,21 +402,22 @@ fun LibraryContent(state: LibraryState, playback: PlaybackState, onPlay: (Int) -
 }
 
 @Composable
-fun LibraryBrowser(model: MusicViewModel, dismiss: () -> Unit) {
+fun LibraryBrowser(model: MusicViewModel, browsing: LibraryBrowsingState = rememberLibraryBrowsingState(model.library), dismiss: () -> Unit) {
     ModalBottomSheet(onDismissRequest = dismiss, sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)) {
-        LibraryBrowserPane(model, Modifier.fillMaxHeight(0.85f), dismiss)
+        LibraryBrowserPane(model, Modifier.fillMaxHeight(0.85f), browsing, dismiss)
     }
 }
 
 @Composable
-private fun LibraryBrowserPane(model: MusicViewModel, modifier: Modifier = Modifier, onSelect: () -> Unit = {}) {
+private fun LibraryBrowserPane(model: MusicViewModel, modifier: Modifier = Modifier,
+    browsing: LibraryBrowsingState, onSelect: () -> Unit = {}) {
     val library = model.library.library
-    var parent by rememberSaveable { mutableStateOf<String?>(null) }
+    val parent = browsing.parent
     var create by remember { mutableStateOf(false) }
-    LazyColumn(modifier) {
+    LazyColumn(modifier, state = browsing.browser) {
         item {
         Row(Modifier.fillMaxWidth().padding(horizontal = 16.dp), verticalAlignment = Alignment.CenterVertically) {
-            if (parent != null) ToolButton(Icons.AutoMirrored.Rounded.ArrowBack, "Parent folder") { parent = library.entries.find { it.id == parent }?.parentId }
+            if (parent != null) ToolButton(Icons.AutoMirrored.Rounded.ArrowBack, "Parent folder") { browsing.parent = library.entries.find { it.id == parent }?.parentId }
             Text(library.entries.find { it.id == parent }?.name ?: "Library", style = MaterialTheme.typography.titleLarge, modifier = Modifier.weight(1f), maxLines = 2)
             ToolButton(Icons.Rounded.CreateNewFolder, "Create folder") { create = true }
         }
@@ -395,7 +435,7 @@ private fun LibraryBrowserPane(model: MusicViewModel, modifier: Modifier = Modif
                 else "${playlist?.songCount ?: 0} tracks" + if (playlist?.isPrivate == true) " · Private" else "") },
             leadingContent = { Icon(if (entry.type == "folder") Icons.Rounded.Folder else Icons.AutoMirrored.Rounded.QueueMusic, null) },
             trailingContent = { EntryMenu(model, entry) }, modifier = Modifier.clickable {
-                if (entry.type == "folder") parent = entry.id else { model.selectLibrary(entry.id); onSelect() }
+                if (entry.type == "folder") browsing.parent = entry.id else { model.selectLibrary(entry.id); onSelect() }
             })
         }
     }
