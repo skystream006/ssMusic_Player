@@ -26,6 +26,7 @@ class SessionStore(context: Context) {
     }?.takeIf { runCatching { Instant.parse(it.session.expiresAt).isAfter(Instant.now()) }.getOrDefault(false) })
     val account = mutableAccount.asStateFlow()
     val playback = PlaybackStore(context).apply { setAccount(mutableAccount.value) }
+    internal val artworkCache = MetadataArtworkCache().apply { setAccount(mutableAccount.value) }
 
     var pending: PendingLogin?
         @Synchronized get() = read("pending")?.let { runCatching { ApiJson.decodeFromString<PendingLogin>(it) }.getOrNull() }
@@ -35,6 +36,7 @@ class SessionStore(context: Context) {
         write("account", ApiJson.encodeToString(account))
         pending = null
         playback.setAccount(account)
+        artworkCache.setAccount(account)
         mutableAccount.value = account
     }
 
@@ -53,6 +55,7 @@ class SessionStore(context: Context) {
         write("account", null)
         pending = null
         playback.setAccount(null)
+        artworkCache.setAccount(null)
         mutableAccount.value = null
     }
 

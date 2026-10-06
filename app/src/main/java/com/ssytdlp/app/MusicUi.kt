@@ -200,7 +200,8 @@ fun MusicApp(model: MusicViewModel, requestNotifications: () -> Unit) {
         requestNotifications()
         model.playback.play(model.library.tracks.files, index)
     }
-    MusicTheme(model.preferences, waveAppearance = model.waveAppearance, skin = model.skin.takeIf { model.skinsEnabled }) {
+    CompositionLocalProvider(LocalMetadataArtworkOwner provides account?.let(::MetadataOwner)) {
+      MusicTheme(model.preferences, waveAppearance = model.waveAppearance, skin = model.skin.takeIf { model.skinsEnabled }) {
         SystemBarAppearance()
         SkinBackground(Modifier.fillMaxSize()) {
             Scaffold(containerColor = appBackgroundColor(), contentColor = MaterialTheme.colorScheme.onBackground,
@@ -250,6 +251,7 @@ fun MusicApp(model: MusicViewModel, requestNotifications: () -> Unit) {
                 enabled = model.edgeLightingEnabled, style = model.edgeLightingStyle)
             PlaylistEditor(model)
         }
+      }
     }
 }
 

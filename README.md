@@ -494,6 +494,50 @@ controllers. Queue insertion is restricted to the app and resource URLs are
 validated again inside the service. Lint's exported-service and user-CA warnings
 are deliberate, reviewed self-hosted media-app tradeoffs, not disabled TLS checks.
 
+## Metadata artwork performance
+
+Now Playing and the mini-player still use the image embedded in the song metadata,
+not the Library/Queue AVIF thumbnail. Decoded images are shared in a memory-only
+16 MiB cache (including retained Base64 keys), with bounded concurrent work.
+The requested resolution follows the view's pixel size, capped at the existing
+1024-pixel limit. Larger cached images can serve smaller views; opening the full
+Player upgrades a small cached image when necessary. Switching tabs no longer
+requires decoding an already cached image again.
+
+Recent typed metadata is retained for up to five minutes in a 16-entry,
+8 MiB estimated-size cache, keyed by account/session and song/artwork revisions.
+After the current metadata is ready and buffering ends, a foreground-only,
+350 ms delayed request can warm the next song's metadata. It never walks the
+whole queue, skips shuffle and repeat-one, and cancels when the queue, account,
+current song, or foreground state changes. Edits, replacements, and observed
+artwork/transcription revisions invalidate affected metadata.
+
+Artwork caches are cleared before a new account/session is published. Changed
+image content has a different cache key, and eviction never recycles images that
+may still be displayed. Existing encoded-size and AVIF allocation limits remain
+in effect.
+
+To compare loading stages, enable **Settings > Debug logging > Full**, clear the
+log, and separately try a first play, returning to a recently played song, and
+opening the full Player from the mini-player. Logs contain only event labels,
+timestamps, and numeric durations (`duration_us`), never song names, artwork,
+URLs, or credentials:
+
+- `METADATA_DOWNLOAD`: request start through complete response-body download.
+- `METADATA_JSON` / `METADATA_CONVERTED`: JSON parsing / typed metadata conversion.
+- `METADATA_CACHE_HIT`: metadata reused without another request.
+- `ARTWORK_DECODED`: Base64 conversion and image decoding.
+- `ARTWORK_CACHE_HIT`: an existing decoded image reused.
+- `ARTWORK_DISPLAYED`: artwork input becoming available in the view through its
+  first draw (including decode waiting), not a hardware presentation timestamp.
+
+Compare equivalent songs/devices; metadata prefetch can also emit request timings.
+No fixed latency improvement is assumed. If uncached `METADATA_DOWNLOAD` dominates,
+a separate binary endpoint for the embedded metadata image would avoid the
+Base64/lyrics payload overhead. That requires investigation in the server
+repository; this client does not invent an endpoint or replace metadata artwork
+with thumbnails.
+
 ## Verification
 
 ```powershell

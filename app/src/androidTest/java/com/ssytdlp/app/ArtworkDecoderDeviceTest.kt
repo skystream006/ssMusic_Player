@@ -54,6 +54,13 @@ class ArtworkDecoderDeviceTest {
         compose.onNodeWithContentDescription("Album artwork unavailable").assertDoesNotExist()
     }
 
+    @Test fun decodesAvifMetadataAtMiniPlayerResolution() {
+        val bitmap = decodeArtworkBitmap(bytes(album), targetPixels = 128)!!
+        assertEquals(128, bitmap.width)
+        assertEquals(64, bitmap.height)
+        bitmap.recycle()
+    }
+
     private fun bytes(value: String): ByteArray = Base64.decode(value, Base64.DEFAULT)
 
     companion object {

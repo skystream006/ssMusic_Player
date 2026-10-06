@@ -129,6 +129,20 @@ class DebugLogTest {
         assertFalse(directory.exists())
     }
 
+    @Test fun artworkTimingsRecordOnlyNumericDurationsAndRespectLoggingState() {
+        store.event(DebugEvent.ARTWORK_DECODED, durationMicros = 120)
+        assertEquals("", store.read())
+        store.setEnabled(true)
+        store.event(DebugEvent.METADATA_DOWNLOAD, durationMicros = 120)
+        store.event(DebugEvent.ARTWORK_DISPLAYED, durationMicros = -1)
+        assertTrue(store.read().contains("METADATA_DOWNLOAD duration_us=120"))
+        assertTrue(store.read().contains("ARTWORK_DISPLAYED duration_us=0"))
+        val saved = store.read()
+        store.setEnabled(false)
+        store.event(DebugEvent.ARTWORK_DECODED, durationMicros = 120)
+        assertEquals(saved, store.read())
+    }
+
     @Test fun preferencePersistsAndDisablingStopsWritesWithoutRemovingSavedLogs() {
         assertTrue(store.setEnabled(true))
         assertTrue(DebugLogStore(context).enabled)

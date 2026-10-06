@@ -35,6 +35,7 @@ import java.util.Collections
 import java.util.Date
 import java.util.concurrent.TimeUnit
 import java.util.concurrent.atomic.AtomicReference
+import java.util.concurrent.atomic.AtomicInteger
 import javax.crypto.KeyGenerator
 import kotlinx.coroutines.cancel
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -663,6 +664,366 @@ class AccountRefreshTest {
         assertTrue(model.metadata!!.canEdit)
     }
 
+    @Test fun recentSongRevisitReusesMetadataButArtworkRevisionDoesNot() {
+        val first = Track("job", "first.mp3", streamUrl = "/api/stream/first?v=1", artworkUrl = "/api/art/first?v=1")
+        val second = first.copy(name = "second.mp3")
+        val firstMetadata = SongMetadata(title = "First", uslt = "Lyrics", canEdit = true)
+        val requests = AtomicInteger()
+        val model = startModel(first) { request ->
+            when (request.requestUrl!!.encodedPath) {
+                songPath(first, "lyrics") -> {
+                    requests.incrementAndGet()
+                    MockResponse().setBody(ApiJson.encodeToString(firstMetadata))
+                }
+                songPath(second, "lyrics") -> MockResponse().setBody("""{"title":"Second"}""")
+                else -> null
+            }
+        }
+        showTrack(model, first)
+        showTrack(model, second)
+        showTrack(model, first)
+        assertEquals(firstMetadata, model.metadata)
+        assertEquals(1, requests.get())
+        showTrack(model, first.copy(artworkUrl = "/api/art/first?v=2"))
+        waitFor { requests.get() == 2 && model.metadata != null }
+        assertEquals(firstMetadata, model.metadata)
+    }
+
+    @Test fun cachedLyricsPatchSurvivesRevisitWithoutTrustingPatchCanEdit() {
+        val first = Track("job", "first.mp3")
+        val second = Track("job", "second.mp3")
+        val old = SongMetadata(title = "First", uslt = "Old", canEdit = false)
+        val requests = AtomicInteger()
+        val model = startModel(first) { request ->
+            when (request.requestUrl!!.encodedPath) {
+                songPath(first, "lyrics") -> {
+                    requests.incrementAndGet()
+                    MockResponse().setBody(ApiJson.encodeToString(old))
+                }
+                songPath(second, "lyrics") -> MockResponse().setBody("""{"title":"Second","canEdit":true}""")
+                "/api/jobs/job/files/first.mp3/metadata" ->
+                    MockResponse().setBody(ApiJson.encodeToString(old.copy(uslt = "Edited", canEdit = true)))
+                else -> null
+            }
+        }
+        showTrack(model, first)
+        showTrack(model, second)
+        perform(model) { model.saveLyrics(first, json("uslt" to "Edited")) {} }
+        assertEquals("Second", model.metadata!!.title)
+        showTrack(model, first)
+        assertEquals("Edited", model.metadata!!.uslt)
+        assertFalse(model.metadata!!.canEdit)
+        assertEquals(1, requests.get())
+    }
+
+    @Test fun patchCancelsOlderGetAndItsLateResponseCannotOverwriteSavedLyrics() {
+        val track = Track("job", "song.mp3")
+        val requests = AtomicInteger()
+        val saved = SongMetadata(title = "Song", uslt = "Saved", canEdit = true)
+        val model = startModel(track) { request ->
+            when (request.requestUrl!!.encodedPath) {
+                songPath(track, "lyrics") -> if (requests.incrementAndGet() == 1)
+                    MockResponse().setBody("""{"uslt":"Stale","canEdit":true}""").setBodyDelay(1, TimeUnit.SECONDS)
+                else MockResponse().setBody(ApiJson.encodeToString(saved))
+                "/api/jobs/job/files/song.mp3/metadata" -> metadataResponse(saved)
+                else -> null
+            }
+        }
+        setPlayback(model, PlaybackState(track = track, queue = listOf(track)))
+        waitFor { requests.get() == 1 }
+        perform(model) { model.saveLyrics(track, json("uslt" to "Saved")) {} }
+        waitFor { model.metadata == saved }
+        idleFor(1_200)
+        assertEquals(saved, model.metadata)
+        assertEquals(2, requests.get())
+    }
+
+    @Test fun rapidSkipsDoNotPublishOrCacheCancelledResponses() {
+        val first = Track("job", "first.mp3")
+        val second = Track("job", "second.mp3")
+        val requests = AtomicInteger()
+        val model = startModel(first) { request ->
+            when (request.requestUrl!!.encodedPath) {
+                songPath(first, "lyrics") -> if (requests.incrementAndGet() == 1)
+                    MockResponse().setBody("""{"title":"Stale first"}""").setBodyDelay(1, TimeUnit.SECONDS)
+                else MockResponse().setBody("""{"title":"Fresh first"}""")
+                songPath(second, "lyrics") -> MockResponse().setBody("""{"title":"Second"}""")
+                else -> null
+            }
+        }
+        setPlayback(model, PlaybackState(track = first, queue = listOf(first)))
+        waitFor { requests.get() == 1 }
+        showTrack(model, second)
+        idleFor(1_200)
+        assertEquals("Second", model.metadata!!.title)
+        showTrack(model, first)
+        assertEquals("Fresh first", model.metadata!!.title)
+        assertEquals(2, requests.get())
+    }
+
+    @Test fun logoutAndNewSessionCannotReuseCachedLyricsForTheSameTrack() {
+        val track = Track("job", "song.mp3")
+        val requests = AtomicInteger()
+        val model = startModel(track) { request ->
+            if (request.requestUrl!!.encodedPath == songPath(track, "lyrics"))
+                MockResponse().setBody("""{"title":"Session ${requests.incrementAndGet()}"}""") else null
+        }
+        showTrack(model, track)
+        assertEquals("Session 1", model.metadata!!.title)
+        compose.runOnUiThread { sessions.clear() }
+        waitFor { model.metadata == null && model.playback.state.value.track == null }
+        compose.runOnUiThread { sessions.save(account.copy(session = account.session.copy(token = "N".repeat(43)))) }
+        waitFor { model.health != null && !model.library.loading }
+        showTrack(model, track)
+        assertEquals("Session 2", model.metadata!!.title)
+        assertEquals(2, requests.get())
+    }
+
+    @Test fun switchingAccountsCannotPublishALateResponseOrReuseThePreviousOwnersCache() {
+        val track = Track("job", "song.mp3")
+        val requests = AtomicInteger()
+        val model = startModel(track) { request ->
+            when (request.requestUrl!!.encodedPath) {
+                "/api/auth/me" -> MockResponse().setBody(ApiJson.encodeToString(UserResponse(sessions.account.value!!.user)))
+                songPath(track, "lyrics") -> {
+                    val owner = sessions.account.value!!.user.id
+                    val response = MockResponse().setBody("""{"title":"$owner"}""")
+                    if (requests.incrementAndGet() == 1) response.setBodyDelay(1, TimeUnit.SECONDS) else response
+                }
+                else -> null
+            }
+        }
+        setPlayback(model, PlaybackState(track = track, queue = listOf(track)))
+        waitFor { requests.get() == 1 }
+        compose.runOnUiThread { sessions.save(account.copy(user = User("other"))) }
+        waitFor { model.metadata?.title == "other" }
+        idleFor(1_200)
+        assertEquals("other", model.metadata!!.title)
+        assertEquals(2, requests.get())
+    }
+
+    @Test fun metadataGetterHidesPreviousOwnerBeforeAnyAccountCollectorCanRun() {
+        val track = Track("job", "song.mp3")
+        val model = startModel(track) { request ->
+            if (request.requestUrl!!.encodedPath == songPath(track, "lyrics"))
+                MockResponse().setBody("""{"uslt":"Private lyrics","artwork":"Private artwork"}""") else null
+        }
+        showTrack(model, track)
+        compose.runOnUiThread {
+            model.viewModelScope.cancel()
+            sessions.save(account.copy(user = User("other")))
+            assertNull(model.metadata)
+            sessions.save(account.copy(origin = "https://other.example"))
+            assertNull(model.metadata)
+            sessions.save(account.copy(session = account.session.copy(token = "N".repeat(43))))
+            assertNull(model.metadata)
+            sessions.clear()
+            assertNull(model.metadata)
+        }
+    }
+
+    @Test fun profileRefreshDoesNotCancelMetadataDownloadsOrDiscardRecentCacheEntries() {
+        val first = Track("job", "first.mp3")
+        val second = Track("job", "second.mp3")
+        val requests = AtomicInteger()
+        val model = startModel(first) { request ->
+            when (request.requestUrl!!.encodedPath) {
+                songPath(first, "lyrics") -> {
+                    requests.incrementAndGet()
+                    MockResponse().setBody("""{"title":"First","canEdit":true}""").setBodyDelay(1, TimeUnit.SECONDS)
+                }
+                songPath(second, "lyrics") -> MockResponse().setBody("""{"title":"Second"}""")
+                else -> null
+            }
+        }
+        setPlayback(model, PlaybackState(track = first, queue = listOf(first)))
+        waitFor { requests.get() == 1 }
+        compose.runOnUiThread {
+            assertTrue(sessions.updateUser(account, account.user.copy(name = "Updated profile")))
+        }
+        waitFor { model.metadata?.title == "First" }
+        val original = model.metadata
+        compose.runOnUiThread {
+            val current = sessions.account.value!!
+            assertTrue(sessions.updateUser(current, current.user.copy(sharedUserIds = listOf("friend"))))
+            assertSame(original, model.metadata)
+        }
+        showTrack(model, second)
+        showTrack(model, first)
+        assertSame(original, model.metadata)
+        assertEquals(1, requests.get())
+    }
+
+    @Test fun foregroundPrefetchWaitsForMetadataAndBufferingThenOnlyFetchesOneNextSong() {
+        val first = Track("job", "first.mp3")
+        val second = Track("job", "second.mp3")
+        val third = Track("job", "third.mp3")
+        val requests = AtomicInteger()
+        val model = startModel(first) { request ->
+            if (request.requestUrl!!.encodedPath.contains("/lyrics/")) {
+                requests.incrementAndGet()
+                MockResponse().setBody("""{"title":"${request.requestUrl!!.pathSegments.last()}"}""")
+            } else null
+        }
+        setPlayback(model, PlaybackState(track = first, queue = listOf(first, second, third), buffering = true))
+        waitFor { model.metadata != null }
+        idleFor(500)
+        assertEquals(1, requests.get())
+        compose.runOnUiThread { application.uiActivity.activityPaused(compose.activity) }
+        setPlayback(model, model.playback.state.value.copy(buffering = false))
+        idleFor(500)
+        assertEquals(1, requests.get())
+        compose.runOnUiThread { application.uiActivity.activityResumed(compose.activity) }
+        waitFor { requests.get() == 2 }
+        idleFor(500)
+        assertEquals(2, requests.get())
+        assertEquals("first.mp3", model.metadata!!.title)
+        setPlayback(model, PlaybackState(track = second, queue = listOf(second)))
+        waitFor { model.metadata?.title == "second.mp3" }
+        assertEquals(2, requests.get())
+    }
+
+    @Test fun prefetchDoesNotGuessShuffleAndCancelsOnQueueOrBackgroundChanges() {
+        val first = Track("job", "first.mp3")
+        val second = Track("job", "second.mp3")
+        val third = Track("job", "third.mp3")
+        val secondRequests = AtomicInteger()
+        val thirdRequests = AtomicInteger()
+        val model = startModel(first) { request ->
+            when (request.requestUrl!!.encodedPath) {
+                songPath(first, "lyrics") -> MockResponse().setBody("""{"title":"First"}""")
+                songPath(second, "lyrics") -> {
+                    secondRequests.incrementAndGet()
+                    MockResponse().setBody("""{"title":"Second"}""").setBodyDelay(1, TimeUnit.SECONDS)
+                }
+                songPath(third, "lyrics") -> {
+                    thirdRequests.incrementAndGet()
+                    MockResponse().setBody("""{"title":"Third"}""").setBodyDelay(1, TimeUnit.SECONDS)
+                }
+                else -> null
+            }
+        }
+        setPlayback(model, PlaybackState(track = first, queue = listOf(first, second), shuffle = true))
+        waitFor { model.metadata != null }
+        idleFor(500)
+        assertEquals(0, secondRequests.get())
+        setPlayback(model, model.playback.state.value.copy(shuffle = false))
+        waitFor { secondRequests.get() == 1 }
+        setPlayback(model, model.playback.state.value.copy(queue = listOf(first, third)))
+        waitFor { thirdRequests.get() == 1 }
+        compose.runOnUiThread { application.uiActivity.activityPaused(compose.activity) }
+        idleFor(1_200)
+        assertEquals("First", model.metadata!!.title)
+        assertNull(model.metadataError)
+        showTrack(model, second)
+        assertEquals(2, secondRequests.get())
+        showTrack(model, third)
+        assertEquals(2, thirdRequests.get())
+    }
+
+    @Test fun failedPrefetchIsNotReplayedWhenTheSongBecomesCurrent() {
+        val first = Track("job", "first.mp3")
+        val second = Track("job", "second.mp3")
+        val requests = AtomicInteger()
+        val model = startModel(first) { request ->
+            when (request.requestUrl!!.encodedPath) {
+                songPath(first, "lyrics") -> MockResponse().setBody("""{"title":"First"}""")
+                songPath(second, "lyrics") -> if (requests.incrementAndGet() == 1)
+                    MockResponse().setResponseCode(503).setBody("""{"error":"Temporarily unavailable"}""")
+                else MockResponse().setBody("""{"title":"Second"}""")
+                else -> null
+            }
+        }
+        setPlayback(model, PlaybackState(track = first, queue = listOf(first, second)))
+        waitFor { requests.get() == 1 }
+        idleFor(300)
+        assertNull(model.metadataError)
+        showTrack(model, second)
+        assertEquals("Second", model.metadata!!.title)
+        assertEquals(2, requests.get())
+    }
+
+    @Test fun patchingAPrefetchedSongCancelsItsOldGetBeforeItCanEnterTheCache() {
+        val first = Track("job", "first.mp3")
+        val second = Track("job", "second.mp3")
+        val requests = AtomicInteger()
+        val model = startModel(first) { request ->
+            when (request.requestUrl!!.encodedPath) {
+                songPath(first, "lyrics") -> MockResponse().setBody("""{"title":"First"}""")
+                songPath(second, "lyrics") -> if (requests.incrementAndGet() == 1)
+                    MockResponse().setBody("""{"uslt":"Old"}""").setBodyDelay(1, TimeUnit.SECONDS)
+                else MockResponse().setBody("""{"uslt":"Saved","canEdit":true}""")
+                "/api/jobs/job/files/second.mp3/metadata" -> MockResponse().setBody("""{"uslt":"Saved"}""")
+                else -> null
+            }
+        }
+        setPlayback(model, PlaybackState(track = first, queue = listOf(first, second)))
+        waitFor { requests.get() == 1 }
+        perform(model) { model.saveLyrics(second, json("uslt" to "Saved")) {} }
+        waitFor { requests.get() == 2 }
+        idleFor(1_200)
+        assertEquals("First", model.metadata!!.title)
+        showTrack(model, second)
+        assertEquals("Saved", model.metadata!!.uslt)
+        assertTrue(model.metadata!!.canEdit)
+        assertEquals(2, requests.get())
+    }
+
+    @Test fun transcriptionCompletionInvalidatesMetadataEvenWithoutAStreamRevision() {
+        val track = Track("job", "song.mp3")
+        val saved = AtomicReference(SongMetadata(uslt = "Old lyrics", canEdit = true))
+        val requests = AtomicInteger()
+        val model = startModel(track) { request ->
+            when (request.requestUrl!!.encodedPath) {
+                songPath(track, "lyrics") -> {
+                    requests.incrementAndGet()
+                    MockResponse().setBody(ApiJson.encodeToString(saved.get()))
+                }
+                "/api/jobs/job/files/song.mp3/transcribe" -> {
+                    saved.set(saved.get().copy(uslt = "Transcribed lyrics"))
+                    MockResponse().setBody("""{"id":"job","transcriptions":{"song.mp3":{"status":"transcribed"}}}""")
+                }
+                "/api/jobs/job" -> MockResponse().setBody("""{"id":"job"}""")
+                else -> null
+            }
+        }
+        showTrack(model, track)
+        perform(model) { model.transcribe(track, TranscriptionOptions()) }
+        waitFor { model.metadata?.uslt == "Transcribed lyrics" }
+        assertTrue(requests.get() >= 2)
+        assertTrue(model.metadata!!.canEdit)
+    }
+
+    @Test fun replacingCurrentFileInvalidatesLyricsAndGetsFreshEditAuthorityEvenWithoutNewRevision() {
+        val track = Track("job", "song.mp3", streamUrl = "/api/stream/song.mp3?v=1")
+        val saved = AtomicReference(SongMetadata(uslt = "Old lyrics", canEdit = true))
+        val requests = AtomicInteger()
+        val model = startModel(track) { request ->
+            when (request.requestUrl!!.encodedPath) {
+                "/api/library" -> MockResponse().setBody(ApiJson.encodeToString(
+                    Library(jobs = listOf(Job("job", initiatedBy = account.user)))))
+                songPath(track, "lyrics") -> {
+                    requests.incrementAndGet()
+                    MockResponse().setBody(ApiJson.encodeToString(saved.get()))
+                }
+                "/api/jobs/job/files/song.mp3/replace" -> {
+                    saved.set(SongMetadata(uslt = "Replacement lyrics", canEdit = false))
+                    MockResponse().setBody(JsonObject(mapOf(
+                        "file" to ApiJson.encodeToJsonElement(track),
+                        "metadata" to ApiJson.encodeToJsonElement(saved.get().copy(canEdit = true))
+                    )).toString())
+                }
+                else -> null
+            }
+        }
+        showTrack(model, track)
+        val uri = replacementDocument()
+        perform(model) { model.replaceFile(track, uri) {} }
+        waitFor { model.metadata?.uslt == "Replacement lyrics" }
+        assertFalse(model.metadata!!.canEdit)
+        assertEquals(2, requests.get())
+    }
+
     private fun replacementDocument(): Uri {
         val uri = Uri.parse("content://replacement-test/song")
         val provider = ReplacementDocumentProvider(replacementDocuments.newFile().apply { writeText("replacement audio") })
@@ -699,11 +1060,17 @@ class AccountRefreshTest {
     }
 
     private fun showTrack(model: MusicViewModel, track: Track) {
-        compose.runOnUiThread {
-            ReflectionHelpers.getField<MutableStateFlow<PlaybackState>>(model.playback, "mutableState").value =
-                PlaybackState(track = track, queue = listOf(track))
-        }
+        setPlayback(model, PlaybackState(track = track, queue = listOf(track)))
         waitFor { model.metadata != null }
+    }
+
+    private fun setPlayback(model: MusicViewModel, state: PlaybackState) = compose.runOnUiThread {
+        ReflectionHelpers.getField<MutableStateFlow<PlaybackState>>(model.playback, "mutableState").value = state
+    }
+
+    private fun idleFor(milliseconds: Long) {
+        val until = System.nanoTime() + milliseconds * 1_000_000
+        waitFor { System.nanoTime() >= until }
     }
 
     private fun perform(model: MusicViewModel, action: () -> Unit) {

@@ -5,7 +5,6 @@ package com.ssytdlp.app
 import android.content.ClipData
 import android.content.ClipboardManager
 import android.content.Context
-import android.util.Base64
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.snap
 import androidx.compose.animation.core.spring
@@ -38,9 +37,9 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.clipToBounds
+import androidx.compose.ui.draw.drawWithContent
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.ImageBitmap
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.input.pointer.PointerEventPass
 import androidx.compose.ui.input.pointer.pointerInput
@@ -48,6 +47,7 @@ import androidx.compose.ui.input.nestedscroll.NestedScrollConnection
 import androidx.compose.ui.input.nestedscroll.NestedScrollSource
 import androidx.compose.ui.input.nestedscroll.nestedScroll
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.testTag
@@ -72,11 +72,9 @@ import androidx.media3.common.util.UnstableApi
 import androidx.media3.session.MediaController
 import androidx.media3.ui.PlayerView
 import com.ssytdlp.app.core.*
-import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.launch
-import kotlinx.coroutines.withContext
 import kotlinx.serialization.json.decodeFromJsonElement
 import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
@@ -737,24 +735,41 @@ internal fun formatLyricTimestamp(time: Double): String {
 
 @Composable
 fun AlbumArtwork(artwork: String?, modifier: Modifier = Modifier) {
-    val bitmap by produceState<ImageBitmap?>(null, artwork) {
-        value = withContext(Dispatchers.Default) {
-            runCatching {
-                if (artwork == null || artwork.length > 2_800_000 || !artwork.startsWith("data:image/")) return@runCatching null
-                val bytes = Base64.decode(artwork.substringAfter(","), Base64.DEFAULT)
-                decodeArtworkBitmap(bytes)?.asImageBitmap()
-            }.getOrNull()
+    val app = LocalContext.current.applicationContext as? MusicApplication
+    val scope = rememberCoroutineScope()
+    val cache = LocalMetadataArtworkCache.current ?: app?.artworkCache ?: remember { MetadataArtworkCache(scope) }
+    val generation by cache.generation.collectAsState()
+    val owner = LocalMetadataArtworkOwner.current ?: app?.sessions?.account?.value?.let(::MetadataOwner)
+    val source = artwork.takeIf { owner == null || cache.belongsTo(owner) }
+    var pixels by remember { mutableIntStateOf(0) }
+    key(cache, generation, source) {
+        val display = remember { ArtworkDisplayTiming() }
+        val bitmap by produceState(cache.peek(source, pixels, generation)?.asImageBitmap(), pixels) {
+            if (pixels > 0) value = cache.load(source, pixels, generation)?.asImageBitmap()
         }
-    }
-    Box(modifier.clip(RoundedCornerShape(8.dp)).background(MaterialTheme.colorScheme.surfaceContainerLow)
-        .border(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.6f), RoundedCornerShape(8.dp)), contentAlignment = Alignment.Center) {
-        if (bitmap != null) Image(bitmap!!, "Album artwork", Modifier.fillMaxSize(), contentScale = ContentScale.Fit)
-        else {
-            if (LocalWaveAppearance.current) Image(painterResource(R.drawable.wave_cover), null, Modifier.fillMaxSize(), contentScale = ContentScale.Crop)
-            Icon(Icons.Rounded.Album, "Album artwork unavailable", Modifier.fillMaxSize(0.32f), tint = MaterialTheme.colorScheme.primary.copy(alpha = 0.85f))
+        Box(modifier.onSizeChanged { pixels = artworkSizeBucket(maxOf(it.width, it.height)) }
+            .clip(RoundedCornerShape(8.dp)).background(MaterialTheme.colorScheme.surfaceContainerLow)
+            .border(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.6f), RoundedCornerShape(8.dp))
+            .drawWithContent {
+                drawContent()
+                if (bitmap != null && !display.drawn) {
+                    display.drawn = true
+                    DebugLog.timing(DebugEvent.ARTWORK_DISPLAYED, display.started)
+                }
+            }, contentAlignment = Alignment.Center) {
+            if (bitmap != null) Image(bitmap!!, "Album artwork", Modifier.fillMaxSize(), contentScale = ContentScale.Fit)
+            else {
+                if (LocalWaveAppearance.current) Image(painterResource(R.drawable.wave_cover), null, Modifier.fillMaxSize(), contentScale = ContentScale.Crop)
+                Icon(Icons.Rounded.Album, "Album artwork unavailable", Modifier.fillMaxSize(0.32f), tint = MaterialTheme.colorScheme.primary.copy(alpha = 0.85f))
+            }
         }
     }
 }
+
+internal val LocalMetadataArtworkCache = staticCompositionLocalOf<MetadataArtworkCache?> { null }
+internal val LocalMetadataArtworkOwner = compositionLocalOf<MetadataOwner?> { null }
+
+private class ArtworkDisplayTiming(val started: Long = System.nanoTime(), var drawn: Boolean = false)
 
 @Composable
 fun TrackMenu(model: MusicViewModel, track: Track, index: Int, download: (String, String) -> Unit) {

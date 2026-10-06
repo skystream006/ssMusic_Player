@@ -8,18 +8,26 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
+import androidx.media3.common.Player
 import com.ssytdlp.app.core.*
 import java.net.URLEncoder
 import java.util.UUID
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job as CoroutineJob
+import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.ensureActive
+import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.collectLatest
+import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.distinctUntilChangedBy
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
+import kotlinx.coroutines.withContext
 import kotlinx.serialization.json.*
 
 data class LibraryState(
@@ -105,6 +113,13 @@ internal fun Track.withReplacedFile(file: Track): Track = when {
 
 internal data class PlaylistSaveResult(val id: String, val error: String? = null)
 internal data class PlaylistEditTarget(val id: String, val account: Account)
+private data class MetadataSelection(val owner: MetadataOwner, val identity: MetadataIdentity)
+private data class MetadataUpdate(val selection: MetadataSelection, val canEdit: Boolean?)
+private data class MetadataLoad(val owner: MetadataOwner?, val track: Track?, val generation: Long)
+private data class MetadataPrefetch(
+    val current: MetadataSelection, val selection: MetadataSelection, val track: Track, val queue: List<Track>,
+    val index: Int, val repeat: Int, val generation: Long
+)
 
 class MusicViewModel @JvmOverloads constructor(application: Application, private val connectPlayback: Boolean = true) : AndroidViewModel(application) {
     private val app = application as MusicApplication
@@ -138,7 +153,8 @@ class MusicViewModel @JvmOverloads constructor(application: Application, private
     var lyricsTextScale by mutableFloatStateOf(normalizeLyricsTextScale(
         application.getSharedPreferences("settings", 0).getFloat("lyrics_text_scale", 1f)))
         private set
-    var metadata by mutableStateOf<SongMetadata?>(null)
+    private lateinit var ownedMetadata: OwnedMetadataState
+    var metadata by OwnedMetadataState { currentMetadataOwner }.also { ownedMetadata = it }
         private set
     var metadataError by mutableStateOf<String?>(null)
         private set
@@ -165,6 +181,13 @@ class MusicViewModel @JvmOverloads constructor(application: Application, private
     private val accountRefresh = Mutex()
     private val transcriptionPoll = Mutex()
     private var transcriptionGeneration = 0L
+    private val metadataCache = SongMetadataCache()
+    private val metadataGeneration = MutableStateFlow(0L)
+    private val metadataReady = MutableStateFlow<MetadataSelection?>(null)
+    private var metadataSelection: MetadataSelection? = null
+    private val metadataUpdates = mutableSetOf<MetadataSelection>()
+    private val metadataOwners = sessions.account.map { it?.let(::MetadataOwner) }.distinctUntilChanged()
+    private val currentMetadataOwner get() = sessions.account.value?.let(::MetadataOwner)
 
     init {
         viewModelScope.launch {
@@ -198,18 +221,139 @@ class MusicViewModel @JvmOverloads constructor(application: Application, private
             }
         }
         viewModelScope.launch {
-            playback.state.map { it.track }.distinctUntilChangedBy { it?.let { track -> track.key to track.streamUrl } }.collectLatest { track ->
-                metadata = null
-                metadataError = null
-                if (track != null && track.mediaType != "video") {
-                    try { metadata = ApiJson.decodeFromJsonElement(api.request(songPath(track, "lyrics"))) }
-                    catch (error: Exception) {
-                        if (error is CancellationException) throw error
-                        metadataError = "Lyrics and artwork are unavailable."
+            combine(metadataOwners, playback.state.map { it.track }, metadataGeneration, ::MetadataLoad)
+                .distinctUntilChangedBy { load ->
+                    Triple(load.owner, load.track?.let { MetadataIdentity(it) to it.mediaType }, load.generation)
+                }.collectLatest { load ->
+                    if (currentMetadataOwner != load.owner) return@collectLatest
+                    metadataCache.setOwner(load.owner)
+                    val selection = load.owner?.let { owner ->
+                        load.track?.takeIf { it.mediaType != "video" }?.let { MetadataSelection(owner, MetadataIdentity(it)) }
                     }
+                    if (metadataSelection != selection) {
+                        metadataSelection = selection
+                        metadataReady.value = null
+                        metadata = null
+                        metadataError = null
+                    }
+                    if (selection == null || isMetadataUpdating(selection.owner, selection.identity.key) ||
+                        metadataReady.value == selection) return@collectLatest
+                    try {
+                        val cached = metadataCache.get(selection.owner, selection.identity)
+                        val result = cached ?: downloadMetadata(requireNotNull(load.track))
+                        currentCoroutineContext().ensureActive()
+                        if (!isCurrentMetadata(selection) || metadataGeneration.value != load.generation) return@collectLatest
+                        if (cached != null) DebugLog.event(DebugEvent.METADATA_CACHE_HIT)
+                        else metadataCache.put(selection.owner, selection.identity, result)
+                        ownedMetadata.publish(selection.owner, result)
+                        metadataError = null
+                        metadataReady.value = selection
+                    } catch (error: Exception) {
+                        if (error is CancellationException) throw error
+                        if (isCurrentMetadata(selection) && metadataGeneration.value == load.generation) {
+                            metadataError = "Lyrics and artwork are unavailable."
+                        }
+                    }
+                }
+        }
+        viewModelScope.launch {
+            combine(playback.state, metadataOwners, app.uiActivity.resumed, metadataReady, metadataGeneration) {
+                    state, owner, resumed, ready, generation ->
+                val current = state.track
+                if (!resumed || state.buffering || state.shuffle || state.repeat == Player.REPEAT_MODE_ONE ||
+                    owner == null || current == null || ready == null ||
+                    ready != MetadataSelection(owner, MetadataIdentity(current))) null
+                else {
+                    val nextIndex = playback.controller?.nextMediaItemIndex
+                        ?: if (state.index + 1 < state.queue.size) state.index + 1
+                        else if (state.repeat == Player.REPEAT_MODE_ALL) 0 else -1
+                    val next = state.queue.getOrNull(nextIndex)
+                    if (next == null || next.mediaType == "video" || MetadataIdentity(next) == ready.identity ||
+                        isMetadataUpdating(owner, next.key) || state.queue.getOrNull(state.index)?.key != current.key) null
+                    else MetadataPrefetch(ready, MetadataSelection(owner, MetadataIdentity(next)), next, state.queue,
+                        state.index, state.repeat, generation)
+                }
+            }.distinctUntilChanged().collectLatest { request ->
+                if (request == null) return@collectLatest
+                // Give playback and the current song's visible work priority; never walk the queue.
+                delay(350)
+                if (!canPrefetch(request) || metadataCache.get(request.selection.owner, request.selection.identity) != null) {
+                    return@collectLatest
+                }
+                try {
+                    val result = app.uiActivity.onceWhileResumed {
+                        if (!canPrefetch(request)) throw CancellationException()
+                        downloadMetadata(request.track)
+                    }
+                    currentCoroutineContext().ensureActive()
+                    if (canPrefetch(request)) metadataCache.put(request.selection.owner, request.selection.identity, result)
+                } catch (error: Exception) {
+                    if (error is CancellationException) throw error
+                    // Speculative failures are neither cached nor shown as current-song failures.
                 }
             }
         }
+    }
+
+    private suspend fun downloadMetadata(track: Track): SongMetadata = convertMetadata(api.request(songPath(track, "lyrics")))
+
+    private suspend fun convertMetadata(value: JsonElement): SongMetadata = withContext(Dispatchers.Default) {
+        val started = System.nanoTime()
+        try { ApiJson.decodeFromJsonElement<SongMetadata>(value) }
+        finally { DebugLog.timing(DebugEvent.METADATA_CONVERTED, started) }
+    }
+
+    private fun isCurrentMetadata(selection: MetadataSelection): Boolean =
+        currentMetadataOwner == selection.owner &&
+            playback.state.value.track?.takeIf { it.mediaType != "video" }?.let(::MetadataIdentity) == selection.identity
+
+    private fun canPrefetch(request: MetadataPrefetch): Boolean {
+        val state = playback.state.value
+        return currentMetadataOwner == request.selection.owner && app.uiActivity.resumed.value &&
+            !state.buffering && !state.shuffle && state.repeat == request.repeat && state.index == request.index &&
+            state.queue == request.queue && metadataGeneration.value == request.generation &&
+            metadataReady.value == request.current && isCurrentMetadata(request.current)
+    }
+
+    private fun invalidateMetadata(key: String) {
+        metadataCache.invalidate(key)
+        if (metadataSelection?.identity?.key == key) metadataReady.value = null
+        metadataGeneration.value++
+    }
+
+    private fun isMetadataUpdating(owner: MetadataOwner, key: String): Boolean =
+        metadataUpdates.any { it.owner == owner && it.identity.key == key }
+
+    private fun beginMetadataUpdate(track: Track): MetadataUpdate {
+        val owner = requireNotNull(currentMetadataOwner)
+        metadataCache.setOwner(owner)
+        val selection = MetadataSelection(owner, MetadataIdentity(track))
+        val known = if (metadataReady.value == selection) metadata else metadataCache.get(owner, selection.identity)
+        metadataUpdates.add(selection)
+        invalidateMetadata(track.key)
+        return MetadataUpdate(selection, known?.canEdit)
+    }
+
+    private fun finishMetadataUpdate(update: MetadataUpdate, value: SongMetadata? = null, reload: Boolean = false) {
+        val selection = update.selection
+        metadataUpdates.remove(selection)
+        if (currentMetadataOwner == selection.owner) {
+            metadataCache.invalidate(selection.identity.key)
+            val result = value?.copy(canEdit = update.canEdit == true)
+            if (result != null && update.canEdit != null) {
+                metadataCache.put(selection.owner, selection.identity, result)
+            }
+            if (isCurrentMetadata(selection)) {
+                if (result != null) {
+                    ownedMetadata.publish(selection.owner, result)
+                    metadataSelection = selection
+                    metadataError = null
+                }
+                metadataReady.value = if (!reload && update.canEdit != null &&
+                    metadataSelection == selection && metadata != null) selection else null
+            }
+        }
+        metadataGeneration.value++
     }
 
     fun setServerOrigin(input: String): String? = try {
@@ -295,7 +439,7 @@ class MusicViewModel @JvmOverloads constructor(application: Application, private
             try {
                 if (debounce) delay(300)
                 val result = api.trackPage(library)
-                library = library.withTrackPage(result)
+                acceptTrackPage(result)
             } catch (error: Exception) {
                 if (error is CancellationException) throw error
                 message(error.message ?: "Unable to load music.")
@@ -311,6 +455,28 @@ class MusicViewModel @JvmOverloads constructor(application: Application, private
         sessions.playback.saveSelectedLibrary(account, library.selectedId)
     }
 
+    private fun acceptTrackPage(result: TrackPage) {
+        val before = library
+        library = library.withTrackPage(result)
+        result.files.forEach { track ->
+            val previous = before.tracks.files.find { it.key == track.key }
+            if (before.transcriptions.containsKey(track.key) &&
+                before.transcriptions[track.key] != library.transcriptions[track.key] ||
+                before.artworkUrls.containsKey(track.key) && before.artworkUrls[track.key] != track.artworkUrl ||
+                previous != null && MetadataIdentity(previous) != MetadataIdentity(track)) {
+                invalidateMetadata(track.key)
+            }
+        }
+    }
+
+    private fun acceptTranscriptions(job: Job, tracks: List<Track>) {
+        val before = library
+        library = library.withTranscriptions(job, tracks)
+        tracks.filter { it.jobId == job.id }.forEach { track ->
+            if (before.transcription(track) != library.transcription(track)) invalidateMetadata(track.key)
+        }
+    }
+
     suspend fun pollJobs() { runAction { jobs = ApiJson.decodeFromJsonElement(api.request("/api/jobs")) } }
     suspend fun pollTranscriptions(extraTracks: List<Track> = emptyList()) {
         val account = sessions.account.value ?: return
@@ -324,7 +490,7 @@ class MusicViewModel @JvmOverloads constructor(application: Application, private
                 val result = api.trackPage(selection)
                 if (sessions.account.value == account && generation == transcriptionGeneration &&
                     trackRequest === request) {
-                    library = library.withTrackPage(result)
+                    acceptTrackPage(result)
                     refreshedKeys = result.files.map { it.key }.toSet()
                 }
             }
@@ -338,7 +504,7 @@ class MusicViewModel @JvmOverloads constructor(application: Application, private
                         ApiJson.decodeFromJsonElement<TrackPage>(api.request("/api/jobs/${encode(jobId)}/files"))
                     } else null
                     if (sessions.account.value == account && generation == transcriptionGeneration) {
-                        library = library.withTranscriptions(job, tracks)
+                        acceptTranscriptions(job, tracks)
                         if (privacyFiles != null) library = library.withPrivacyFiles(privacyFiles.files, job)
                     }
                 }
@@ -585,13 +751,22 @@ class MusicViewModel @JvmOverloads constructor(application: Application, private
     }
 
     private suspend fun patchMetadata(track: Track, body: JsonObject): SongMetadata {
-        val updated = ApiJson.decodeFromJsonElement<SongMetadata>(api.request(
-            "/api/jobs/${encode(track.jobId)}/files/${encode(track.name)}/metadata", "PATCH", body))
-        transcriptionGeneration++
-        trackRequest?.cancel()
-        library = library.copy(transcriptionLocks = library.transcriptionLocks + (track.key to updated.transcriptionLocked))
-        if (playback.state.value.track?.key == track.key) metadata = updated.copy(canEdit = metadata?.canEdit == true)
-        return updated
+        val update = beginMetadataUpdate(track)
+        var updated: SongMetadata? = null
+        var reload = false
+        try {
+            val result = convertMetadata(api.request(
+                "/api/jobs/${encode(track.jobId)}/files/${encode(track.name)}/metadata", "PATCH", body))
+            require(currentMetadataOwner == update.selection.owner) { "Account changed. Refresh before retrying." }
+            updated = result
+            transcriptionGeneration++
+            trackRequest?.cancel()
+            library = library.copy(transcriptionLocks = library.transcriptionLocks + (track.key to result.transcriptionLocked))
+            return result
+        } catch (error: Exception) {
+            reload = error !is ApiException || error.status !in 400..499
+            throw error
+        } finally { finishMetadataUpdate(update, updated, reload) }
     }
 
     fun lockTranscription(track: Track, locked: Boolean) = launchAction {
@@ -616,15 +791,24 @@ class MusicViewModel @JvmOverloads constructor(application: Application, private
         }
         val body = buildReplacementBody(getApplication(), track, uri)
         require(sessions.account.value == account) { "The account changed. Choose the file again." }
-        val result = api.upload(body, "/api/jobs/${encode(track.jobId)}/files/${encode(track.name)}/replace").jsonObject
-        val song = ApiJson.decodeFromJsonElement<SongMetadata>(result.getValue("metadata"))
-        val file = ApiJson.decodeFromJsonElement<Track>(result.getValue("file")).copy(
-            jobId = track.jobId, transcription = null, transcriptionLocked = song.transcriptionLocked)
-        require(file.name == track.name) { "The server returned a different song. Refresh before retrying." }
-        transcriptionGeneration++
-        trackRequest?.cancel()
-        library = library.withReplacedFile(file)
-        playback.replaceFile(file)
+        val update = beginMetadataUpdate(track)
+        var reload = false
+        try {
+            val result = api.upload(body, "/api/jobs/${encode(track.jobId)}/files/${encode(track.name)}/replace").jsonObject
+            val song = convertMetadata(result.getValue("metadata"))
+            val file = ApiJson.decodeFromJsonElement<Track>(result.getValue("file")).copy(
+                jobId = track.jobId, transcription = null, transcriptionLocked = song.transcriptionLocked)
+            require(sessions.account.value == account) { "Account changed. Refresh before retrying." }
+            require(file.name == track.name) { "The server returned a different song. Refresh before retrying." }
+            transcriptionGeneration++
+            trackRequest?.cancel()
+            library = library.withReplacedFile(file)
+            playback.replaceFile(file)
+            reload = true
+        } catch (error: Exception) {
+            reload = error !is ApiException || error.status !in 400..499
+            throw error
+        } finally { finishMetadataUpdate(update, reload = reload) }
         message("Replaced ${track.displayTitle}.")
         onSuccess()
         loadLibrary()
@@ -636,6 +820,7 @@ class MusicViewModel @JvmOverloads constructor(application: Application, private
         require(transcriptionAvailable) { INACTIVE_TRANSCRIPTION_MESSAGE }
         val body = options.toRequestBody()
         val account = sessions.account.value
+        val update = beginMetadataUpdate(track)
         transcriptionGeneration++
         val pending = Transcription(status = "sent", requestedAt = java.time.Instant.now().toString(),
             lyricsIncluded = options.addLyrics && !options.noVocalsOnly,
@@ -645,10 +830,13 @@ class MusicViewModel @JvmOverloads constructor(application: Application, private
             val job = ApiJson.decodeFromJsonElement<Job>(
                 api.request("/api/jobs/${encode(track.jobId)}/files/${encode(track.name)}/transcribe", "POST", body))
             transcriptionGeneration++
-            library = library.withTranscriptions(job, listOf(track))
+            require(sessions.account.value == account) { "Account changed. Refresh before retrying." }
+            acceptTranscriptions(job, listOf(track))
             message(if (options.noVocalsOnly) "NoVocals version generated." else "Transcription complete.")
             refreshTracks()
         } finally {
+            finishMetadataUpdate(update, reload = true)
+            track.noVocalsVersion?.let { invalidateMetadata(it.key) }
             transcriptionGeneration++
             library = library.copy(pendingTranscriptions = library.pendingTranscriptions - track.key)
             if (account != null && sessions.account.value == account) viewModelScope.launch {
@@ -777,7 +965,7 @@ class MusicViewModel @JvmOverloads constructor(application: Application, private
         }
     }
 
-    override fun onCleared() { playback.disconnect(); super.onCleared() }
+    override fun onCleared() { metadataCache.setOwner(null); playback.disconnect(); super.onCleared() }
 }
 
 internal const val MIN_LYRICS_TEXT_SCALE = 0.75f
