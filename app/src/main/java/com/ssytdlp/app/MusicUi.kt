@@ -203,20 +203,24 @@ fun MusicApp(model: MusicViewModel, requestNotifications: () -> Unit) {
     CompositionLocalProvider(LocalMetadataArtworkOwner provides account?.let(::MetadataOwner)) {
       MusicTheme(model.preferences, waveAppearance = model.waveAppearance, skin = model.skin.takeIf { model.skinsEnabled }) {
         SystemBarAppearance()
-        SkinBackground(Modifier.fillMaxSize()) {
+        Box(Modifier.fillMaxSize()) {
+          PlayerScreenTransition(screen, account != null && playback.track != null) { visibleScreen, pageModifier, dockModifier ->
+            SkinBackground(pageModifier.fillMaxSize()) {
             Scaffold(containerColor = appBackgroundColor(), contentColor = MaterialTheme.colorScheme.onBackground,
                 snackbarHost = { SnackbarHost(snackbar) }, topBar = {
                 if (account != null) {
-                    if (screen == 0) LibraryTopBar(model.library, !model.busy,
+                    if (visibleScreen == 0) LibraryTopBar(model.library, !model.busy,
                         onBrowse = { libraryBrowser = true }, onSearch = model::search,
                         onRefresh = model::refresh, onSettings = openSettings, showBrowser = !landscape)
                     else MusicTopBar(account!!.user.name, !model.busy, model::refresh,
                         onSettings = openSettings, onBack = back)
                 }
             }, bottomBar = {
-                if (account != null && playback.track != null && screen != 1) {
+                if (account != null && playback.track != null && visibleScreen != 1) {
                     Box(Modifier.windowInsetsPadding(WindowInsets.navigationBars)) {
+                      Box(dockModifier) {
                         PlayerDock(playback, model, { screen = 1 }, requestNotifications, download)
+                      }
                     }
                 }
             }) { padding ->
@@ -225,7 +229,7 @@ fun MusicApp(model: MusicViewModel, requestNotifications: () -> Unit) {
                     account == null -> LoginScreen(model, Modifier.padding(padding))
                     else -> Column(Modifier.padding(padding).fillMaxSize()) {
                         if (model.busy) LinearProgressIndicator(Modifier.fillMaxWidth())
-                        when (screen) {
+                        when (visibleScreen) {
                             0 -> {
                                 LibraryScreen(model, playback, playLibrary, download)
                                 if (libraryBrowser && !landscape && model.playlistEditTarget == null) {
@@ -239,6 +243,8 @@ fun MusicApp(model: MusicViewModel, requestNotifications: () -> Unit) {
                     }
                 }
             }
+            }
+          }
             PlaybackEdgeLighting(account != null && playback.playing, Modifier.matchParentSize(),
                 enabled = model.edgeLightingEnabled, style = model.edgeLightingStyle)
             PlaylistEditor(model)
