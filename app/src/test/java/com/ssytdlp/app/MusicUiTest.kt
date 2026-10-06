@@ -447,25 +447,6 @@ class MusicUiTest {
         compose.runOnIdle { assertEquals("", state.value.search) }
     }
 
-    @Test fun navigationShowsLibraryAndNowPlayingWithoutJobsOrSettings() {
-        var selected = -1
-        compose.setContent { MusicTheme { MusicNavigation(0) { selected = it } } }
-        compose.onNodeWithText("Downloads").assertDoesNotExist()
-        compose.onNodeWithText("Jobs").assertDoesNotExist()
-        compose.onNodeWithText("Settings").assertDoesNotExist()
-        compose.onNodeWithText("Library").assertIsSelected()
-        compose.onNodeWithText("Now Playing").assertIsDisplayed().performClick()
-        compose.runOnIdle { assertEquals(1, selected) }
-        compose.onNodeWithText("Library").performClick()
-        compose.runOnIdle { assertEquals(0, selected) }
-    }
-
-    @Test fun nowPlayingNavigationCanBeSelected() {
-        compose.setContent { MusicTheme { MusicNavigation(1) {} } }
-        compose.onNodeWithText("Now Playing").assertIsSelected()
-        compose.onNodeWithText("Library").assertIsNotSelected()
-    }
-
     @Test
     @Config(qualifiers = "w320dp-h780dp")
     fun settingsIsToTheRightOfRefreshAndWorksWhileRefreshIsDisabled() {
@@ -805,10 +786,9 @@ class MusicUiTest {
         compose.setContent {
             MusicTheme {
                 Scaffold(bottomBar = {
-                    Column {
+                    Box(Modifier.windowInsetsPadding(WindowInsets.navigationBars)) {
                         MiniPlayer(playback, null, { expanded = true }, { toggled = true },
                             { skipped = true }, seeks::add, previousTrack = { skipped = true })
-                        MusicNavigation(0) {}
                     }
                 }) { padding ->
                     Box(Modifier.padding(padding)) {
@@ -830,7 +810,8 @@ class MusicUiTest {
             assertFalse(toggled)
             assertFalse(skipped)
         }
-        compose.onNodeWithText("Library").assertIsSelected()
+        compose.onNodeWithContentDescription("Library").assertDoesNotExist()
+        compose.onNodeWithContentDescription("Now Playing").assertDoesNotExist()
         compose.onNodeWithText("Blue hour").performTouchInput { click() }
         compose.onNodeWithContentDescription("Pause").performTouchInput { click() }
         compose.onNodeWithContentDescription("Next track").performTouchInput { click() }
@@ -1461,9 +1442,8 @@ class MusicUiTest {
                     Scaffold(containerColor = MaterialTheme.colorScheme.background, topBar = {
                         LibraryTopBar(library, true, {}, {}, {}, {})
                     }, bottomBar = {
-                        Column {
+                        Box(Modifier.windowInsetsPadding(WindowInsets.navigationBars)) {
                             MiniPlayer(playback, null, {}, {}, {}, {})
-                            MusicNavigation(0) {}
                         }
                     }) { padding ->
                         Box(Modifier.padding(padding)) {
