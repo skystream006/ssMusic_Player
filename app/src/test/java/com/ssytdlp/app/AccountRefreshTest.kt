@@ -2,6 +2,7 @@ package com.ssytdlp.app
 
 import android.content.Context
 import android.content.pm.ProviderInfo
+import android.os.Handler
 import android.os.Looper
 import android.net.Uri
 import androidx.activity.ComponentActivity
@@ -1078,9 +1079,16 @@ class AccountRefreshTest {
         waitFor { !model.busy && !model.library.loading }
     }
 
+    @Test fun waitForRunsDelayedMainLooperWorkWithoutComposeContent() {
+        var completed = false
+        Handler(Looper.getMainLooper()).postDelayed({ completed = true }, 350)
+        waitFor { completed }
+        assertTrue(completed)
+    }
+
     private fun waitFor(condition: () -> Boolean) {
         compose.waitUntil(timeoutMillis = 30_000) {
-            shadowOf(Looper.getMainLooper()).idle()
+            shadowOf(Looper.getMainLooper()).idleFor(10, TimeUnit.MILLISECONDS)
             condition()
         }
     }
