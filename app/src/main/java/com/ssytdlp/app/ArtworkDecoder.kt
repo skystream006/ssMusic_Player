@@ -12,8 +12,8 @@ internal fun decodeArtworkBitmap(bytes: ByteArray, thumbnail: Boolean = false): 
     BitmapFactory.decodeByteArray(bytes, 0, bytes.size, dimensions)
     if (dimensions.outWidth > 0 && dimensions.outHeight > 0) {
         val sample = artworkSampleSize(dimensions.outWidth, dimensions.outHeight, thumbnail) ?: return null
-        return BitmapFactory.decodeByteArray(bytes, 0, bytes.size,
-            BitmapFactory.Options().apply { inSampleSize = sample })
+        BitmapFactory.decodeByteArray(bytes, 0, bytes.size,
+            BitmapFactory.Options().apply { inSampleSize = sample })?.let { return it }
     }
     // AVIF decoding is not guaranteed by the platform on older supported Android versions.
     return try {

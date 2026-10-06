@@ -59,19 +59,34 @@ class TrackArtworkTest {
     @Test fun thumbnailDecoderAcceptsWebpAndRejectsInvalidOrUnboundedImages() {
         val bitmap = decodeTrackArtwork(imageBytes())
         assertNotNull(bitmap)
-        assertEquals(96, bitmap!!.width)
-        assertEquals(96, bitmap.height)
+        assertEquals(192, bitmap!!.width)
+        assertEquals(192, bitmap.height)
+        assertNotNull(decodeTrackArtwork(imageBytes(96)))
         assertNull(decodeTrackArtwork(ByteArray(0)))
         assertNull(decodeTrackArtwork("invalid image".toByteArray()))
         assertNull(decodeTrackArtwork(ByteArray(64 * 1024 + 1)))
-        assertNull(decodeTrackArtwork(imageBytes(97)))
+        assertNull(decodeTrackArtwork(imageBytes(193, 192)))
+        assertNull(decodeTrackArtwork(imageBytes(192, 193)))
+    }
+
+    @Test fun artworkDecoderPreservesLegacyFormatsAndAlbumDownsampling() {
+        listOf(Bitmap.CompressFormat.JPEG, Bitmap.CompressFormat.PNG, Bitmap.CompressFormat.WEBP_LOSSLESS).forEach { format ->
+            assertNotNull(decodeTrackArtwork(imageBytes(format = format)))
+            val album = decodeArtworkBitmap(imageBytes(2048, 1024, format))
+            assertNotNull(album)
+            assertEquals(1024, album!!.width)
+            assertEquals(512, album.height)
+            album.recycle()
+        }
+        assertNull(decodeArtworkBitmap(ByteArray(2 * 1024 * 1024 + 1)))
     }
 
     @Test fun libraryLoadsArtworkWithoutMetadataReadsAndKeepsPlaybackRatingAndHiddenGroups() {
         val api = api()
         val missing = track.copy(name = "missing.mp3", title = "Missing",
             artworkUrl = "/api/jobs/source/artwork/missing.mp3?v=missing")
-        val video = track.copy(name = "video.mp4", title = "Video", mediaType = "video")
+        val video = track.copy(name = "video.mp4", title = "Video", mediaType = "video",
+            artworkUrl = "/api/jobs/source/artwork/video.mp4?v=1")
         val legacy = track.copy(name = "legacy.mp3", title = "Legacy", artworkUrl = null)
         val instrumental = track.copy(name = "[NoVocals]/song.mp3", title = "Instrumental",
             artworkUrl = "/api/jobs/source/artwork/%5BNoVocals%5D%2Fsong.mp3?v=1")
@@ -92,10 +107,11 @@ class TrackArtworkTest {
         assertEquals(0, played)
         compose.onAllNodesWithContentDescription("Rating: 3 out of 5")[0].performClick()
         assertEquals(track, rated)
-        compose.waitUntil(5_000) { paths.size == 2 }
+        waitForArtwork("Video")
+        compose.waitUntil(5_000) { paths.size == 3 }
         assertTrue(paths.all { it.contains("/artwork/") })
         compose.onNodeWithContentDescription("Album artwork for Missing", useUnmergedTree = true).assertDoesNotExist()
-        compose.onNodeWithContentDescription("Album artwork for Video", useUnmergedTree = true).assertDoesNotExist()
+        compose.onNodeWithContentDescription("Album artwork for Video", useUnmergedTree = true).assertIsDisplayed()
         compose.onNodeWithContentDescription("Expand NoVocals").performClick()
         waitForArtwork("Instrumental")
         compose.onNodeWithText("Instrumental").performClick()
@@ -155,11 +171,12 @@ class TrackArtworkTest {
         }
     }
 
-    private fun imageBytes(size: Int = 96): ByteArray = ByteArrayOutputStream().use { output ->
-        val image = Bitmap.createBitmap(size, size, Bitmap.Config.ARGB_8888)
+    private fun imageBytes(width: Int = 192, height: Int = width,
+        format: Bitmap.CompressFormat = Bitmap.CompressFormat.WEBP_LOSSLESS): ByteArray = ByteArrayOutputStream().use { output ->
+        val image = Bitmap.createBitmap(width, height, Bitmap.Config.ARGB_8888)
         try {
             image.eraseColor(android.graphics.Color.BLUE)
-            image.compress(Bitmap.CompressFormat.WEBP_LOSSLESS, 100, output)
+            image.compress(format, 100, output)
             output.toByteArray()
         } finally { image.recycle() }
     }
