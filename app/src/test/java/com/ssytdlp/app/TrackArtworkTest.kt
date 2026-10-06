@@ -81,6 +81,18 @@ class TrackArtworkTest {
         assertNull(decodeArtworkBitmap(ByteArray(2 * 1024 * 1024 + 1)))
     }
 
+    @Test fun nativeAvifSourceBudgetAccountsForHighBitDepthAndAlphaPlanes() {
+        assertTrue(avifSourceFitsMemoryBudget(4096, 2048, 8))
+        assertFalse(avifSourceFitsMemoryBudget(4096, 2049, 8))
+        listOf(10, 12).forEach { depth ->
+            assertTrue(avifSourceFitsMemoryBudget(2048, 2048, depth))
+            assertFalse(avifSourceFitsMemoryBudget(2048, 2049, depth))
+        }
+        assertFalse(avifSourceFitsMemoryBudget(Int.MAX_VALUE, Int.MAX_VALUE, 12))
+        assertFalse(avifSourceFitsMemoryBudget(0, 192, 8))
+        assertFalse(avifSourceFitsMemoryBudget(192, 192, 16))
+    }
+
     @Test fun libraryLoadsArtworkWithoutMetadataReadsAndKeepsPlaybackRatingAndHiddenGroups() {
         val api = api()
         val missing = track.copy(name = "missing.mp3", title = "Missing",

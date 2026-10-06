@@ -23,7 +23,7 @@ internal fun decodeArtworkBitmap(bytes: ByteArray, thumbnail: Boolean = false): 
         if (!AvifDecoder.getInfo(encoded, bytes.size, info)) return null
         val sample = artworkSampleSize(info.width, info.height, thumbnail) ?: return null
         // libavif decodes the source before scaling; bound that allocation as well.
-        if (info.width.toLong() * info.height > 16_777_216) return null
+        if (!avifSourceFitsMemoryBudget(info.width, info.height, info.depth)) return null
         val bitmap = Bitmap.createBitmap((info.width / sample).coerceAtLeast(1),
             (info.height / sample).coerceAtLeast(1), Bitmap.Config.ARGB_8888)
         var decoded = false
@@ -36,6 +36,13 @@ internal fun decodeArtworkBitmap(bytes: ByteArray, thumbnail: Boolean = false): 
     } catch (_: UnsatisfiedLinkError) {
         null
     }
+}
+
+internal fun avifSourceFitsMemoryBudget(width: Int, height: Int, depth: Int): Boolean {
+    if (width <= 0 || height <= 0 || depth !in setOf(8, 10, 12)) return false
+    // Allow at most 32 MiB of source planes, conservatively assuming YUV444 plus alpha.
+    val bytesPerPixel = if (depth == 8) 4 else 8
+    return width.toLong() * height <= (32L * 1024 * 1024) / bytesPerPixel
 }
 
 private fun artworkSampleSize(width: Int, height: Int, thumbnail: Boolean): Int? {
