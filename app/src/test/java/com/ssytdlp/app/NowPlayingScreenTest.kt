@@ -13,8 +13,11 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.SnackbarDuration
+import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Text
 import androidx.compose.runtime.CompositionLocalProvider
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.MutableState
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.snapshots.Snapshot
@@ -1465,6 +1468,33 @@ class NowPlayingScreenTest {
         restoration.emulateSavedInstanceStateRestore()
         compose.onNodeWithText("Queue").assertIsSelected()
         compose.onNode(hasText("Blue hour") and !isSongHeading).assertIsDisplayed()
+    }
+
+    @Test fun playbackAndTabsUpdateWhileSnackbarRemainsVisible() {
+        val first = Track("preview", "first.mp3", title = "First song")
+        val next = Track("preview", "next.mp3", title = "Next song")
+        val state = mutableStateOf(PlaybackState(track = first, queue = listOf(first, next)))
+        val snackbar = SnackbarHostState()
+        compose.setContent {
+            MusicTheme {
+                NowPlayingScreen(model, state.value, snackbar = snackbar) { _, _ -> }
+                LaunchedEffect(snackbar) {
+                    snackbar.showSnackbar("Queue updated", duration = SnackbarDuration.Indefinite)
+                }
+            }
+        }
+        compose.onNodeWithText("Queue updated").assertIsDisplayed()
+        compose.onNodeWithText("Lyrics").performClick().assertIsSelected()
+        compose.runOnIdle {
+            state.value = state.value.copy(track = next, index = 1)
+            Snapshot.sendApplyNotifications()
+        }
+        songHeading("Next song").assertIsDisplayed()
+        compose.onNodeWithText("Queue").performClick().assertIsSelected()
+        compose.onNode(hasText("Next song") and !isSongHeading).assertIsDisplayed()
+        compose.onNodeWithText("Player").performClick().assertIsSelected()
+        compose.onNodeWithText("Queue updated").assertIsDisplayed()
+        compose.onNodeWithContentDescription("Play").assertIsDisplayed()
     }
 
     @Test fun libraryUnratedSongOpensRatingDialogEvenWhenPlaybackIsDisconnected() {
