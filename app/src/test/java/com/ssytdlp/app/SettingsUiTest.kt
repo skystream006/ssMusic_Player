@@ -390,10 +390,15 @@ class SettingsUiTest {
             listOf("Skins", "Edge lighting").forEach {
                 compose.onNode(hasContentDescription(it) and inLeft).assertExists()
             }
-            listOf("Jobs", "Library backup", "Device", "Server", "Debug logging",
+            listOf("Library backup", "Device Permissions", "Server", "Debug logging",
                 "ssMusic Player ${BuildConfig.VERSION_NAME}").forEach {
                 compose.onNode(hasText(it) and inRight).assertExists()
             }
+            compose.onNodeWithText("Jobs").assertDoesNotExist()
+            compose.onNodeWithText("Server").performScrollTo().performClick()
+            compose.onNode(hasText("Jobs") and inRight).performScrollTo().assertIsDisplayed()
+            compose.onNodeWithText("Server").performScrollTo().performClick()
+            compose.onNodeWithText("Jobs").assertDoesNotExist()
         }
     }
 
@@ -481,6 +486,7 @@ class SettingsUiTest {
             showSettings(model)
             compose.onNodeWithText("Jobs").assertDoesNotExist()
             compose.onNodeWithText("Library backup").assertDoesNotExist()
+            compose.onNodeWithText("Device Permissions").performScrollTo().performClick()
             compose.onNodeWithText("Notifications").performScrollTo().assertIsDisplayed().performClick()
             val notificationIntent = shadowOf(compose.activity).nextStartedActivity
             assertEquals(Settings.ACTION_APP_NOTIFICATION_SETTINGS, notificationIntent.action)
@@ -490,6 +496,7 @@ class SettingsUiTest {
             assertEquals(Settings.ACTION_APPLICATION_DETAILS_SETTINGS, batteryIntent.action)
             assertEquals("package:${compose.activity.packageName}", batteryIntent.dataString)
             compose.onNodeWithText("Server").performScrollTo().performClick()
+            compose.onNodeWithText("Jobs").assertDoesNotExist()
             compose.onNodeWithText("Passkeys and account").performScrollTo().assertIsDisplayed()
             compose.onNodeWithText("Sign out").performScrollTo().assertIsDisplayed()
         }
@@ -497,7 +504,7 @@ class SettingsUiTest {
 
     @Test
     @Config(qualifiers = "w800dp-h1600dp")
-    fun settingsPlaceJobsAfterAppearanceAndCollapseAppearanceBackupAndServerByDefault() {
+    fun settingsPlaceJobsInsideServerAndCollapseSectionsByDefault() {
         withSettingsModel { model ->
             compose.runOnUiThread { owner.lifecycle.currentState = Lifecycle.State.CREATED }
             setPermissions(notifications = true, unrestrictedBattery = true)
@@ -523,27 +530,39 @@ class SettingsUiTest {
                 compose.onNodeWithContentDescription(it).assertDoesNotExist()
             }
             compose.onNodeWithText("Library backup").assert(collapsed)
+            compose.onNodeWithText("Device Permissions").assert(collapsed)
+            compose.onNodeWithText("Device").assertDoesNotExist()
+            compose.onNodeWithText("Notifications").assertDoesNotExist()
             compose.onNodeWithText("Server").assert(collapsed)
+            compose.onNodeWithText("Jobs").assertDoesNotExist()
             compose.onNodeWithText("Back up").assertDoesNotExist()
             compose.onNodeWithText("Sign out").assertDoesNotExist()
             val updates = compose.onNodeWithText("App updates").getUnclippedBoundsInRoot()
             val info = compose.onNodeWithText("Preview").getUnclippedBoundsInRoot()
             val appearance = compose.onNodeWithText("Appearance").getUnclippedBoundsInRoot()
-            val jobs = compose.onNodeWithText("Jobs").getUnclippedBoundsInRoot()
             val backup = compose.onNodeWithText("Library backup").getUnclippedBoundsInRoot()
             assertTrue(updates.bottom < info.top && info.bottom < appearance.top)
-            assertTrue(appearance.bottom < jobs.top && jobs.bottom < backup.top)
+            assertTrue(appearance.bottom < backup.top)
             assertCompactInformation("settings-portrait-pane")
+            compose.onNodeWithText("Server").performClick().assert(expanded)
+            val server = compose.onNodeWithText("Server").getUnclippedBoundsInRoot()
+            val jobs = compose.onNodeWithText("Jobs").assertIsDisplayed().getUnclippedBoundsInRoot()
+            val media = compose.onNodeWithText("Media files: Unavailable").getUnclippedBoundsInRoot()
+            assertTrue(server.bottom < jobs.top && jobs.bottom < media.top)
             compose.onNodeWithText("Jobs").performClick()
             compose.runOnIdle { assertTrue(jobsOpened) }
+            compose.onNodeWithText("Server").performClick().assert(collapsed)
+            compose.onNodeWithText("Jobs").assertDoesNotExist()
             restoration.emulateSavedInstanceStateRestore()
+            compose.onNodeWithText("Server").assert(collapsed)
+            compose.onNodeWithText("Jobs").assertDoesNotExist()
             compose.onNodeWithText("Appearance").assert(collapsed).performClick().assert(expanded)
             compose.onNodeWithText("Blue Wave").assertIsDisplayed().performClick().assertIsSelected()
             compose.onNodeWithContentDescription("Skins").assertIsDisplayed()
             compose.onNodeWithContentDescription("Edge lighting").assertIsDisplayed()
             val edge = compose.onNodeWithContentDescription("Edge lighting").getUnclippedBoundsInRoot()
             assertTrue(compose.onNodeWithText("Appearance").getUnclippedBoundsInRoot().bottom < edge.top)
-            assertTrue(edge.bottom < compose.onNodeWithText("Jobs").getUnclippedBoundsInRoot().top)
+            assertTrue(edge.bottom < compose.onNodeWithText("Library backup").getUnclippedBoundsInRoot().top)
             compose.onNodeWithText("Appearance").performClick().assert(collapsed)
             compose.onNodeWithText("Blue Wave").assertDoesNotExist()
             compose.onNodeWithText("Appearance").performClick()
@@ -556,11 +575,13 @@ class SettingsUiTest {
             compose.onNodeWithText("Library backup").performClick()
             compose.onNodeWithText("iTunes").assertIsSelected()
             compose.onNodeWithText("Server").performScrollTo().performClick()
+            compose.onNodeWithText("Jobs").performScrollTo().assertIsDisplayed()
             compose.onNodeWithText("Sign out").performScrollTo().assertIsDisplayed()
             restoration.emulateSavedInstanceStateRestore()
             compose.onNodeWithText("Appearance").performScrollTo().assert(expanded)
             compose.onNodeWithText("Blue Wave").performScrollTo().assertIsSelected()
             compose.onNodeWithText("iTunes").performScrollTo().assertIsSelected()
+            compose.onNodeWithText("Jobs").performScrollTo().assertIsDisplayed()
             compose.onNodeWithText("Sign out").performScrollTo().assertIsDisplayed()
         }
     }
@@ -588,7 +609,9 @@ class SettingsUiTest {
             }
             compose.onNodeWithText("Jobs").assertDoesNotExist()
             compose.onNodeWithText("Library backup").assertDoesNotExist()
-            compose.onNodeWithText("Device").performScrollTo().assertIsDisplayed()
+            compose.onNodeWithText("Device Permissions").performScrollTo().assertIsDisplayed()
+            compose.onNodeWithText("Server").performScrollTo().performClick()
+            compose.onNodeWithText("Jobs").assertDoesNotExist()
         }
     }
 
@@ -603,13 +626,15 @@ class SettingsUiTest {
                     MusicTheme { SettingsScreen(model, { _, _ -> }) {} }
                 }
             }
+            compose.onNodeWithText("Jobs").assertDoesNotExist()
+            compose.onNodeWithText("Server").performClick()
             compose.onNodeWithText("Jobs").assertIsDisplayed()
             compose.onNodeWithText("Library backup").assertIsDisplayed()
             val account = ReflectionHelpers.getField<MutableStateFlow<Account?>>(model.sessions, "mutableAccount")
             compose.runOnIdle { account.value = account.value!!.let { it.copy(user = it.user.copy(role = "shared")) } }
             compose.onNodeWithText("Jobs").assertDoesNotExist()
             compose.onNodeWithText("Library backup").assertDoesNotExist()
-            compose.onNodeWithText("Device").assertIsDisplayed()
+            compose.onNodeWithText("Device Permissions").assertIsDisplayed()
             compose.runOnIdle { account.value = account.value!!.let { it.copy(user = it.user.copy(role = "user")) } }
             compose.onNodeWithText("Jobs").assertIsDisplayed()
             compose.onNodeWithText("Library backup").assertIsDisplayed()
@@ -677,39 +702,56 @@ class SettingsUiTest {
         }
     }
 
-    @Test fun deviceStartsCollapsedOnlyWhenBothRequirementsAreSatisfied() {
+    @Test fun devicePermissionsStartCollapsedWhenBothRequirementsAreSatisfied() {
         setPermissions(notifications = true, unrestrictedBattery = true)
         showDeviceSettings()
-        compose.onNodeWithText("Device").assertIsDisplayed()
+        compose.onNodeWithText("Device Permissions").assertIsDisplayed()
+            .assert(SemanticsMatcher.expectValue(SemanticsProperties.StateDescription, "Collapsed"))
         compose.onNodeWithText("Notifications").assertDoesNotExist()
-        compose.onNodeWithText("Device").performClick()
+        compose.onNodeWithText("Device Permissions").performClick()
         compose.onNodeWithText("Notifications").assertIsDisplayed()
         compose.onNodeWithText("Battery and background activity").assertIsDisplayed()
-        compose.onNodeWithText("Device").performClick()
+        compose.onNodeWithText("Device Permissions").performClick()
         compose.onNodeWithText("Notifications").assertDoesNotExist()
     }
 
-    @Test fun deviceStartsExpandedWhenNotificationsAreDisabled() {
+    @Test fun devicePermissionsStartCollapsedWhenNotificationsAreDisabled() {
         setPermissions(notifications = false, unrestrictedBattery = true)
         showDeviceSettings()
-        compose.onNodeWithText("Notifications").assertIsDisplayed()
+        compose.onNodeWithText("Device Permissions")
+            .assert(SemanticsMatcher.expectValue(SemanticsProperties.StateDescription, "Collapsed"))
+        compose.onNodeWithText("Notifications").assertDoesNotExist()
+        compose.onNodeWithText("Battery and background activity").assertDoesNotExist()
     }
 
-    @Test fun deviceStartsExpandedWhenBatteryIsRestricted() {
+    @Test fun devicePermissionsStartCollapsedWhenBatteryIsRestricted() {
         setPermissions(notifications = true, unrestrictedBattery = false)
         showDeviceSettings()
-        compose.onNodeWithText("Notifications").assertIsDisplayed()
+        compose.onNodeWithText("Device Permissions")
+            .assert(SemanticsMatcher.expectValue(SemanticsProperties.StateDescription, "Collapsed"))
+        compose.onNodeWithText("Notifications").assertDoesNotExist()
+        compose.onNodeWithText("Battery and background activity").assertDoesNotExist()
     }
 
-    @Test fun deviceStartsExpandedWhenNeitherRequirementIsSatisfied() {
+    @Test fun devicePermissionsStartCollapsedWhenNeitherRequirementIsSatisfied() {
         setPermissions(notifications = false, unrestrictedBattery = false)
         showDeviceSettings()
-        compose.onNodeWithText("Notifications").assertIsDisplayed()
+        compose.onNodeWithText("Device Permissions")
+            .assert(SemanticsMatcher.expectValue(SemanticsProperties.StateDescription, "Collapsed"))
+        compose.onNodeWithText("Notifications").assertDoesNotExist()
+        compose.onNodeWithText("Battery and background activity").assertDoesNotExist()
+        setPermissions(notifications = true, unrestrictedBattery = true)
+        resume()
+        setPermissions(notifications = false, unrestrictedBattery = false)
+        resume()
+        compose.onNodeWithText("Notifications").assertDoesNotExist()
+        compose.onNodeWithText("Battery and background activity").assertDoesNotExist()
     }
 
-    @Test fun deviceRefreshesBothPermissionsWhenResumingFromOsSettings() {
+    @Test fun devicePermissionsStayExpandedWhenReturningFromOsSettings() {
         setPermissions(notifications = false, unrestrictedBattery = false)
         showDeviceSettings()
+        compose.onNodeWithText("Device Permissions").performClick()
         compose.onNodeWithText("Notifications").performClick()
         val notificationIntent = shadowOf(compose.activity).nextStartedActivity
         assertEquals(Settings.ACTION_APP_NOTIFICATION_SETTINGS, notificationIntent.action)
@@ -723,7 +765,7 @@ class SettingsUiTest {
         assertEquals("package:${compose.activity.packageName}", batteryIntent.dataString)
         setPermissions(notifications = true, unrestrictedBattery = true)
         resume()
-        compose.onNodeWithText("Notifications").assertDoesNotExist()
+        compose.onNodeWithText("Notifications").assertIsDisplayed()
         setPermissions(notifications = false, unrestrictedBattery = true)
         resume()
         compose.onNodeWithText("Notifications").assertIsDisplayed()
@@ -737,7 +779,7 @@ class SettingsUiTest {
                 MaterialTheme { DeviceSettings() }
             }
         }
-        compose.onNodeWithText("Device").performClick()
+        compose.onNodeWithText("Device Permissions").performClick()
         resume()
         compose.onNodeWithText("Notifications").assertIsDisplayed()
         restoration.emulateSavedInstanceStateRestore()
@@ -747,13 +789,15 @@ class SettingsUiTest {
     @Test fun manualCollapseIsNotOverriddenByPermissionChanges() {
         setPermissions(notifications = false, unrestrictedBattery = false)
         showDeviceSettings()
-        compose.onNodeWithText("Device").performClick()
+        compose.onNodeWithText("Device Permissions").performClick()
+        compose.onNodeWithText("Notifications").assertIsDisplayed()
+        compose.onNodeWithText("Device Permissions").performClick()
         setPermissions(notifications = true, unrestrictedBattery = true)
         resume()
         setPermissions(notifications = false, unrestrictedBattery = true)
         resume()
         compose.onNodeWithText("Notifications").assertDoesNotExist()
-        compose.onNodeWithText("Device").performClick()
+        compose.onNodeWithText("Device Permissions").performClick()
         compose.onNodeWithText("Notifications").assertIsDisplayed()
     }
 

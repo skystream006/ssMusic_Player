@@ -347,7 +347,7 @@ eligible public audio without signing in, but cannot edit it. Private and
 unshareable songs are excluded, and the link reflects current playlist contents.
 This requires a server with playlist-sharing support.
 Open **Settings** from the upper-right gear, to the right of **Refresh**, and
-select **Jobs** there to add downloads or manage server jobs.
+expand **Server**, then select **Jobs** to add downloads or manage server jobs.
 In **Now Playing**, the Player, Lyrics, and Queue tabs retain all playback controls.
 The header shows the current song name on every tab, with its playlist or queue
 underneath; long song names scroll without crowding the three-dot menu.
@@ -438,16 +438,17 @@ the microphone. Lighting stops when paused, buffering, or in the background;
 disabling system animations leaves a stationary glow. Audio outputs that bypass
 PCM processing still show a glow; the two circulating styles retain moving highlights.
 
-In Settings, **Jobs** sits directly below **Appearance**. App update buttons are
+In Settings, **Jobs** is inside **Server**. App update buttons are
 arranged side by side. **Library backup** and **Server** start collapsed and can
 be expanded by tapping their headings.
 Shared accounts hide **Jobs** and **Library backup** using the server's user role
 from app sign-in and `/api/auth/me`. User details refresh at startup and while
 Settings is open; Shared accounts do not poll backup or health endpoints.
 
-Device settings start collapsed when notifications are allowed and battery use is
-unrestricted, and refresh when returning from Android settings. Debug logging
-starts collapsed unless enabled. Either section can be expanded manually.
+**Device Permissions** starts collapsed regardless of notification and battery
+permissions. Expand it to open Android notification or battery settings; returning
+to the app keeps your chosen expansion state. Debug logging starts collapsed
+unless enabled. Either section can be expanded manually.
 
 Artwork and fonts ship in the APK and work offline. Both fonts use the SIL Open Font
 License; their notices are bundled under `app/src/main/assets/font-licenses`.
