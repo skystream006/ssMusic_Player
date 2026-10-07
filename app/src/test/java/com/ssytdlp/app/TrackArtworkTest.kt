@@ -3,10 +3,15 @@ package com.ssytdlp.app
 import android.app.Application
 import android.graphics.Bitmap
 import androidx.activity.ComponentActivity
+import androidx.activity.compose.setContent
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.width
+import androidx.compose.runtime.SideEffect
+import androidx.compose.runtime.key
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.ImageBitmap
 import androidx.compose.ui.test.*
 import androidx.compose.ui.test.junit4.createAndroidComposeRule
 import androidx.compose.ui.unit.dp
@@ -17,6 +22,8 @@ import com.ssytdlp.app.core.TrackPage
 import com.ssytdlp.app.core.User
 import java.io.ByteArrayOutputStream
 import java.util.Collections
+import java.util.concurrent.CountDownLatch
+import java.util.concurrent.TimeUnit
 import okhttp3.OkHttpClient
 import okhttp3.Protocol
 import okhttp3.Response
@@ -42,12 +49,13 @@ class TrackArtworkTest {
     private val gate = UiActivityGate()
     private val activity = Any()
 
-    private fun api(): ServerApi {
+    private fun api(onRequest: () -> Unit = {}): ServerApi {
         val image = imageBytes()
         val client = OkHttpClient.Builder().addInterceptor { chain ->
             val request = chain.request()
             val path = request.url.encodedPath + "?" + request.url.encodedQuery
             paths.add(path)
+            onRequest()
             val missing = request.url.queryParameter("v") == "missing"
             Response.Builder().request(request).protocol(Protocol.HTTP_1_1)
                 .code(if (missing) 404 else 200).message("Test artwork")
@@ -187,6 +195,122 @@ class TrackArtworkTest {
         }
         compose.onNodeWithText("Song").assertIsDisplayed()
         compose.runOnIdle { assertTrue(paths.isEmpty()) }
+    }
+
+    @Test fun libraryAndQueueRemountsHaveArtworkOnTheirFirstCompositionWithoutAnotherRead() {
+        val api = api()
+        val screen = mutableStateOf(0)
+        val observed = mutableListOf<ImageBitmap?>()
+        gate.activityResumed(activity)
+        compose.setContent {
+            MusicTheme {
+                key(screen.value) {
+                    if (screen.value % 2 == 0) {
+                        LibraryContent(LibraryState(tracks = TrackPage(files = listOf(track))), PlaybackState(),
+                            {}, {}, artwork = {
+                                val bitmap = rememberTrackArtwork(it, api, account.value)
+                                SideEffect { observed.add(bitmap) }
+                                bitmap
+                            }) { _, _ -> }
+                    } else {
+                        TrackRow(track, artwork = {
+                            val bitmap = rememberTrackArtwork(track, api, account.value)
+                            SideEffect { observed.add(bitmap) }
+                            bitmap
+                        }, onClick = {})
+                    }
+                }
+            }
+        }
+        waitForArtwork("Song")
+        val first = api.trackArtworkCache.peek(account.value, track.artworkUrl)!!
+        compose.runOnIdle { gate.activityPaused(activity) }
+        repeat(4) { index ->
+            compose.runOnIdle {
+                observed.clear()
+                screen.value = index + 1
+            }
+            compose.onNodeWithContentDescription("Album artwork for Song", useUnmergedTree = true).assertIsDisplayed()
+            compose.runOnIdle {
+                assertTrue(observed.isNotEmpty())
+                assertTrue(observed.all { it === first })
+                assertEquals(1, paths.size)
+            }
+        }
+    }
+
+    @Test fun libraryAndQueueRowsShareAnInFlightThumbnailRequest() {
+        val release = CountDownLatch(1)
+        val api = api { check(release.await(5, TimeUnit.SECONDS)) }
+        gate.activityResumed(activity)
+        try {
+            compose.setContent {
+                MusicTheme {
+                    Column {
+                        TrackRow(track, artwork = { rememberTrackArtwork(track, api, account.value) }, onClick = {})
+                        val queued = track.copy(title = "Queued")
+                        TrackRow(queued, artwork = { rememberTrackArtwork(queued, api, account.value) }, onClick = {})
+                    }
+                }
+            }
+            compose.waitUntil(5_000) { paths.isNotEmpty() }
+            compose.runOnIdle { assertEquals(1, paths.size) }
+            release.countDown()
+            waitForArtwork("Song")
+            waitForArtwork("Queued")
+            assertEquals(1, paths.size)
+        } finally { release.countDown() }
+    }
+
+    @Test fun recreatedActivityUsesTheApplicationApiCacheOnItsFirstComposition() {
+        val api = api()
+        gate.activityResumed(activity)
+        compose.setContent {
+            MusicTheme {
+                TrackRow(track, artwork = { rememberTrackArtwork(track, api, account.value) }, onClick = {})
+            }
+        }
+        waitForArtwork("Song")
+        val first = api.trackArtworkCache.peek(account.value, track.artworkUrl)!!
+        val observed = mutableListOf<ImageBitmap?>()
+        compose.runOnIdle { gate.activityPaused(activity) }
+        compose.activityRule.scenario.recreate()
+        compose.activityRule.scenario.onActivity { recreated ->
+            recreated.setContent {
+                MusicTheme {
+                    TrackRow(track, artwork = {
+                        val bitmap = rememberTrackArtwork(track, api, account.value)
+                        SideEffect { observed.add(bitmap) }
+                        bitmap
+                    }, onClick = {})
+                }
+            }
+        }
+        compose.onNodeWithContentDescription("Album artwork for Song", useUnmergedTree = true).assertIsDisplayed()
+        compose.runOnIdle {
+            assertTrue(observed.isNotEmpty())
+            assertTrue(observed.all { it === first })
+            assertEquals(1, paths.size)
+        }
+    }
+
+    @Test fun coldCacheWaitsForForegroundAndUnsupportedMediaNeverLoads() {
+        val api = api()
+        val current = mutableStateOf(track.copy(mediaType = "other"))
+        compose.setContent {
+            MusicTheme {
+                TrackRow(current.value, artwork = { rememberTrackArtwork(current.value, api, account.value) }, onClick = {})
+            }
+        }
+        compose.runOnIdle {
+            assertTrue(paths.isEmpty())
+            current.value = track
+        }
+        compose.runOnIdle { assertTrue(paths.isEmpty()) }
+        compose.onNodeWithContentDescription("Album artwork for Song", useUnmergedTree = true).assertDoesNotExist()
+        compose.runOnIdle { gate.activityResumed(activity) }
+        waitForArtwork("Song")
+        assertEquals(1, paths.size)
     }
 
     private fun waitForArtwork(title: String) {

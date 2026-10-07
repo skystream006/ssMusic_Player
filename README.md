@@ -304,9 +304,12 @@ and no audio visualizer is displayed.
 These changes reduce background network traffic, CPU work, and storage writes
 without stopping the playback service.
 Tap the mini-player's artwork or song information to expand the dedicated
-**Now Playing** page from the mini-player. The toolbar or system **Back** button
-collapses it back to **Library**. The transition respects Android's animation
-duration setting. There is no bottom navigation bar in portrait or landscape.
+**Now Playing** overlay from the mini-player. The toolbar or system **Back** button
+collapses it back to the underlying Library or Settings page without recreating
+that page. Library scroll position, expanded NoVocals groups, and browser folder
+are retained, including when the activity is recreated. Covered pages cannot
+receive touch, keyboard, or accessibility interaction. The transition respects
+Android's animation duration setting. There is no bottom navigation bar in portrait or landscape.
 The Library top bar contains a content-width playlist/folder selector and a
 **Search** icon. Tap Search to expand and focus the input; closing search clears
 the filter. There is no top-bar play button; tap a song to play the page.
@@ -506,6 +509,12 @@ The requested resolution follows the view's pixel size, capped at the existing
 Player upgrades a small cached image when necessary. Switching tabs no longer
 requires decoding an already cached image again.
 
+Library and Queue thumbnails share a separate memory-only decoded-image cache,
+bounded to 8 MiB and 128 entries. Keys include the account/session and full artwork
+URL, including its revision. Cached thumbnails display immediately after scrolling,
+player round trips, or activity recreation; concurrent requests for the same
+thumbnail share one download and decode. Downloads still pause in the background.
+
 Recent typed metadata is retained for up to five minutes in a 16-entry,
 8 MiB estimated-size cache, keyed by account/session and song/artwork revisions.
 After the current metadata is ready and buffering ends, a foreground-only,
@@ -514,8 +523,8 @@ whole queue, skips shuffle and repeat-one, and cancels when the queue, account,
 current song, or foreground state changes. Edits, replacements, and observed
 artwork/transcription revisions invalidate affected metadata.
 
-Artwork caches are cleared before a new account/session is published. Changed
-image content has a different cache key, and eviction never recycles images that
+Account/session changes invalidate artwork caches, and stale in-flight reads
+cannot repopulate them. Changed image content has a different cache key, and eviction never recycles images that
 may still be displayed. Existing encoded-size and AVIF allocation limits remain
 in effect.
 

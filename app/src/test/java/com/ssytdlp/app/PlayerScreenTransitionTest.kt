@@ -7,6 +7,7 @@ import androidx.compose.material3.Button
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
@@ -39,8 +40,11 @@ class PlayerScreenTransitionTest {
         }
     )
     private var screen by mutableIntStateOf(0)
+    private var expanded by mutableStateOf(false)
     private var hasPlayer by mutableStateOf(true)
     private var toggles = 0
+    private var pageStarts = 0
+    private var pageDisposals = 0
 
     @Test fun tappingMiniplayerGrowsPageFromDockAndBackCollapsesIt() {
         showNavigation()
@@ -66,6 +70,10 @@ class PlayerScreenTransitionTest {
         advance(500)
         assertBounds(root, bounds("page-1"))
         compose.onNodeWithTag("page-0").assertDoesNotExist()
+        compose.runOnIdle {
+            assertEquals(1, pageStarts)
+            assertEquals(0, pageDisposals)
+        }
         compose.onNodeWithTag("player-dock").assertDoesNotExist()
         compose.onNodeWithText("Player action").performClick()
         compose.runOnIdle { assertEquals(2, toggles) }
@@ -78,6 +86,10 @@ class PlayerScreenTransitionTest {
         advance(500)
         compose.onNodeWithTag("page-1").assertDoesNotExist()
         assertBounds(dock, bounds("player-dock"))
+        compose.runOnIdle {
+            assertEquals(1, pageStarts)
+            assertEquals(0, pageDisposals)
+        }
     }
 
     @Test
@@ -96,13 +108,17 @@ class PlayerScreenTransitionTest {
         advance(500)
         assertBounds(root, bounds("page-1"))
         compose.onNodeWithTag("page-2").assertDoesNotExist()
+        compose.onNodeWithText("Back").performClick()
+        advance(500)
+        assertBounds(root, bounds("page-2"))
+        compose.runOnIdle { assertEquals(2, screen) }
     }
 
     @Test fun backDuringExpansionAndReopeningDoNotLeaveAnOverlay() {
         showNavigation()
         compose.onNodeWithText("Transition song").performClick()
         advance(128)
-        compose.runOnIdle { screen = 0; Snapshot.sendApplyNotifications() }
+        compose.runOnIdle { expanded = false; Snapshot.sendApplyNotifications() }
         advance(500)
         compose.onNodeWithTag("page-1").assertDoesNotExist()
         compose.onNodeWithContentDescription("Play").performClick()
@@ -114,7 +130,7 @@ class PlayerScreenTransitionTest {
     }
 
     @Test fun restoredPlayerHasFullBoundsWithoutAnEntranceAnimation() {
-        screen = 1
+        expanded = true
         showNavigation()
         assertBounds(bounds("navigation-root"), bounds("page-1"))
         compose.onNodeWithTag("player-dock").assertDoesNotExist()
@@ -163,16 +179,22 @@ class PlayerScreenTransitionTest {
         compose.setContent {
             MusicTheme {
                 Box(Modifier.fillMaxSize().testTag("navigation-root")) {
-                    PlayerScreenTransition(screen, hasPlayer) { visibleScreen, pageModifier, dockModifier ->
+                    PlayerScreenTransition(screen, expanded, hasPlayer) { visibleScreen, pageModifier, dock ->
+                        if (visibleScreen != 1) DisposableEffect(Unit) {
+                            pageStarts++
+                            onDispose { pageDisposals++ }
+                        }
                         SkinBackground(pageModifier.fillMaxSize().testTag("page-$visibleScreen")) {
                             Scaffold(topBar = {
-                                if (visibleScreen == 1) Button(onClick = { screen = 0 }) { Text("Back") }
+                                if (visibleScreen == 1) Button(onClick = { expanded = false }) { Text("Back") }
                                 else Text("Library or settings", Modifier.height(56.dp))
                             }, bottomBar = {
                                 if (hasPlayer && visibleScreen != 1) Box(Modifier.padding(bottom = 24.dp)) {
-                                    Box(dockModifier.testTag("player-dock")) {
-                                        MiniPlayer(PlaybackState(track = track), null, { screen = 1 },
+                                    dock {
+                                      Box(Modifier.testTag("player-dock")) {
+                                        MiniPlayer(PlaybackState(track = track), null, { expanded = true },
                                             { toggles++ }, {}, {})
+                                      }
                                     }
                                 }
                             }) { padding ->

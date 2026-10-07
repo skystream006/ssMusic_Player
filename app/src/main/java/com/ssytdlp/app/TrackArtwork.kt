@@ -26,23 +26,14 @@ import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.unit.dp
 import com.ssytdlp.app.core.Account
 import com.ssytdlp.app.core.Track
-import kotlinx.coroutines.CancellationException
-import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.withContext
 
 @Composable
 internal fun rememberTrackArtwork(track: Track, api: ServerApi, account: Account?): ImageBitmap? =
     key(api, account?.origin, account?.user?.id, account?.session, track.artworkUrl, track.mediaType) {
-        val bitmap by produceState<ImageBitmap?>(null) {
-            val path = track.artworkUrl?.takeIf { it.isNotBlank() }
-            if (account != null && path != null && (track.mediaType == "audio" || track.mediaType == "video")) {
-                try {
-                    val bytes = api.artwork(path)
-                    value = withContext(Dispatchers.Default) { decodeTrackArtwork(bytes) }
-                } catch (error: Exception) {
-                    if (error is CancellationException) throw error
-                }
-            }
+        val path = track.artworkUrl?.takeIf { track.mediaType == "audio" || track.mediaType == "video" }
+        val cache = api.trackArtworkCache
+        val bitmap by produceState(cache.peek(account, path)) {
+            value = cache.load(account, path)
         }
         bitmap
     }
