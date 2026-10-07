@@ -101,6 +101,23 @@ class PlaybackPersistenceTest {
         assertFalse(player.playWhenReady)
     }
 
+    @Test fun `moving a playing duplicate preserves its position and rejects stale queue snapshots`() {
+        attach()
+        val queue = listOf(first, second, first)
+        player.setMediaItems(queue.map { it.toMediaItem(api) }, 2, 42_000)
+        player.playWhenReady = true
+        assertTrue(player.matchesQueue(queue))
+
+        player.moveMediaItem(2, 0)
+        flushEvents()
+        assertEquals(0, player.currentMediaItemIndex)
+        assertEquals(42_000L, player.currentPosition)
+        assertTrue(player.playWhenReady)
+        assertEquals(listOf(first, first, second), store.playback(account)!!.queue)
+        assertFalse(player.matchesQueue(queue))
+        assertTrue(player.matchesQueue(listOf(first, first, second)))
+    }
+
     @Test fun `reconnection never replaces or rewinds a live queue`() {
         store.savePlayback(account, SavedPlayback(listOf(first), position = 10_000))
         player.setMediaItems(listOf(second.toMediaItem(api)), 0, 55_555)

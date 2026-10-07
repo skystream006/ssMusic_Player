@@ -218,16 +218,12 @@ fun NowPlayingScreen(model: MusicViewModel, state: PlaybackState, onBack: () -> 
             label = "Artwork swipe")
     }
     val queue: @Composable (Modifier) -> Unit = { modifier ->
-        LazyColumn(modifier) {
-            itemsIndexed(state.queue, key = { index, item -> "${item.key}:$index" }) { index, queued ->
-                TrackRow(queued.copy(rating = model.library.rating(queued)), active = index == state.index,
-                    artwork = { rememberTrackArtwork(queued.copy(artworkUrl = model.library.artworkUrl(queued)), model.api, account) },
-                    transcription = model.library.transcription(queued),
-                    onRatingClick = { ratingTrack = queued },
-                    onClick = { model.playback.select(index) }) {
-                    TrackMenu(model, queued, index, onRemoveFromQueue = { model.playback.remove(index) }, download = download)
-                }
-            }
+        QueueContent(state, model.library, modifier, onSelect = model.playback::select,
+            onMove = { from, to -> model.playback.move(from, to, state.queue) },
+            onRemove = { model.playback.remove(it, state.queue) },
+            onRating = { ratingTrack = it },
+            artwork = { rememberTrackArtwork(it, model.api, account) }) { queued, index ->
+            TrackMenu(model, queued, index, onRemoveFromQueue = { model.playback.remove(index, state.queue) }, download = download)
         }
     }
     CompositionLocalProvider(LocalContentColor provides MaterialTheme.colorScheme.onBackground) {
@@ -828,12 +824,6 @@ fun TrackMenu(model: MusicViewModel, track: Track, index: Int, onRemoveFromQueue
                 DropdownMenuItem(text = { Text("Add to playlist") }, leadingIcon = { Icon(Icons.Rounded.LibraryAdd, null) }, onClick = { open = false; transfer = "link" })
                 if (!inQueue) DropdownMenuItem(text = { Text("Move to playlist") }, leadingIcon = { Icon(Icons.AutoMirrored.Rounded.DriveFileMove, null) }, onClick = { open = false; transfer = "move" })
             }
-            val state = model.library
-            if (!inQueue && state.selectedId == track.playlistId && state.tracks.totalPages == 1 && state.search.isEmpty()) {
-                val (previous, next) = trackReorderNeighbors(state.tracks.files, index)
-                if (previous != null) DropdownMenuItem(text = { Text("Move up") }, leadingIcon = { Icon(Icons.Rounded.ArrowUpward, null) }, onClick = { open = false; model.reorder(track, previous, false) })
-                if (next != null) DropdownMenuItem(text = { Text("Move down") }, leadingIcon = { Icon(Icons.Rounded.ArrowDownward, null) }, onClick = { open = false; model.reorder(track, next, true) })
-            }
             if (canModify && track.name.endsWith(".mp3", true)) {
                 DropdownMenuItem(text = { Text("Edit song / rating") }, leadingIcon = { Icon(Icons.Rounded.Edit, null) }, onClick = { open = false; edit = true })
                 TranscribeMenuItem(model.library.transcriptionLocked(track), model.transcriptionAvailable, model.busy) {
@@ -968,14 +958,6 @@ private fun ShareLinkDialog(model: MusicViewModel, title: String, description: S
 
 internal fun shareMediaPath(track: Track) =
     "/api/jobs/${encode(track.jobId)}/files/${encode(track.name)}/share"
-
-internal fun trackReorderNeighbors(files: List<Track>, index: Int): Pair<Track?, Track?> {
-    val track = files.getOrNull(index) ?: return null to null
-    val noVocals = track.name.startsWith("[NoVocals]/", ignoreCase = true)
-    val sameGroup: (Track) -> Boolean = { it.name.startsWith("[NoVocals]/", ignoreCase = true) == noVocals }
-    return files.subList(0, index).lastOrNull(sameGroup) to
-        files.subList(index + 1, files.size).firstOrNull(sameGroup)
-}
 
 @Composable
 internal fun TranscribeMenuItem(locked: Boolean, available: Boolean, busy: Boolean = false, onClick: () -> Unit) {

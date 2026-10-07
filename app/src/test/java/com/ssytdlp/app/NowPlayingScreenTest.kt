@@ -833,23 +833,7 @@ class NowPlayingScreenTest {
         compose.onNodeWithText("Transcribe lyrics").assertDoesNotExist()
     }
 
-    @Test fun reorderTargetsStayWithinVisibleGroupsAndPreserveRawServerOrder() {
-        val files = listOf(
-            Track(name = "[NoVocals]/first.mp3"), Track(name = "first.mp3"),
-            Track(name = "[novocals]/middle.mp3"), Track(name = "last.mp3"),
-            Track(name = "[NOVOCALS]/last.mp3"))
-        assertEquals(null to files[2], trackReorderNeighbors(files, 0))
-        assertEquals(null to files[3], trackReorderNeighbors(files, 1))
-        assertEquals(files[0] to files[4], trackReorderNeighbors(files, 2))
-        assertEquals(files[1] to null, trackReorderNeighbors(files, 3))
-        assertEquals(files[2] to null, trackReorderNeighbors(files, 4))
-        assertEquals(null to null, trackReorderNeighbors(files, -1))
-        assertEquals(null to null, trackReorderNeighbors(files, files.size))
-        assertEquals(listOf("[NoVocals]/first.mp3", "first.mp3", "[novocals]/middle.mp3",
-            "last.mp3", "[NOVOCALS]/last.mp3"), files.map { it.name })
-    }
-
-    @Test fun reorderMenuHidesActionsAtEachGroupBoundaryInsteadOfCrossingHiddenSongs() {
+    @Test fun libraryMenusDoNotOfferMoveUpOrMoveDown() {
         val files = listOf(Track(name = "[NoVocals]/first.mp3"), Track(name = "first.mp3"),
             Track(name = "[novocals]/last.mp3"), Track(name = "last.mp3"))
         val selected = mutableStateOf(0)
@@ -862,14 +846,9 @@ class NowPlayingScreenTest {
             MusicTheme { TrackMenu(model, files[selected.value], selected.value) { _, _ -> } }
         }
         compose.onNodeWithContentDescription("Options for first").performClick()
-        listOf(0, 1).forEach { index ->
+        files.indices.forEach { index ->
             compose.runOnIdle { selected.value = index }
             compose.onNodeWithText("Move up").assertDoesNotExist()
-            compose.onNodeWithText("Move down").assertIsDisplayed()
-        }
-        listOf(2, 3).forEach { index ->
-            compose.runOnIdle { selected.value = index }
-            compose.onNodeWithText("Move up").assertIsDisplayed()
             compose.onNodeWithText("Move down").assertDoesNotExist()
         }
     }
