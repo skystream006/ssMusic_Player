@@ -225,7 +225,7 @@ fun NowPlayingScreen(model: MusicViewModel, state: PlaybackState, onBack: () -> 
                     transcription = model.library.transcription(queued),
                     onRatingClick = { ratingTrack = queued },
                     onClick = { model.playback.select(index) }) {
-                    ToolButton(Icons.Rounded.Close, "Remove from queue") { model.playback.remove(index) }
+                    TrackMenu(model, queued, index, onRemoveFromQueue = { model.playback.remove(index) }, download = download)
                 }
             }
         }
@@ -798,7 +798,9 @@ internal val LocalMetadataArtworkOwner = compositionLocalOf<MetadataOwner?> { nu
 private class ArtworkDisplayTiming(val started: Long = System.nanoTime(), var drawn: Boolean = false)
 
 @Composable
-fun TrackMenu(model: MusicViewModel, track: Track, index: Int, download: (String, String) -> Unit) {
+fun TrackMenu(model: MusicViewModel, track: Track, index: Int, onRemoveFromQueue: (() -> Unit)? = null,
+    download: (String, String) -> Unit) {
+    val inQueue = onRemoveFromQueue != null
     var open by remember { mutableStateOf(false) }
     var edit by remember { mutableStateOf(false) }
     var remove by remember { mutableStateOf(false) }
@@ -816,7 +818,7 @@ fun TrackMenu(model: MusicViewModel, track: Track, index: Int, download: (String
     Box {
         ToolButton(Icons.Rounded.MoreVert, "Options for ${track.displayTitle}", enabled = !model.busy) { open = true }
         DropdownMenu(open, { open = false }) {
-            DropdownMenuItem(text = { Text("Add to queue") }, leadingIcon = { Icon(Icons.AutoMirrored.Rounded.PlaylistAdd, null) }, onClick = { open = false; model.playback.enqueue(track) })
+            if (!inQueue) DropdownMenuItem(text = { Text("Add to queue") }, leadingIcon = { Icon(Icons.AutoMirrored.Rounded.PlaylistAdd, null) }, onClick = { open = false; model.playback.enqueue(track) })
             DropdownMenuItem(text = { Text("Save file") }, leadingIcon = { Icon(Icons.Rounded.Download, null) }, onClick = { open = false; download(track.downloadUrl ?: songPath(track, "download"), track.name) })
             if (canModify && track.mediaType == "audio") DropdownMenuItem(text = { Text("Share Media") },
                 enabled = !model.busy && !model.songPrivacy(track).isPrivate,
@@ -824,10 +826,10 @@ fun TrackMenu(model: MusicViewModel, track: Track, index: Int, download: (String
             SongPrivacyMenuItem(model, track) { open = false }
             if (canTransfer) {
                 DropdownMenuItem(text = { Text("Add to playlist") }, leadingIcon = { Icon(Icons.Rounded.LibraryAdd, null) }, onClick = { open = false; transfer = "link" })
-                DropdownMenuItem(text = { Text("Move to playlist") }, leadingIcon = { Icon(Icons.AutoMirrored.Rounded.DriveFileMove, null) }, onClick = { open = false; transfer = "move" })
+                if (!inQueue) DropdownMenuItem(text = { Text("Move to playlist") }, leadingIcon = { Icon(Icons.AutoMirrored.Rounded.DriveFileMove, null) }, onClick = { open = false; transfer = "move" })
             }
             val state = model.library
-            if (state.selectedId == track.playlistId && state.tracks.totalPages == 1 && state.search.isEmpty()) {
+            if (!inQueue && state.selectedId == track.playlistId && state.tracks.totalPages == 1 && state.search.isEmpty()) {
                 val (previous, next) = trackReorderNeighbors(state.tracks.files, index)
                 if (previous != null) DropdownMenuItem(text = { Text("Move up") }, leadingIcon = { Icon(Icons.Rounded.ArrowUpward, null) }, onClick = { open = false; model.reorder(track, previous, false) })
                 if (next != null) DropdownMenuItem(text = { Text("Move down") }, leadingIcon = { Icon(Icons.Rounded.ArrowDownward, null) }, onClick = { open = false; model.reorder(track, next, true) })
@@ -844,7 +846,9 @@ fun TrackMenu(model: MusicViewModel, track: Track, index: Int, download: (String
             if (canReplace) DropdownMenuItem(text = { Text("Replace File") },
                 leadingIcon = { Icon(Icons.Rounded.UploadFile, null) }, enabled = !model.busy,
                 onClick = { open = false; replace = true })
-            if (canModify && track.playlistId != null) DropdownMenuItem(text = { Text("Remove from playlist") }, leadingIcon = { Icon(Icons.Rounded.DeleteOutline, null) }, onClick = { open = false; remove = true })
+            if (!inQueue && canModify && track.playlistId != null) DropdownMenuItem(text = { Text("Remove from playlist") }, leadingIcon = { Icon(Icons.Rounded.DeleteOutline, null) }, onClick = { open = false; remove = true })
+            if (onRemoveFromQueue != null) DropdownMenuItem(text = { Text("Remove from queue") },
+                leadingIcon = { Icon(Icons.Rounded.Close, null) }, onClick = { open = false; onRemoveFromQueue() })
         }
     }
     if (edit) MetadataDialog(model, track) { edit = false }

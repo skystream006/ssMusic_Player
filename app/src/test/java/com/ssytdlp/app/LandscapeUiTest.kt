@@ -180,7 +180,14 @@ class LandscapeUiTest {
         compose.onNodeWithText("USLT Lyrics").performClick().assertIsSelected()
         compose.onNodeWithText("Landscape lyrics").assertIsDisplayed()
         compose.onNodeWithText("Second song").assertIsDisplayed()
-        compose.onAllNodesWithContentDescription("Remove from queue").assertCountEquals(2)
+        compose.onAllNodesWithContentDescription("Remove from queue").assertCountEquals(0)
+        compose.onNodeWithContentDescription("Options for Second song").assertIsDisplayed().performClick()
+        compose.onNodeWithText("Save file").assertIsDisplayed()
+        listOf("Add to queue", "Move to playlist", "Remove from playlist").forEach {
+            compose.onNodeWithText(it).assertDoesNotExist()
+        }
+        compose.onNodeWithText("Remove from queue").performScrollTo().assertIsDisplayed().performClick()
+        compose.onNode(isPopup()).assertDoesNotExist()
         compose.onNodeWithText("Player").performClick().assertIsSelected()
         compose.onNodeWithText("Second song").assertIsDisplayed()
     }

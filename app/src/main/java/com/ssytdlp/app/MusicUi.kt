@@ -334,7 +334,7 @@ fun LibraryScreen(model: MusicViewModel, playback: PlaybackState, onPlay: (Int) 
         LibraryContent(model.library, playback, onPlay = onPlay, onPage = model::page,
             browsing = browsing,
             artwork = { rememberTrackArtwork(it, model.api, account) },
-            onRating = { ratingTrack = it }) { track, index -> TrackMenu(model, track, index, download) }
+            onRating = { ratingTrack = it }) { track, index -> TrackMenu(model, track, index, download = download) }
     }
     if (isLandscape()) Row(Modifier.fillMaxSize()) {
         LibraryBrowserPane(model, Modifier.weight(0.35f).fillMaxHeight().testTag("library-playlists-pane"), browsing)

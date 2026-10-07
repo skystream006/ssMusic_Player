@@ -1464,7 +1464,8 @@ class NowPlayingScreenTest {
         compose.onNodeWithContentDescription("Playback position").assertIsDisplayed()
         compose.onNodeWithText("Queue").performClick().assertIsSelected()
         compose.onNode(hasText("Blue hour") and !isSongHeading).assertIsDisplayed()
-        compose.onNodeWithContentDescription("Remove from queue").assertIsDisplayed()
+        compose.onNodeWithContentDescription("Options for Blue hour").assertIsDisplayed()
+        compose.onNodeWithContentDescription("Remove from queue").assertDoesNotExist()
         restoration.emulateSavedInstanceStateRestore()
         compose.onNodeWithText("Queue").assertIsSelected()
         compose.onNode(hasText("Blue hour") and !isSongHeading).assertIsDisplayed()
@@ -1522,7 +1523,8 @@ class NowPlayingScreenTest {
         compose.onNodeWithText("Song rating").assertIsDisplayed()
         compose.onNodeWithText("Close").performClick()
         compose.onNode(isDialog()).assertDoesNotExist()
-        compose.onAllNodesWithContentDescription("Remove from queue").assertCountEquals(2)
+        compose.onNodeWithContentDescription("Options for song").assertIsDisplayed()
+        compose.onNodeWithContentDescription("Options for next").assertIsDisplayed()
     }
 
     @Test
@@ -1568,7 +1570,7 @@ class NowPlayingScreenTest {
             compose.onAllNodesWithContentDescription("Album artwork for song", useUnmergedTree = true)
                 .fetchSemanticsNodes().size == 2
         }
-        compose.onAllNodesWithContentDescription("Remove from queue").assertCountEquals(2)
+        compose.onAllNodesWithContentDescription("Options for song").assertCountEquals(2)
         assertTrue(paths.isNotEmpty())
         assertTrue(paths.all { it == refreshed.artworkUrl })
         compose.runOnIdle {
