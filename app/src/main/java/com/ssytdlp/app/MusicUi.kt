@@ -212,6 +212,7 @@ fun MusicApp(model: MusicViewModel, requestNotifications: () -> Unit) {
     val playLibrary: (Int) -> Unit = { index ->
         requestNotifications()
         model.playback.play(model.library.tracks.files, index)
+        playerExpanded = true
     }
     CompositionLocalProvider(LocalMetadataArtworkOwner provides account?.let(::MetadataOwner)) {
       MusicTheme(model.preferences, waveAppearance = model.waveAppearance, skin = model.skin.takeIf { model.skinsEnabled }) {
