@@ -165,6 +165,7 @@ fun MusicApp(model: MusicViewModel, requestNotifications: () -> Unit) {
     var screen by rememberSaveable { mutableIntStateOf(0) }
     var playerExpanded by rememberSaveable(account?.origin, account?.user?.id) { mutableStateOf(false) }
     var settingsReturnScreen by rememberSaveable { mutableIntStateOf(0) }
+    var settingsReturnPlayer by rememberSaveable { mutableStateOf(false) }
     var libraryBrowser by rememberSaveable(screen) { mutableStateOf(false) }
     val libraryUi = key(account?.origin, account?.user?.id) { rememberLibraryBrowsingState(model.library) }
     val lifecycle = LocalLifecycleOwner.current.lifecycle
@@ -183,7 +184,10 @@ fun MusicApp(model: MusicViewModel, requestNotifications: () -> Unit) {
         if (playerExpanded) playerExpanded = false
         else screen = when (screen) {
             3 -> 2
-            2 -> settingsReturnScreen
+            2 -> {
+                playerExpanded = settingsReturnPlayer
+                settingsReturnScreen
+            }
             else -> 0
         }
     }
@@ -200,8 +204,9 @@ fun MusicApp(model: MusicViewModel, requestNotifications: () -> Unit) {
         if (model.notice == message) model.message(null)
     }
     val openSettings: () -> Unit = {
-        playerExpanded = false
         if (screen < 2) settingsReturnScreen = screen
+        if (screen < 2 || playerExpanded) settingsReturnPlayer = playerExpanded
+        playerExpanded = false
         screen = 2
     }
     val playLibrary: (Int) -> Unit = { index ->
