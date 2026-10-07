@@ -18,7 +18,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.platform.testTag
-import androidx.compose.ui.semantics.SemanticsProperties
+import androidx.compose.ui.semantics.SemanticsActions
 import androidx.compose.ui.test.*
 import androidx.compose.ui.test.junit4.createAndroidComposeRule
 import androidx.compose.ui.unit.dp
@@ -120,6 +120,17 @@ class SongReorderingTest {
             assertTrue(moves.isEmpty())
         }
         handle("a").assertIsNotEnabled()
+        compose.runOnIdle { enabled = true }
+        advance()
+        begin("a", 1.4f)
+        compose.runOnIdle { handleEnabled = false }
+        advance()
+        touch { up() }
+        advance()
+        compose.runOnIdle {
+            assertEquals(source, state.keys)
+            assertTrue(moves.isEmpty())
+        }
     }
 
     @Test fun recompositionKeepsGestureAndUsesLatestCallback() {
@@ -296,7 +307,7 @@ class SongReorderingTest {
             }
         }
         compose.waitForIdle()
-        rowHeight = compose.onNodeWithTag("row-${source[firstIndex]}").fetchSemanticsNode().boundsInRoot.height
+        rowHeight = compose.onNodeWithTag("row-${source[firstIndex]}").fetchSemanticsNode().size.height.toFloat()
         compose.mainClock.autoAdvance = false
     }
 
@@ -327,10 +338,10 @@ class SongReorderingTest {
     private fun scrollPosition() = list.firstVisibleItemIndex * rowHeight + list.firstVisibleItemScrollOffset
 
     private fun actions(key: String): List<String> =
-        handle(key).fetchSemanticsNode().config[SemanticsProperties.CustomActions].map { it.label }
+        handle(key).fetchSemanticsNode().config[SemanticsActions.CustomActions].map { it.label }
 
     private fun performAction(key: String, label: String) {
-        val action = handle(key).fetchSemanticsNode().config[SemanticsProperties.CustomActions].single { it.label == label }
+        val action = handle(key).fetchSemanticsNode().config[SemanticsActions.CustomActions].single { it.label == label }
         compose.runOnIdle { assertTrue(action.action()) }
     }
 }

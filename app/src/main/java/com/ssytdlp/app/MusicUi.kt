@@ -394,10 +394,9 @@ fun LibraryContent(state: LibraryState, playback: PlaybackState, onPlay: (Int) -
         TrackRow(track.copy(rating = state.rating(track)), active = playback.track?.key == track.key,
             enabled = playback.connected && !state.loading, transcription = state.transcription(track),
             artwork = { artwork(track.copy(artworkUrl = state.artworkUrl(track))) },
+            dragHandle = if (state.selectedId != null && track.playlistId == state.selectedId && state.search.isEmpty())
+                ({ SongDragHandle(reorder, track.key, track.displayTitle, enabled = canReorder) }) else null,
             onRatingClick = { onRating(track) }, onClick = { onPlay(index) }) {
-            if (state.selectedId != null && track.playlistId == state.selectedId && state.search.isEmpty()) {
-                SongDragHandle(reorder, track.key, track.displayTitle, enabled = canReorder)
-            }
             trackActions(track, index)
         }
       }
@@ -527,9 +526,10 @@ fun EntryMenu(model: MusicViewModel, entry: LibraryEntry) {
 @Composable
 fun TrackRow(track: Track, active: Boolean = false, enabled: Boolean = true, transcription: Transcription? = null,
     artwork: @Composable () -> ImageBitmap? = { null },
+    dragHandle: (@Composable () -> Unit)? = null,
     onRatingClick: () -> Unit = {}, onClick: () -> Unit, trailing: @Composable () -> Unit = {}) {
     BoxWithConstraints(Modifier.fillMaxWidth()) {
-        val compact = maxWidth < 240.dp
+        val compact = maxWidth < if (dragHandle == null) 240.dp else 360.dp
         Row(Modifier.fillMaxWidth().background(if (active) MaterialTheme.colorScheme.primary.copy(alpha = 0.08f) else Color.Transparent)
             .clickable(enabled = enabled, onClick = onClick).heightIn(min = 78.dp)
             .padding(start = if (compact) 8.dp else 20.dp, end = 8.dp, top = 10.dp, bottom = 10.dp),
@@ -551,7 +551,9 @@ fun TrackRow(track: Track, active: Boolean = false, enabled: Boolean = true, tra
                 if (!compact) Text("${track.rating}/5", style = MaterialTheme.typography.labelMedium,
                     color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 1)
             }
-            trailing()
+            if (dragHandle == null) trailing()
+            else if (compact) Column { dragHandle(); trailing() }
+            else Row(verticalAlignment = Alignment.CenterVertically) { dragHandle(); trailing() }
         }
     }
 }

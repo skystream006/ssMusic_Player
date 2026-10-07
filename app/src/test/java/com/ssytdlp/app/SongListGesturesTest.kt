@@ -2,12 +2,21 @@ package com.ssytdlp.app
 
 import android.app.Application
 import androidx.activity.ComponentActivity
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.width
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.rounded.MoreVert
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.semantics.SemanticsActions
 import androidx.compose.ui.test.*
 import androidx.compose.ui.test.junit4.createAndroidComposeRule
+import androidx.compose.ui.text.TextLayoutResult
+import androidx.compose.ui.unit.dp
 import com.ssytdlp.app.core.Track
 import com.ssytdlp.app.core.TrackPage
+import com.ssytdlp.app.core.Transcription
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
 import org.junit.Rule
@@ -96,7 +105,11 @@ class SongListGesturesTest {
         val from = compose.onAllNodesWithContentDescription("Drag to reorder first")[1]
         val to = compose.onAllNodesWithContentDescription("Drag to reorder first")[0]
         val distance = to.fetchSemanticsNode().boundsInRoot.center.y - from.fetchSemanticsNode().boundsInRoot.center.y
-        from.performTouchInput { swipe(center, center + Offset(0f, distance), 500) }
+        from.performTouchInput {
+            down(center)
+            moveBy(Offset(0f, distance - height / 2f))
+            up()
+        }
         compose.runOnIdle {
             assertEquals(listOf(2 to 0), moves)
             assertTrue(removed.isEmpty())
@@ -149,10 +162,34 @@ class SongListGesturesTest {
         compose.onNodeWithText("first").assertIsDisplayed()
     }
 
+    @Test fun narrowQueueKeepsSongTextAndFullSizeActionsWithTranscriptionStatus() {
+        val track = first.copy(title = "A title that stays visible", transcription = Transcription(status = "transcribed"))
+        compose.setContent {
+            MusicTheme {
+                Box(Modifier.width(280.dp)) {
+                    QueueContent(PlaybackState(connected = true, queue = listOf(track, second)), LibraryState(),
+                        onSelect = {}, onMove = { _, _ -> }, onRemove = {}) { _, _ ->
+                        ToolButton(Icons.Rounded.MoreVert, "Song options") {}
+                    }
+                }
+            }
+        }
+        val layouts = mutableListOf<TextLayoutResult>()
+        compose.onNodeWithText(track.title).assertIsDisplayed()
+            .performSemanticsAction(SemanticsActions.GetTextLayoutResult) { it(layouts) }
+        assertTrue(layouts.single().getLineEnd(0) > 5)
+        compose.onNodeWithContentDescription("Drag to reorder ${track.title}").assertWidthIsAtLeast(48.dp)
+        compose.onAllNodesWithContentDescription("Song options")[0].assertWidthIsAtLeast(48.dp)
+    }
+
     private fun drag(source: String, target: String) {
         val from = compose.onNodeWithContentDescription("Drag to reorder $source")
         val to = compose.onNodeWithContentDescription("Drag to reorder $target")
         val distance = to.fetchSemanticsNode().boundsInRoot.center.y - from.fetchSemanticsNode().boundsInRoot.center.y
-        from.performTouchInput { swipe(center, center + Offset(0f, distance), 500) }
+        from.performTouchInput {
+            down(center)
+            moveBy(Offset(0f, distance + if (distance > 0) height / 2f else -height / 2f))
+            up()
+        }
     }
 }

@@ -14,9 +14,10 @@ import androidx.compose.material.icons.rounded.DeleteOutline
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.runtime.*
-import androidx.compose.ui.Alignment
+import androidx.compose.ui.AbsoluteAlignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clipToBounds
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.ImageBitmap
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalDensity
@@ -46,13 +47,14 @@ internal fun QueueContent(state: PlaybackState, library: LibraryState, modifier:
             items(reorder.keys, key = { it }) { key ->
                 val index = key.toInt()
                 val track = state.queue[index]
-                Box(Modifier.songReorderItem(reorder, key).testTag("queue-row-$index")) {
+                Box(Modifier.songReorderItem(reorder, key).testTag("queue-row-$index")
+                    .background(if (reorder.isDragging(key)) MaterialTheme.colorScheme.surface else Color.Transparent)) {
                     QueueSwipeToRemove(state.connected, { onRemove(index) }) {
                         TrackRow(track.copy(rating = library.rating(track)), active = index == state.index,
                             enabled = state.connected, transcription = library.transcription(track),
                             artwork = { artwork(track.copy(artworkUrl = library.artworkUrl(track))) },
+                            dragHandle = { SongDragHandle(reorder, key, track.displayTitle, enabled = state.connected) },
                             onRatingClick = { onRating(track) }, onClick = { onSelect(index) }) {
-                            SongDragHandle(reorder, key, track.displayTitle, enabled = state.connected)
                             trackActions(track, index)
                         }
                     }
@@ -88,10 +90,10 @@ private fun QueueSwipeToRemove(enabled: Boolean, onRemove: () -> Unit, content: 
     })) {
         if (offset < 0f) Box(Modifier.matchParentSize().background(MaterialTheme.colorScheme.errorContainer)) {
             Icon(Icons.Rounded.DeleteOutline, null,
-                Modifier.align(Alignment.CenterRight).padding(20.dp),
+                Modifier.align(AbsoluteAlignment.CenterRight).padding(20.dp),
                 tint = MaterialTheme.colorScheme.onErrorContainer)
         }
         Box(Modifier.absoluteOffset { IntOffset(offset.roundToInt(), 0) }
-            .background(MaterialTheme.colorScheme.surface)) { content() }
+            .background(if (offset == 0f) Color.Transparent else MaterialTheme.colorScheme.surface)) { content() }
     }
 }

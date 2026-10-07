@@ -84,7 +84,8 @@ internal class SongReorderState internal constructor(
     private var drag by mutableStateOf<Drag?>(null)
     private var scrollJob: Job? = null
 
-    val keys: List<String> get() = drag?.preview ?: sourceKeys.value
+    val keys: List<String>
+        get() = drag?.takeIf { enabled.value && it.original == sourceKeys.value }?.preview ?: sourceKeys.value
     internal fun isDragging(key: String): Boolean = drag?.key == key
     internal fun isEnabled(key: String): Boolean =
         enabled.value && sourceKeys.value.size > 1 && key in sourceKeys.value
@@ -166,13 +167,16 @@ internal class SongReorderState internal constructor(
         val center = active.top + active.size / 2f
         val edge = minOf(edgeSize, (layout.viewportEndOffset - layout.viewportStartOffset) / 3f)
         if (edge <= 0f) return 0f
-        return when {
+        val speed = when {
             center < layout.viewportStartOffset + edge && listState.canScrollBackward ->
                 -scrollSpeed * ((layout.viewportStartOffset + edge - center) / edge).coerceIn(0f, 1f)
             center > layout.viewportEndOffset - edge && listState.canScrollForward ->
                 scrollSpeed * ((center - layout.viewportEndOffset + edge) / edge).coerceIn(0f, 1f)
             else -> 0f
         }
+        if (speed == 0f) return 0f
+        val next = active.preview.getOrNull(active.preview.indexOf(active.key) + if (speed < 0f) -1 else 1)
+        return if (next != null && canMove.value(active.key, next)) speed else 0f
     }
 
     private fun startAutoScroll() {
