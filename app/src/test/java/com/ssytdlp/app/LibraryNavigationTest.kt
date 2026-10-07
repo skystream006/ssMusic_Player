@@ -157,9 +157,10 @@ class LibraryNavigationTest {
         compose.setContent { Navigation() }
         compose.onNodeWithText("Open player").performClick()
         compose.onNodeWithTag("player-seek").performTouchInput {
-            down(centerLeft)
+            down(percentOffset(0.1f, 0.5f))
             moveBy(androidx.compose.ui.geometry.Offset(1f, 0f))
-            moveTo(centerRight, delayMillis = 600)
+            moveTo(percentOffset(0.5f, 0.5f), delayMillis = 600)
+            moveTo(percentOffset(0.95f, 0.5f))
             up()
         }
         compose.runOnIdle { assertTrue(seek > 0.8f) }
@@ -168,7 +169,7 @@ class LibraryNavigationTest {
     @Test fun overlayAcceptsPlayerSeekTapsWithoutExposingLibraryActions() {
         compose.setContent { Navigation() }
         compose.onNodeWithText("Open player").performClick()
-        compose.onNodeWithTag("player-seek").performTouchInput { click(centerRight) }
+        compose.onNodeWithTag("player-seek").performTouchInput { click(percentOffset(0.95f, 0.5f)) }
         compose.runOnIdle {
             assertTrue(seek > 0.8f)
             assertEquals(0, libraryActions)
