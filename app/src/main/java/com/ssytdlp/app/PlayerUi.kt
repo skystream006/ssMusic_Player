@@ -195,7 +195,8 @@ private fun RepeatButton(mode: Int, repeat: () -> Unit) {
 
 @androidx.annotation.OptIn(UnstableApi::class)
 @Composable
-fun NowPlayingScreen(model: MusicViewModel, state: PlaybackState, download: (String, String) -> Unit) {
+fun NowPlayingScreen(model: MusicViewModel, state: PlaybackState, onBack: () -> Unit = {},
+    onSettings: () -> Unit = {}, snackbar: SnackbarHostState? = null, download: (String, String) -> Unit) {
     val landscape = isLandscape()
     var tab by rememberSaveable { mutableIntStateOf(0) }
     val visibleTab = if (landscape && tab == 2) 0 else tab
@@ -229,74 +230,66 @@ fun NowPlayingScreen(model: MusicViewModel, state: PlaybackState, download: (Str
             }
         }
     }
-    Row(Modifier.fillMaxSize()) {
-        Column(Modifier.weight(if (landscape) 0.65f else 1f).fillMaxHeight().clipToBounds().testTag("now-playing-pane").playerTrackSwipes(
-            enabled = visibleTab == 0 && state.track != null, nextEnabled = state.queue.size > 1,
-            previous = model.playback::previousTrack, next = model.playback::next,
-            trackKey = state.track?.key, onDragDistanceChanged = { artworkDrag = it }
-        )) {
-            Row(Modifier.fillMaxWidth().padding(horizontal = 20.dp, vertical = if (landscape) 0.dp else 12.dp),
-                verticalAlignment = Alignment.CenterVertically) {
-                Column(Modifier.weight(1f)) {
-                    Text("NOW PLAYING", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.primary)
-                    state.track?.let { track ->
-                        key(track.key) {
-                            Text(track.displayTitle,
-                                modifier = Modifier.fillMaxWidth().semantics { heading() }.basicMarquee(iterations = Int.MAX_VALUE),
-                                style = if (landscape) MaterialTheme.typography.titleMedium else MaterialTheme.typography.titleLarge,
-                                maxLines = 1, softWrap = false, overflow = TextOverflow.Clip)
-                        }
-                    }
-                    if (!landscape || state.track == null) Text(state.track?.playlistTitle?.ifBlank { null } ?: "Your queue",
-                        style = if (state.track == null) MaterialTheme.typography.titleLarge else MaterialTheme.typography.bodySmall,
-                        maxLines = 1, overflow = TextOverflow.Ellipsis)
-                }
+    Scaffold(containerColor = appBackgroundColor(), contentColor = MaterialTheme.colorScheme.onBackground,
+        snackbarHost = { snackbar?.let { SnackbarHost(it) } }, topBar = {
+            NowPlayingTopBar(state.track, !model.busy, model::refresh, onBack, onSettings) {
                 SongActionsMenu(model, state.track, download, menuKey = visibleTab,
                     editLyrics = if (canEditLyrics && metadata != null) ({ track ->
                         editingLyrics = Triple(track, metadata, showUslt)
                     }) else null)
             }
-            if (state.track == null) {
-                Box(Modifier.weight(1f).fillMaxWidth(), contentAlignment = Alignment.Center) {
-                    Text("Choose a song from Library to start playing.", Modifier.padding(24.dp),
-                        textAlign = TextAlign.Center)
-                }
-            } else {
-                val lyricsTabTitle = when {
-                    showUslt -> "USLT Lyrics"
-                    hasSylt -> "SYLT Lyrics"
-                    else -> "Lyrics"
-                }
-                PrimaryTabRow(selectedTabIndex = visibleTab, containerColor = MaterialTheme.colorScheme.surface) {
-                    val tabs = if (landscape) listOf("Player", lyricsTabTitle) else listOf("Player", lyricsTabTitle, "Queue")
-                    tabs.forEachIndexed { index, title ->
-                        Tab(selected = visibleTab == index, onClick = {
-                            if (index == 1 && visibleTab == 1 && hasSylt && hasUslt) preferUslt = !preferUslt
-                            tab = index
-                        }, text = { Text(title) })
+        }) { padding ->
+        Column(Modifier.padding(padding).consumeWindowInsets(padding).fillMaxSize()) {
+            if (model.busy) LinearProgressIndicator(Modifier.fillMaxWidth())
+            Row(Modifier.fillMaxSize()) {
+                Column(Modifier.weight(if (landscape) 0.65f else 1f).fillMaxHeight().clipToBounds().testTag("now-playing-pane").playerTrackSwipes(
+                    enabled = visibleTab == 0 && state.track != null, nextEnabled = state.queue.size > 1,
+                    previous = model.playback::previousTrack, next = model.playback::next,
+                    trackKey = state.track?.key, onDragDistanceChanged = { artworkDrag = it }
+                )) {
+                    if (state.track == null) {
+                        Box(Modifier.weight(1f).fillMaxWidth(), contentAlignment = Alignment.Center) {
+                            Text("Choose a song from Library to start playing.", Modifier.padding(24.dp),
+                                textAlign = TextAlign.Center)
+                        }
+                    } else {
+                        val lyricsTabTitle = when {
+                            showUslt -> "USLT Lyrics"
+                            hasSylt -> "SYLT Lyrics"
+                            else -> "Lyrics"
+                        }
+                        PrimaryTabRow(selectedTabIndex = visibleTab, containerColor = MaterialTheme.colorScheme.surface) {
+                            val tabs = if (landscape) listOf("Player", lyricsTabTitle) else listOf("Player", lyricsTabTitle, "Queue")
+                            tabs.forEachIndexed { index, title ->
+                                Tab(selected = visibleTab == index, onClick = {
+                                    if (index == 1 && visibleTab == 1 && hasSylt && hasUslt) preferUslt = !preferUslt
+                                    tab = index
+                                }, text = { Text(title) })
+                            }
+                        }
+                        when (visibleTab) {
+                            0 -> PlayerArtwork(state, model.metadata, Modifier.weight(1f), model.playback.controller,
+                                artworkOffset = { artworkOffset }, transcription = model.library.transcription(state.track),
+                                showVisualizer = model.audioVisualizerEnabled, onShowVisualizer = model::chooseAudioVisualizer,
+                                visualizerStyle = model.audioVisualizerStyle, onVisualizerStyle = model::chooseAudioVisualizerStyle) {
+                                model.playback.play(listOfNotNull(state.track?.noVocalsVersion))
+                            }
+                            1 -> Lyrics(model, state, Modifier.weight(1f), showUslt,
+                                toggleSource = if (hasSylt && hasUslt) ({ preferUslt = !preferUslt }) else null)
+                            else -> queue(Modifier.weight(1f))
+                        }
+                        PlayerTransport(state, model.playback::seek, model.playback::previous, model.playback::toggle,
+                            model.playback::next, model.playback::shuffle, model.playback::repeat, compact = landscape)
                     }
                 }
-                when (visibleTab) {
-                    0 -> PlayerArtwork(state, model.metadata, Modifier.weight(1f), model.playback.controller,
-                        artworkOffset = { artworkOffset }, transcription = model.library.transcription(state.track),
-                        showVisualizer = model.audioVisualizerEnabled, onShowVisualizer = model::chooseAudioVisualizer,
-                        visualizerStyle = model.audioVisualizerStyle, onVisualizerStyle = model::chooseAudioVisualizerStyle) {
-                        model.playback.play(listOfNotNull(state.track?.noVocalsVersion))
-                    }
-                    1 -> Lyrics(model, state, Modifier.weight(1f), showUslt,
-                        toggleSource = if (hasSylt && hasUslt) ({ preferUslt = !preferUslt }) else null)
-                    else -> queue(Modifier.weight(1f))
+                if (landscape) Column(Modifier.weight(0.35f).fillMaxHeight().testTag("now-playing-queue-pane")) {
+                    Text("Queue", Modifier.fillMaxWidth().heightIn(min = 48.dp).padding(horizontal = 16.dp, vertical = 12.dp)
+                        .semantics { heading() }, style = MaterialTheme.typography.titleMedium)
+                    HorizontalDivider()
+                    if (state.queue.isEmpty()) Text("Your queue is empty.", Modifier.padding(16.dp))
+                    else queue(Modifier.weight(1f))
                 }
-                PlayerTransport(state, model.playback::seek, model.playback::previous, model.playback::toggle,
-                    model.playback::next, model.playback::shuffle, model.playback::repeat, compact = landscape)
             }
-        }
-        if (landscape) Column(Modifier.weight(0.35f).fillMaxHeight().testTag("now-playing-queue-pane")) {
-            Text("Queue", Modifier.fillMaxWidth().heightIn(min = 48.dp).padding(horizontal = 16.dp, vertical = 12.dp)
-                .semantics { heading() }, style = MaterialTheme.typography.titleMedium)
-            HorizontalDivider()
-            if (state.queue.isEmpty()) Text("Your queue is empty.", Modifier.padding(16.dp))
-            else queue(Modifier.weight(1f))
         }
     }
     ratingTrack?.let { track -> MetadataDialog(model, track, ratingOnly = true) { ratingTrack = null } }
@@ -305,6 +298,37 @@ fun NowPlayingScreen(model: MusicViewModel, state: PlaybackState, download: (Str
             LyricsEditorDialog(editMetadata, editUslt, model.busy, dismiss = { editingLyrics = null }) { changes ->
                 model.saveLyrics(editTrack, changes) { editingLyrics = null }
             }
+        }
+    }
+}
+
+@Composable
+private fun NowPlayingTopBar(track: Track?, refreshEnabled: Boolean, onRefresh: () -> Unit,
+    onBack: () -> Unit, onSettings: () -> Unit, actions: @Composable () -> Unit) {
+    val landscape = isLandscape()
+    Surface(color = appBackgroundColor()) {
+        Row(Modifier.fillMaxWidth().testTag("now-playing-top-bar")
+            .windowInsetsPadding(TopAppBarDefaults.windowInsets).heightIn(min = 64.dp).padding(horizontal = 4.dp),
+            verticalAlignment = Alignment.CenterVertically) {
+            ToolButton(Icons.AutoMirrored.Rounded.ArrowBack, "Back", onClick = onBack)
+            Column(Modifier.weight(1f).padding(horizontal = 8.dp, vertical = 4.dp)) {
+                Text("NOW PLAYING", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.primary,
+                    maxLines = 1, overflow = TextOverflow.Ellipsis)
+                track?.let {
+                    key(track.key) {
+                        Text(track.displayTitle,
+                            modifier = Modifier.fillMaxWidth().semantics { heading() }.basicMarquee(iterations = Int.MAX_VALUE),
+                            style = if (landscape) MaterialTheme.typography.titleMedium else MaterialTheme.typography.titleLarge,
+                            maxLines = 1, softWrap = false, overflow = TextOverflow.Clip)
+                    }
+                }
+                if (!landscape || track == null) Text(track?.playlistTitle?.ifBlank { null } ?: "Your queue",
+                    style = if (track == null) MaterialTheme.typography.titleLarge else MaterialTheme.typography.bodySmall,
+                    maxLines = 1, overflow = TextOverflow.Ellipsis)
+            }
+            ToolButton(Icons.Rounded.Refresh, "Refresh", enabled = refreshEnabled, onClick = onRefresh)
+            ToolButton(Icons.Rounded.Settings, "Settings", onClick = onSettings)
+            actions()
         }
     }
 }

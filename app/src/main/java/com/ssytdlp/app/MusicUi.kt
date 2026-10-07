@@ -221,8 +221,13 @@ fun MusicApp(model: MusicViewModel, requestNotifications: () -> Unit) {
           PlayerScreenTransition(screen, playerExpanded,
               account != null && (playback.track != null || playerExpanded && !playback.connected)) { visibleScreen, pageModifier, dock ->
             SkinBackground(pageModifier.fillMaxSize()) {
+            if (account != null && visibleScreen == 1) {
+                NowPlayingScreen(model, playback, onBack = back, onSettings = openSettings,
+                    snackbar = snackbar, download = download)
+                return@SkinBackground
+            }
             Scaffold(containerColor = appBackgroundColor(), contentColor = MaterialTheme.colorScheme.onBackground,
-                snackbarHost = { if (visibleScreen == 1 || !playerExpanded) SnackbarHost(snackbar) }, topBar = {
+                snackbarHost = { if (!playerExpanded) SnackbarHost(snackbar) }, topBar = {
                 if (account != null) {
                     if (visibleScreen == 0) LibraryTopBar(model.library, !model.busy,
                         onBrowse = { libraryBrowser = true }, onSearch = model::search,
@@ -251,7 +256,6 @@ fun MusicApp(model: MusicViewModel, requestNotifications: () -> Unit) {
                                     LibraryBrowser(model, libraryUi) { libraryBrowser = false }
                                 }
                             }
-                            1 -> NowPlayingScreen(model, playback, download)
                             2 -> SettingsScreen(model, download, onJobs = { screen = 3 })
                             3 -> if (account?.user?.isShared != true) JobsScreen(model, requestNotifications, download)
                         }

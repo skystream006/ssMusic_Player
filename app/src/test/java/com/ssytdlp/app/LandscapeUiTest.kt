@@ -281,7 +281,29 @@ class LandscapeUiTest {
         fun assertLibrary() {
             compose.onNodeWithText("TRACKS").assertIsDisplayed()
             compose.onNodeWithContentDescription("Back").assertDoesNotExist()
+            compose.onNodeWithTag("now-playing-top-bar").assertDoesNotExist()
             assertNoBottomNavigation()
+        }
+        fun assertNowPlayingTopBar() {
+            val topBar = compose.onNodeWithTag("now-playing-top-bar").assertIsDisplayed().getUnclippedBoundsInRoot()
+            val pane = compose.onNodeWithTag("now-playing-pane").assertIsDisplayed().getUnclippedBoundsInRoot()
+            compose.onNodeWithText("NOW PLAYING").assertIsDisplayed()
+                .assert(hasAnyAncestor(hasTestTag("now-playing-top-bar")))
+            compose.onNode(hasText("First song") and SemanticsMatcher.keyIsDefined(SemanticsProperties.Heading))
+                .assertIsDisplayed().assert(hasAnyAncestor(hasTestTag("now-playing-top-bar")))
+            compose.onAllNodesWithContentDescription("More song actions").assertCountEquals(1)
+            compose.onNodeWithContentDescription("More song actions").assertIsDisplayed()
+                .assert(hasAnyAncestor(hasTestTag("now-playing-top-bar")))
+            listOf("Back", "Refresh", "Settings").forEach {
+                compose.onNodeWithContentDescription(it).assertIsDisplayed().assertHasClickAction()
+                    .assert(hasAnyAncestor(hasTestTag("now-playing-top-bar")))
+            }
+            compose.onNodeWithText("ssMusic").assertDoesNotExist()
+            compose.onNodeWithText("Listener's Music").assertDoesNotExist()
+            assertEquals(topBar.bottom, pane.top)
+            val playerTab = compose.onNode(hasText("Player") and
+                SemanticsMatcher.expectValue(SemanticsProperties.Role, Role.Tab)).getUnclippedBoundsInRoot()
+            assertEquals(pane.top, playerTab.top)
         }
         assertLibrary()
         compose.onNodeWithContentDescription("Playback position").assertDoesNotExist()
@@ -291,12 +313,17 @@ class LandscapeUiTest {
         compose.onNodeWithText("First song").performClick()
         compose.onNodeWithTag("now-playing-pane").assertIsDisplayed()
         compose.onNodeWithText("Player").assertIsSelected()
+        assertNowPlayingTopBar()
         assertNoBottomNavigation()
         compose.onNodeWithContentDescription("Settings").performClick()
         compose.onNodeWithTag("now-playing-pane").assertDoesNotExist()
+        compose.onNodeWithTag("now-playing-top-bar").assertDoesNotExist()
+        compose.onNodeWithText("ssMusic").assertIsDisplayed()
+        compose.onNodeWithText("Listener's Music").assertIsDisplayed()
         assertNoBottomNavigation()
         compose.onNodeWithContentDescription("Back").performClick()
         compose.onNodeWithTag("now-playing-pane").assertIsDisplayed()
+        assertNowPlayingTopBar()
         compose.onNodeWithContentDescription("Back").performClick()
         assertLibrary()
         compose.onNodeWithText("First song").performClick()

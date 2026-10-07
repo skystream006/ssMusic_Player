@@ -135,10 +135,16 @@ class NowPlayingScreenTest {
             listOf("Player", "Lyrics", "Queue").forEach { tab ->
                 compose.onNodeWithText(tab).performClick().assertIsSelected()
                 compose.onNodeWithText("NOW PLAYING").assertIsDisplayed()
+                    .assert(hasAnyAncestor(hasTestTag("now-playing-top-bar")))
                 compose.onAllNodes(isSongHeading).assertCountEquals(1)
                 songHeading(title).assertIsDisplayed().assertTextEquals(title)
+                    .assert(hasAnyAncestor(hasTestTag("now-playing-top-bar")))
                 compose.onNodeWithText(if (current == fallback) "Your queue" else "Night Sessions").assertIsDisplayed()
                 compose.onNodeWithContentDescription("More song actions").assertIsDisplayed().assertHasClickAction()
+                    .assert(hasAnyAncestor(hasTestTag("now-playing-top-bar")))
+                compose.onNodeWithText("ssMusic").assertDoesNotExist()
+                assertEquals(compose.onNodeWithTag("now-playing-top-bar").getUnclippedBoundsInRoot().bottom,
+                    compose.onNodeWithTag("now-playing-pane").getUnclippedBoundsInRoot().top)
             }
         }
         compose.runOnIdle {
@@ -177,10 +183,14 @@ class NowPlayingScreenTest {
         val labelBounds = compose.onNodeWithText("NOW PLAYING").getUnclippedBoundsInRoot()
         val overflow = compose.onNodeWithContentDescription("More song actions")
             .assertIsDisplayed().assertIsEnabled().assertHasClickAction().getUnclippedBoundsInRoot()
-        assertTrue(titleBounds.left >= 0.dp && titleBounds.right <= overflow.left)
+        val back = compose.onNodeWithContentDescription("Back").assertIsDisplayed().getUnclippedBoundsInRoot()
+        val refresh = compose.onNodeWithContentDescription("Refresh").assertIsDisplayed().getUnclippedBoundsInRoot()
+        val settings = compose.onNodeWithContentDescription("Settings").assertIsDisplayed().getUnclippedBoundsInRoot()
+        assertTrue(titleBounds.left >= back.right && titleBounds.right <= refresh.left)
         assertTrue(titleBounds.right - titleBounds.left >= 48.dp)
         assertTrue(labelBounds.bottom <= titleBounds.top && titleBounds.bottom <= contextBounds.top)
-        assertTrue(contextBounds.right <= overflow.left)
+        assertTrue(contextBounds.right <= refresh.left)
+        assertTrue(refresh.right <= settings.left && settings.right <= overflow.left)
         assertTrue(overflow.right <= 320.dp && overflow.right - overflow.left >= 48.dp)
         assertTrue(contextBounds.bottom <= compose.onNodeWithText("Player").getUnclippedBoundsInRoot().top)
         compose.mainClock.advanceTimeBy(3_000)
@@ -188,6 +198,28 @@ class NowPlayingScreenTest {
         heading.assertTextEquals(track.displayTitle)
         openSongActions()
         songAction("Save file").assertIsDisplayed().assertIsEnabled()
+    }
+
+    @Test fun topBarNavigationRemainsAvailableWhileBusy() {
+        val busy = ReflectionHelpers.getField<MutableState<Boolean>>(model, "busy\$delegate")
+        var wentBack = false
+        var openedSettings = false
+        compose.runOnIdle { busy.value = true }
+        compose.setContent {
+            MusicTheme {
+                NowPlayingScreen(model, PlaybackState(), onBack = { wentBack = true },
+                    onSettings = { openedSettings = true }) { _, _ -> }
+            }
+        }
+        compose.onNodeWithContentDescription("Refresh").assertIsDisplayed().assertIsNotEnabled()
+        compose.onNodeWithContentDescription("Settings").assertIsEnabled().performClick()
+        compose.onNodeWithContentDescription("Back").assertIsEnabled().performClick()
+        compose.runOnIdle {
+            assertTrue(wentBack)
+            assertTrue(openedSettings)
+            busy.value = false
+        }
+        compose.onNodeWithContentDescription("Refresh").assertIsEnabled()
     }
 
     @Test fun visualizerSwitchAndDropdownRetainSelectionWithoutChangingPlayback() {
@@ -923,10 +955,11 @@ class NowPlayingScreenTest {
 
     private fun assertOnlySongOverflowBesideTitle(track: Track, showPlaylist: Boolean = true) {
         compose.onNodeWithText("NOW PLAYING").assertIsDisplayed()
+            .assert(hasAnyAncestor(hasTestTag("now-playing-top-bar")))
         compose.onAllNodesWithContentDescription("More song actions").assertCountEquals(1)
         val titleBounds = songHeading(track.displayTitle).assertIsDisplayed().fetchSemanticsNode().boundsInRoot
         val overflow = compose.onNodeWithContentDescription("More song actions")
-            .assertIsDisplayed().fetchSemanticsNode().boundsInRoot
+            .assertIsDisplayed().assert(hasAnyAncestor(hasTestTag("now-playing-top-bar"))).fetchSemanticsNode().boundsInRoot
         assertTrue(titleBounds.width > 0f)
         assertTrue(titleBounds.right <= overflow.left)
         assertTrue(titleBounds.center.y in overflow.top..overflow.bottom)
@@ -1367,6 +1400,12 @@ class NowPlayingScreenTest {
         }
         compose.setContent { MusicTheme { NowPlayingScreen(model, PlaybackState(track = track)) { _, _ -> } } }
         compose.onNodeWithTag("now-playing-queue-pane").assertIsDisplayed()
+        val topBar = compose.onNodeWithTag("now-playing-top-bar").getUnclippedBoundsInRoot()
+        val playerPane = compose.onNodeWithTag("now-playing-pane").getUnclippedBoundsInRoot()
+        val queuePane = compose.onNodeWithTag("now-playing-queue-pane").getUnclippedBoundsInRoot()
+        assertEquals(topBar.bottom, playerPane.top)
+        assertEquals(topBar.bottom, queuePane.top)
+        assertEquals(topBar.right, queuePane.right)
         compose.onNodeWithText("Queue").assertHasNoClickAction()
         listOf("Player", "USLT Lyrics").forEach { tab ->
             compose.onNodeWithText(tab).performClick()
