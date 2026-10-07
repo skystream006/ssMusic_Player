@@ -94,6 +94,16 @@ class LandscapeUiTest {
         assertAppNavigationWithoutBottomBar()
     }
 
+    @Test fun landscapeLibrarySongSelectionOpensNowPlaying() {
+        assertLibrarySongSelectionOpensNowPlaying()
+    }
+
+    @Test
+    @Config(qualifiers = "w360dp-h800dp-port")
+    fun portraitLibrarySongSelectionOpensNowPlaying() {
+        assertLibrarySongSelectionOpensNowPlaying()
+    }
+
     @Test fun libraryUsesThirtyFiveSixtyFiveSplitAndKeepsPlaylistSelectionInline() {
         val library = ReflectionHelpers.getField<MutableState<LibraryState>>(model, "library\$delegate")
         compose.runOnIdle {
@@ -263,6 +273,45 @@ class LandscapeUiTest {
         compose.onNodeWithText("Lyrics").assertIsSelected()
         compose.onNodeWithText("Queue").assertHasClickAction()
         compose.onNodeWithTag("now-playing-queue-pane").assertDoesNotExist()
+    }
+
+    private fun assertLibrarySongSelectionOpensNowPlaying() {
+        val state = ReflectionHelpers.getField<MutableStateFlow<PlaybackState>>(model.playback, "mutableState")
+        val library = ReflectionHelpers.getField<MutableState<LibraryState>>(model, "library\$delegate")
+        var notificationRequests = 0
+        compose.runOnUiThread {
+            ViewModelProvider(compose.activity)[AppUpdater::class.java].viewModelScope.cancel()
+            model.getApplication<MusicApplication>().serverConfig.set("https://music.example.com")
+            ReflectionHelpers.getField<MutableStateFlow<Account?>>(model.sessions, "mutableAccount").value =
+                Account("https://music.example.com", User(name = "Listener"),
+                    Session("test-session", "2099-01-01T00:00:00Z"))
+            library.value = LibraryState(tracks = TrackPage(files = listOf(track, queued)))
+            state.value = PlaybackState(connected = true)
+        }
+        compose.setContent { MusicApp(model) { notificationRequests++ } }
+        compose.onNodeWithText("TRACKS").assertIsDisplayed()
+        compose.onNodeWithTag("now-playing-top-bar").assertDoesNotExist()
+
+        listOf(track, queued, queued).forEachIndexed { selection, selected ->
+            compose.onNode(hasText(selected.displayTitle) and hasAnyAncestor(hasTestTag("library-tracks")))
+                .performClick()
+            compose.runOnIdle {
+                state.value = playback.copy(track = selected, index = if (selected == track) 0 else 1)
+            }
+            compose.onNodeWithTag("now-playing-pane").assertIsDisplayed()
+            compose.onNode(hasText(selected.displayTitle) and
+                SemanticsMatcher.keyIsDefined(SemanticsProperties.Heading)).assertIsDisplayed()
+            compose.runOnIdle { assertEquals(selection + 1, notificationRequests) }
+            if (selection == 0) compose.onNodeWithContentDescription("Back").performClick()
+            else compose.runOnUiThread { compose.activity.onBackPressedDispatcher.onBackPressed() }
+            compose.onNodeWithText("TRACKS").assertIsDisplayed()
+            compose.onNodeWithTag("now-playing-top-bar").assertDoesNotExist()
+            compose.onNodeWithContentDescription("Playback position").assertIsDisplayed()
+        }
+
+        compose.runOnIdle { state.value = playback }
+        compose.onNodeWithText("TRACKS").assertIsDisplayed()
+        compose.onNodeWithTag("now-playing-top-bar").assertDoesNotExist()
     }
 
     private fun assertAppNavigationWithoutBottomBar() {
