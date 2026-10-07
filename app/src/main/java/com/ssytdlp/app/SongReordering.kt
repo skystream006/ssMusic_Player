@@ -56,7 +56,11 @@ internal fun rememberSongReorderState(
         SongReorderState(listState, currentKeys, currentEnabled, currentCanMove, currentOnMove,
             scope, with(density) { 56.dp.toPx() }, with(density) { 700.dp.toPx() })
     }
-    SideEffect { state.validateDrag() }
+    val viewportRequest = state.viewportRequest
+    SideEffect {
+        state.validateDrag()
+        state.restoreViewport(viewportRequest)
+    }
     DisposableEffect(state) {
         onDispose { state.cancelDrag() }
     }
@@ -83,6 +87,8 @@ internal class SongReorderState internal constructor(
 
     private var drag by mutableStateOf<Drag?>(null)
     private var scrollJob: Job? = null
+    internal var viewportRequest by mutableStateOf<Pair<Int, Int>?>(null)
+        private set
 
     val keys: List<String>
         get() = drag?.takeIf { enabled.value && it.original == sourceKeys.value }?.preview ?: sourceKeys.value
@@ -128,7 +134,17 @@ internal class SongReorderState internal constructor(
 
     private fun preserveViewport() {
         // Do not let LazyColumn anchor the viewport to the key that is being moved.
-        listState.requestScrollToItem(listState.firstVisibleItemIndex, listState.firstVisibleItemScrollOffset)
+        val position = viewportRequest
+            ?: (listState.firstVisibleItemIndex to listState.firstVisibleItemScrollOffset)
+        viewportRequest = position
+        listState.requestScrollToItem(position.first, position.second)
+    }
+
+    internal fun restoreViewport(request: Pair<Int, Int>?) {
+        if (request == null || viewportRequest !== request) return
+        // The earlier request can be measured against the old item provider, before recomposition.
+        listState.requestScrollToItem(request.first, request.second)
+        viewportRequest = null
     }
 
     private fun movePastNeighbours() {
@@ -190,6 +206,7 @@ internal class SongReorderState internal constructor(
                 if (speed == 0f) break
                 val seconds = ((now - previous) / 1_000_000_000f).coerceAtMost(0.032f)
                 previous = now
+                if (viewportRequest != null) continue
                 if (listState.scrollBy(speed * seconds) == 0f) break
                 movePastNeighbours()
             }

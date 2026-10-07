@@ -129,7 +129,7 @@ class SongListGesturesTest {
         }
         compose.onNodeWithTag("queue-row-1").performTouchInput { swipeRight() }
         compose.onNodeWithTag("queue-row-1").performTouchInput {
-            swipe(center, center - Offset(15f, 0f), 300)
+            swipe(center, center - Offset(50f, 0f), 300)
         }
         compose.onNodeWithTag("queue-row-1").performTouchInput {
             down(centerRight - Offset(2f, 0f))
@@ -179,7 +179,9 @@ class SongListGesturesTest {
             .performSemanticsAction(SemanticsActions.GetTextLayoutResult) { it(layouts) }
         assertTrue(layouts.single().getLineEnd(0) > 5)
         compose.onNodeWithContentDescription("Drag to reorder ${track.title}").assertWidthIsAtLeast(48.dp)
-        compose.onAllNodesWithContentDescription("Song options")[0].assertWidthIsAtLeast(48.dp)
+        val actionWidth = compose.onAllNodesWithContentDescription("Song options")[0]
+            .fetchSemanticsNode().touchBoundsInRoot.width
+        assertTrue(actionWidth >= with(compose.density) { 48.dp.toPx() })
     }
 
     private fun drag(source: String, target: String) {

@@ -14,6 +14,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
+import androidx.compose.runtime.snapshots.Snapshot
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.Offset
@@ -28,9 +29,11 @@ import org.junit.Test
 import org.junit.runner.RunWith
 import org.robolectric.RobolectricTestRunner
 import org.robolectric.annotation.Config
+import org.robolectric.annotation.GraphicsMode
 
 @RunWith(RobolectricTestRunner::class)
 @Config(sdk = [34], application = Application::class, qualifiers = "w360dp-h800dp")
+@GraphicsMode(GraphicsMode.Mode.NATIVE)
 class SongReorderingTest {
     @get:Rule val compose = createAndroidComposeRule<ComponentActivity>()
     private data class Move(val source: String, val target: String, val after: Boolean, val version: Int = 1)
@@ -55,7 +58,8 @@ class SongReorderingTest {
             assertEquals(0, list.firstVisibleItemIndex)
             assertEquals(0, list.firstVisibleItemScrollOffset)
         }
-        assertTrue(rowTop("a") > initialTop + rowHeight)
+        assertTrue("Dragged row top=${rowTop("a")}, initial=$initialTop, height=$rowHeight, translation=${state.translation("a")}",
+            rowTop("a") > initialTop + rowHeight)
         touch { moveBy(Offset(0f, rowHeight)) }
         advance()
         compose.runOnIdle {
@@ -147,6 +151,21 @@ class SongReorderingTest {
         touch { up() }
         advance()
         compose.runOnIdle { assertEquals(listOf(Move("a", "c", true, 2)), moves) }
+    }
+
+    @Test fun removingDraggedKeysNeverExposesStalePreviewOrCallsPredicateWithRemovedKeys() {
+        show()
+        begin("a", 1.4f)
+        compose.runOnIdle { source = listOf("x", "c", "d", "e") }
+        advance()
+        touch { up() }
+        advance()
+        compose.runOnIdle {
+            assertEquals(source, state.keys)
+            assertTrue(moves.isEmpty())
+        }
+        handle("a").assertDoesNotExist()
+        handle("x").assertIsDisplayed()
     }
 
     @Test fun headersAreNotTargetsAndGroupBoundariesCannotBeCrossed() {
@@ -284,22 +303,29 @@ class SongReorderingTest {
             if (visible) {
                 list = rememberLazyListState(firstIndex, firstOffset)
                 val version = callbackVersion
-                state = rememberSongReorderState(list, source, enabled, restriction) { from, to, after ->
+                val titles = source.associateWith { "Song $it" }
+                val predicate = restriction
+                state = rememberSongReorderState(list, source, enabled, canMove = { from, to ->
+                    titles.getValue(from)
+                    titles.getValue(to)
+                    predicate(from, to)
+                }) { from, to, after ->
                     moves += Move(from, to, after, version)
                 }
+                val rows = state.keys.map { it to titles.getValue(it) }
                 LazyColumn(Modifier.width(300.dp).height(height.dp).testTag("songs"), state = list) {
-                    state.keys.forEach { key ->
+                    rows.forEach { (key, title) ->
                         if (key == headerBefore) item(key = "header") {
                             Text("Group header", Modifier.height(48.dp))
                         }
                         item(key = key) {
                             Row(
-                                Modifier.fillMaxWidth().height(64.dp).testTag("row-$key")
-                                    .songReorderItem(state, key),
+                                Modifier.fillMaxWidth().height(64.dp).songReorderItem(state, key)
+                                    .testTag("row-$key"),
                                 verticalAlignment = Alignment.CenterVertically
                             ) {
-                                SongDragHandle(state, key, "Song $key", handleEnabled)
-                                Text("Song $key")
+                                SongDragHandle(state, key, title, handleEnabled)
+                                Text(title)
                             }
                         }
                     }
@@ -331,6 +357,7 @@ class SongReorderingTest {
     }
 
     private fun advance(millis: Long = 48) {
+        compose.runOnIdle { Snapshot.sendApplyNotifications() }
         compose.mainClock.advanceTimeBy(millis)
         compose.waitForIdle()
     }
