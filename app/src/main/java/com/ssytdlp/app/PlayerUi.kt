@@ -230,18 +230,18 @@ fun NowPlayingScreen(model: MusicViewModel, state: PlaybackState, onBack: () -> 
             }
         }
     }
-    Scaffold(containerColor = appBackgroundColor(), contentColor = MaterialTheme.colorScheme.onBackground,
-        snackbarHost = { snackbar?.let { SnackbarHost(it) } }, topBar = {
+    CompositionLocalProvider(LocalContentColor provides MaterialTheme.colorScheme.onBackground) {
+      Box(Modifier.fillMaxSize().background(appBackgroundColor()).windowInsetsPadding(
+          ScaffoldDefaults.contentWindowInsets.only(WindowInsetsSides.Horizontal + WindowInsetsSides.Bottom))) {
+        Column(Modifier.fillMaxSize()) {
             NowPlayingTopBar(state.track, !model.busy, model::refresh, onBack, onSettings) {
                 SongActionsMenu(model, state.track, download, menuKey = visibleTab,
                     editLyrics = if (canEditLyrics && metadata != null) ({ track ->
                         editingLyrics = Triple(track, metadata, showUslt)
                     }) else null)
             }
-        }) { padding ->
-        Column(Modifier.padding(padding).consumeWindowInsets(padding).fillMaxSize()) {
             if (model.busy) LinearProgressIndicator(Modifier.fillMaxWidth())
-            Row(Modifier.fillMaxSize()) {
+            Row(Modifier.weight(1f).fillMaxWidth()) {
                 Column(Modifier.weight(if (landscape) 0.65f else 1f).fillMaxHeight().clipToBounds().testTag("now-playing-pane").playerTrackSwipes(
                     enabled = visibleTab == 0 && state.track != null, nextEnabled = state.queue.size > 1,
                     previous = model.playback::previousTrack, next = model.playback::next,
@@ -291,6 +291,8 @@ fun NowPlayingScreen(model: MusicViewModel, state: PlaybackState, onBack: () -> 
                 }
             }
         }
+        snackbar?.let { SnackbarHost(it, Modifier.align(Alignment.BottomCenter)) }
+      }
     }
     ratingTrack?.let { track -> MetadataDialog(model, track, ratingOnly = true) { ratingTrack = null } }
     editingLyrics?.takeIf { account?.user?.isShared == false }?.let { (editTrack, editMetadata, editUslt) ->
