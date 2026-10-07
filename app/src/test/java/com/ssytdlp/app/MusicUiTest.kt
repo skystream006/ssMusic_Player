@@ -1151,6 +1151,39 @@ class MusicUiTest {
         compose.runOnIdle { assertEquals(0, selected) }
     }
 
+    @Test fun compactTrackRowKeepsDragHandleAndOptionsVisibleInShortViewport() {
+        var menu = false
+        var rated = false
+        compose.setContent {
+            MusicTheme {
+                Box(Modifier.fillMaxSize()) {
+                    Box(Modifier.width(280.dp).height(78.dp).testTag("track-row-viewport")) {
+                        TrackRow(Track("job", "song.mp3", title = "Song"),
+                            dragHandle = { ToolButton(Icons.Rounded.MoreVert, "Reorder song", modifier = Modifier.size(48.dp)) {} },
+                            onRatingClick = { rated = true }, onClick = {}) {
+                            ToolButton(Icons.Rounded.MoreVert, "Song options", modifier = Modifier.size(48.dp)) { menu = true }
+                        }
+                    }
+                }
+            }
+        }
+        val viewport = compose.onNodeWithTag("track-row-viewport").getUnclippedBoundsInRoot()
+        listOf(compose.onNodeWithContentDescription("Reorder song"), compose.onNodeWithContentDescription("Song options"))
+            .forEach { control ->
+                val bounds = control.assertIsDisplayed().assertWidthIsAtLeast(48.dp)
+                    .assertHeightIsAtLeast(48.dp).getUnclippedBoundsInRoot()
+                assertTrue(bounds.left >= viewport.left && bounds.right <= viewport.right)
+                assertTrue(bounds.top >= viewport.top && bounds.bottom <= viewport.bottom)
+            }
+        compose.onNodeWithText("Song").assertIsDisplayed()
+        compose.onNodeWithContentDescription("Song options").performClick()
+        compose.onNodeWithContentDescription("Rating: 0 out of 5").assertIsDisplayed().performClick()
+        compose.runOnIdle {
+            assertTrue(menu)
+            assertTrue(rated)
+        }
+    }
+
     @Test fun songRatingRemainsVisibleAndClickableWhenUnratedOrCleared() {
         val track = mutableStateOf(Track("job", "song.mp3", title = "Song"))
         var ratingClicks = 0

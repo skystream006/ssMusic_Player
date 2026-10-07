@@ -552,7 +552,6 @@ fun TrackRow(track: Track, active: Boolean = false, enabled: Boolean = true, tra
                     color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 1)
             }
             if (dragHandle == null) trailing()
-            else if (compact) Column { dragHandle(); trailing() }
             else Row(verticalAlignment = Alignment.CenterVertically) { dragHandle(); trailing() }
         }
     }
