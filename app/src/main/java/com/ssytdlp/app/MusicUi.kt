@@ -334,6 +334,8 @@ fun LibraryScreen(model: MusicViewModel, playback: PlaybackState, onPlay: (Int) 
         LibraryContent(model.library, playback, onPlay = onPlay, onPage = model::page,
             browsing = browsing,
             artwork = { rememberTrackArtwork(it, model.api, account) },
+            onReorder = if (model.busy || account?.user?.isShared != false) null
+                else { track, target, after -> model.reorder(track, target, after) },
             onRating = { ratingTrack = it }) { track, index -> TrackMenu(model, track, index, download = download) }
     }
     if (isLandscape()) Row(Modifier.fillMaxSize()) {
@@ -368,17 +370,37 @@ fun LibraryContent(state: LibraryState, playback: PlaybackState, onPlay: (Int) -
     onPage: (Int) -> Unit, onRating: (Track) -> Unit = {},
     artwork: @Composable (Track) -> ImageBitmap? = { null },
     browsing: LibraryBrowsingState = rememberLibraryBrowsingState(state),
+    onReorder: ((Track, Track, Boolean) -> Unit)? = null,
     trackActions: @Composable (Track, Int) -> Unit) {
     val groups = remember(state.tracks.files) {
         state.tracks.files.withIndex().partition { !it.value.name.startsWith("[NoVocals]/", ignoreCase = true) }
     }
+    val tracksByKey = remember(state.tracks.files) { state.tracks.files.withIndex().associateBy { it.value.key } }
+    val visibleKeys = (groups.first + if (browsing.showNoVocals) groups.second else emptyList()).map { it.value.key }
+    val canReorder = onReorder != null && state.selectedId != null && state.search.isEmpty() && !state.loading
+    val reorder = rememberSongReorderState(browsing.tracks, visibleKeys, canReorder,
+        canMove = { source, target ->
+            val from = tracksByKey.getValue(source).value
+            val to = tracksByKey.getValue(target).value
+            from.playlistId == state.selectedId && to.playlistId == state.selectedId &&
+                from.name.startsWith("[NoVocals]/", true) == to.name.startsWith("[NoVocals]/", true)
+        }) { source, target, after ->
+        onReorder?.invoke(tracksByKey.getValue(source).value, tracksByKey.getValue(target).value, after)
+    }
+    val ordered = reorder.keys.map { tracksByKey.getValue(it) }
     val row: @Composable (IndexedValue<Track>) -> Unit = { (index, track) ->
+      Box(Modifier.songReorderItem(reorder, track.key)
+          .background(if (reorder.isDragging(track.key)) MaterialTheme.colorScheme.surface else Color.Transparent)) {
         TrackRow(track.copy(rating = state.rating(track)), active = playback.track?.key == track.key,
             enabled = playback.connected && !state.loading, transcription = state.transcription(track),
             artwork = { artwork(track.copy(artworkUrl = state.artworkUrl(track))) },
             onRatingClick = { onRating(track) }, onClick = { onPlay(index) }) {
+            if (state.selectedId != null && track.playlistId == state.selectedId && state.search.isEmpty()) {
+                SongDragHandle(reorder, track.key, track.displayTitle, enabled = canReorder)
+            }
             trackActions(track, index)
         }
+      }
     }
     Column(Modifier.fillMaxSize()) {
         Row(Modifier.fillMaxWidth().padding(horizontal = 24.dp, vertical = 8.dp), horizontalArrangement = Arrangement.SpaceBetween) {
@@ -391,7 +413,7 @@ fun LibraryContent(state: LibraryState, playback: PlaybackState, onPlay: (Int) -
             if (state.tracks.files.isEmpty() && !state.loading) item {
                 EmptyState(Icons.Rounded.LibraryMusic, if (state.search.isNotBlank()) "No matching music" else "Your library is empty")
             }
-            items(groups.first, key = { it.value.key }) { row(it) }
+            items(ordered.filter { !it.value.name.startsWith("[NoVocals]/", true) }, key = { it.value.key }) { row(it) }
             if (groups.second.isNotEmpty()) {
                 item(key = "no-vocals-header") {
                     ListItem(headlineContent = { Text("[NoVocals] (${groups.second.size})") },
@@ -399,7 +421,8 @@ fun LibraryContent(state: LibraryState, playback: PlaybackState, onPlay: (Int) -
                             if (browsing.showNoVocals) "Collapse NoVocals" else "Expand NoVocals") },
                         modifier = Modifier.clickable(role = Role.Button) { browsing.showNoVocals = !browsing.showNoVocals })
                 }
-                if (browsing.showNoVocals) items(groups.second, key = { it.value.key }) { row(it) }
+                if (browsing.showNoVocals) items(ordered.filter { it.value.name.startsWith("[NoVocals]/", true) },
+                    key = { it.value.key }) { row(it) }
             }
         }
         if (state.tracks.totalPages > 1) Row(Modifier.fillMaxWidth().padding(horizontal = 20.dp),

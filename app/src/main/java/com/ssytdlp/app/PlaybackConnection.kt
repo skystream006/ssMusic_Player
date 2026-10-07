@@ -107,7 +107,22 @@ class PlaybackConnection(
     fun shuffle() { controller?.let { it.shuffleModeEnabled = !it.shuffleModeEnabled } }
     fun repeat() { controller?.let { it.repeatMode = (it.repeatMode + 1) % 3 } }
     fun select(index: Int) { controller?.let { it.seekToDefaultPosition(index); if (it.playbackState == Player.STATE_IDLE) it.prepare(); it.play() } }
-    fun remove(index: Int) { controller?.removeMediaItem(index) }
+    fun remove(index: Int, expectedQueue: List<Track> = state.value.queue) {
+        controller?.let { player ->
+            if (index in expectedQueue.indices && player.matchesQueue(expectedQueue)) {
+                player.removeMediaItem(index)
+                snapshot()
+            }
+        }
+    }
+    fun move(from: Int, to: Int, expectedQueue: List<Track> = state.value.queue) {
+        controller?.let { player ->
+            if (from != to && from in expectedQueue.indices && to in expectedQueue.indices && player.matchesQueue(expectedQueue)) {
+                player.moveMediaItem(from, to)
+                snapshot()
+            }
+        }
+    }
     fun replaceFile(file: Track) {
         controller?.let { player ->
             player.replaceSongFile(file, api)
@@ -133,6 +148,9 @@ class PlaybackConnection(
             player.repeatMode, if (player.playerError != null) mutableState.value.error else null)
     }
 }
+
+internal fun Player.matchesQueue(queue: List<Track>): Boolean =
+    mediaItemCount == queue.size && queue.indices.all { getMediaItemAt(it).asTrack() == queue[it] }
 
 internal fun Player.replaceSongFile(file: Track, api: ServerApi) {
     val current = currentMediaItem?.asTrack()

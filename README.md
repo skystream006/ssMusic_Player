@@ -182,7 +182,7 @@ it does not prove an installed app's identity. Authorize only sign-ins you start
 | Area | Implemented |
 | --- | --- |
 | Library | All Music, server-side search and 50-track pages, folder navigation, playlist counts, linked tracks, cached 192px AVIF audio/video thumbnails in Library and Queue (including Android 8+, with legacy JPEG/PNG/WebP support) |
-| Organization | Create/rename/remove/move folders, move playlists, add/move/remove song memberships, reorder complete unfiltered playlists |
+| Organization | Create/rename/remove/move folders, move playlists, add/move/remove song memberships, drag to reorder songs within an unfiltered playlist page |
 | Playback | Authenticated audio/video streams, persistent mini-player, full player, seek, next/previous, queue editing, shuffle, repeat, instrumental companions |
 | Lyrics and tags | Album artwork, expandable full-screen SYLT/USLT lyrics, timestamp-highlighted seekable SYLT lyrics, plain USLT lyrics, editing both lyric formats and MP3 tags/ratings, transcription requests and locking |
 | Jobs | Add audio/video YouTube jobs, metadata-only jobs, status polling, search, owner filter, rerun, rename, delete, contributors, add existing files to playlists, save ZIPs |
@@ -289,6 +289,16 @@ Each queued song has a three-dot menu with the permitted Library song actions
 and **Remove from queue**, instead of a separate close button. Queue menus omit
 **Add to queue**, **Move to playlist**, **Remove from playlist**, and playlist
 reordering; removing a queued song does not change its playlist membership.
+Drag a song's handle up or down to reorder the queue or an unfiltered playlist
+page in Library. Hold near the list's top or bottom to scroll while dragging.
+Library dragging stays within the song's regular or expanded NoVocals group;
+it is unavailable in All Music, folders, search results, and read-only libraries.
+The three-dot menus no longer contain **Move up** or **Move down**; accessible
+reorder actions are available on the drag handle instead.
+In Queue only, swipe a song left to remove that occurrence without deleting the
+song or changing its playlist membership. Short, canceled, or rightward swipes
+do not remove songs.
+
 The selected playlist or folder, queue order, current song and playback position,
 shuffle, and repeat are saved on this device. Reopening after the app has stopped
 restores the queue paused; press Play to continue from the saved timestamp.

@@ -452,6 +452,45 @@ class PlaylistEditingTest {
         assertFalse(locations.any { it.first == entry.id })
     }
 
+    @Test fun songReorderSendsMembershipTargetAndVersionAndRefreshesAfterConflicts() {
+        val conflict = AtomicBoolean(false)
+        startModel { request ->
+            if (request.url.encodedPath == "/api/library/songs/reorder") {
+                if (conflict.get()) {
+                    catalog.set(catalog.get().copy(version = 20))
+                    409 to """{"error":"Library changed. Refresh and try again."}"""
+                } else 200 to "{}"
+            } else null
+        }
+        val source = Track(job.id, "folder/first.mp3", playlistId = entry.id)
+        val target = Track("another job", "last.mp3", playlistId = entry.id)
+        compose.runOnUiThread { model.reorder(source, target, true) }
+        waitFor { !model.busy && !model.library.loading }
+        val sent = body(requests.single { it.method == "POST" })
+        assertEquals(source.jobId, sent.getValue("jobId").jsonPrimitive.content)
+        assertEquals(source.name, sent.getValue("name").jsonPrimitive.content)
+        assertEquals(entry.id, sent.getValue("playlistId").jsonPrimitive.content)
+        assertEquals(target.key, sent.getValue("target").jsonPrimitive.content)
+        assertTrue(sent.getValue("after").jsonPrimitive.boolean)
+        assertEquals(7, sent.getValue("version").jsonPrimitive.int)
+        assertEquals(listOf("/api/library/songs/reorder", "/api/library", "/api/library/tracks"),
+            requests.map { it.url.encodedPath })
+
+        requests.clear()
+        conflict.set(true)
+        compose.runOnUiThread { model.reorder(target, source, false) }
+        waitFor { !model.busy && !model.library.loading }
+        assertEquals(20L, model.library.library.version)
+        assertTrue(model.notice.orEmpty().contains("Library changed"))
+        requests.clear()
+        conflict.set(false)
+        compose.runOnUiThread { model.reorder(target, source, false) }
+        waitFor { !model.busy && !model.library.loading }
+        val retried = body(requests.single { it.method == "POST" })
+        assertEquals(20, retried.getValue("version").jsonPrimitive.int)
+        assertFalse(retried.getValue("after").jsonPrimitive.boolean)
+    }
+
     private fun startModel(user: User = owner, response: (Request) -> Pair<Int, String>? = { null }) {
         val client = OkHttpClient.Builder().addInterceptor { chain ->
             val request = chain.request()
