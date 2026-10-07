@@ -36,6 +36,7 @@ import androidx.compose.ui.semantics.selected
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.stateDescription
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.core.app.NotificationManagerCompat
 import androidx.lifecycle.Lifecycle
@@ -66,37 +67,44 @@ fun SettingsScreen(model: MusicViewModel, download: (String, String) -> Unit, on
         Text("Settings", style = MaterialTheme.typography.titleLarge)
         UpdateSettings()
         HorizontalDivider()
-        Text(account.user.name, style = MaterialTheme.typography.titleMedium)
-        Text(account.origin, style = MaterialTheme.typography.bodyMedium)
-        Text("Session expires ${account.session.expiresAt.substringBefore('T')}", style = MaterialTheme.typography.bodySmall)
+        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(12.dp),
+            verticalAlignment = Alignment.CenterVertically) {
+            Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                Text(account.user.name, style = MaterialTheme.typography.titleMedium)
+                Text(account.origin, style = MaterialTheme.typography.bodyMedium)
+            }
+            Text("Session expires ${account.session.expiresAt.substringBefore('T')}", Modifier.weight(1f),
+                style = MaterialTheme.typography.bodySmall, textAlign = TextAlign.End)
+        }
         HorizontalDivider()
-        Text("Appearance", style = MaterialTheme.typography.titleMedium)
-        SingleChoiceSegmentedButtonRow(Modifier.fillMaxWidth()) {
-            listOf("Blue Wave", "Server theme").forEachIndexed { index, label ->
-                SegmentedButton(selected = model.waveAppearance == (index == 0), onClick = { model.chooseWaveAppearance(index == 0) },
-                    shape = SegmentedButtonDefaults.itemShape(index, 2)) { Text(label) }
+        CollapsibleSettingsSection("Appearance", defaultExpanded = false) {
+            SingleChoiceSegmentedButtonRow(Modifier.fillMaxWidth()) {
+                listOf("Blue Wave", "Server theme").forEachIndexed { index, label ->
+                    SegmentedButton(selected = model.waveAppearance == (index == 0), onClick = { model.chooseWaveAppearance(index == 0) },
+                        shape = SegmentedButtonDefaults.itemShape(index, 2)) { Text(label) }
+                }
             }
-        }
-        if (!model.waveAppearance) {
-        val theme = model.preferences.effectiveTheme
-        FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-            listOf("midnight" to 0xFF5F7FF0, "royal-purple" to 0xFF7139C6,
-                "gold" to 0xFFA77A0A, "green" to 0xFF227452, "pink" to 0xFFBF3D78, "black" to 0xFF202124).forEach { (id, color) ->
-                Box(Modifier.size(48.dp).semantics { contentDescription = "$id theme"; selected = theme == id }
-                    .clickable(enabled = !model.busy) { model.setTheme(theme = id) }.padding(6.dp)
-                    .border(if (theme == id) 3.dp else 0.dp, MaterialTheme.colorScheme.onSurface, CircleShape)
-                    .padding(5.dp).background(Color(color), CircleShape))
+            if (!model.waveAppearance) {
+                val theme = model.preferences.effectiveTheme
+                FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    listOf("midnight" to 0xFF5F7FF0, "royal-purple" to 0xFF7139C6,
+                        "gold" to 0xFFA77A0A, "green" to 0xFF227452, "pink" to 0xFFBF3D78, "black" to 0xFF202124).forEach { (id, color) ->
+                        Box(Modifier.size(48.dp).semantics { contentDescription = "$id theme"; selected = theme == id }
+                            .clickable(enabled = !model.busy) { model.setTheme(theme = id) }.padding(6.dp)
+                            .border(if (theme == id) 3.dp else 0.dp, MaterialTheme.colorScheme.onSurface, CircleShape)
+                            .padding(5.dp).background(Color(color), CircleShape))
+                    }
+                }
+                Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                    Text("Dark appearance", Modifier.weight(1f))
+                    Switch(model.preferences.mode == "dark" || (model.preferences.mode == null && theme in listOf("midnight", "black")),
+                        { model.setTheme(mode = if (it) "dark" else "light") }, enabled = !model.busy)
+                }
             }
+            SkinSetting(model.skinsEnabled, model.skin, model::chooseSkin, model::chooseSkins)
+            EdgeLightingSetting(model.edgeLightingEnabled, model.edgeLightingStyle,
+                model::chooseEdgeLightingStyle, model::chooseEdgeLighting)
         }
-        Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-            Text("Dark appearance", Modifier.weight(1f))
-            Switch(model.preferences.mode == "dark" || (model.preferences.mode == null && theme in listOf("midnight", "black")),
-                { model.setTheme(mode = if (it) "dark" else "light") }, enabled = !model.busy)
-        }
-        }
-        SkinSetting(model.skinsEnabled, model.skin, model::chooseSkin, model::chooseSkins)
-        EdgeLightingSetting(model.edgeLightingEnabled, model.edgeLightingStyle,
-            model::chooseEdgeLightingStyle, model::chooseEdgeLighting)
     }, secondary = {
         if (showJobsAndBackup) {
             HorizontalDivider()

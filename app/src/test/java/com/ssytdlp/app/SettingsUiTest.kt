@@ -274,7 +274,7 @@ class SettingsUiTest {
 
     @Test
     @Config(qualifiers = "w320dp-h780dp")
-    fun updateButtonsStayHorizontalWithLargeTextAndDownloadInProgress() {
+    fun updateCheckStaysBesideInfoAndDownloadActionsStayHorizontalWithLargeText() {
         val models = ViewModelStore()
         lateinit var updater: AppUpdater
         compose.runOnUiThread {
@@ -292,12 +292,19 @@ class SettingsUiTest {
             val check = compose.onNodeWithText("Check for updates").assertIsNotEnabled()
             val download = compose.onNodeWithText("Download and install").assertIsNotEnabled()
             val cancel = compose.onNodeWithText("Cancel").assertIsEnabled()
-            val buttons = listOf(check, download, cancel).map { it.assertIsDisplayed().getUnclippedBoundsInRoot() }
+            val checkBounds = check.assertIsDisplayed().getUnclippedBoundsInRoot()
+            val title = compose.onNodeWithText("App updates").assertIsDisplayed().getUnclippedBoundsInRoot()
+            val available = compose.onNodeWithText("Available: 1.0.999").assertIsDisplayed().getUnclippedBoundsInRoot()
+            assertTrue(title.right < checkBounds.left && available.right < checkBounds.left)
+            assertTrue(checkBounds.bottom > title.top)
+            val buttons = listOf(download, cancel).map { it.assertIsDisplayed().getUnclippedBoundsInRoot() }
             buttons.zipWithNext().forEach { (first, second) ->
                 assertTrue(first.right < second.left)
                 assertEquals(((first.top + first.bottom) / 2).value, ((second.top + second.bottom) / 2).value, 1f)
             }
-            buttons.forEach { assertTrue(it.left >= 0.dp && it.right <= 320.dp) }
+            (buttons + checkBounds).forEach { assertTrue(it.left >= 0.dp && it.right <= 320.dp) }
+            assertTrue(checkBounds.bottom < buttons.first().top)
+            compose.onNodeWithText("0 / 1 KB").assertIsDisplayed()
             compose.runOnIdle { state.value = state.value.copy(busy = false, downloading = false) }
             cancel.assertDoesNotExist()
             check.assertIsEnabled()
@@ -324,6 +331,7 @@ class SettingsUiTest {
                     MusicTheme { SettingsScreen(model, { _, _ -> }) {} }
                 }
             }
+            compose.onNodeWithText("Appearance").performClick()
             compose.onNodeWithContentDescription("light theme").assertDoesNotExist()
             listOf("midnight", "royal-purple", "gold", "green", "pink", "black").forEach { theme ->
                 compose.onNodeWithContentDescription("$theme theme").assertIsDisplayed().assertHasClickAction()
@@ -370,7 +378,13 @@ class SettingsUiTest {
             val inLeft = hasAnyAncestor(hasTestTag("settings-left-pane"))
             val inRight = hasAnyAncestor(hasTestTag("settings-right-pane"))
             listOf("Settings", "App updates", "Preview", "https://music.example.com",
-                "Session expires 2099-01-01", "Appearance", "Blue Wave", "Server theme").forEach {
+                "Session expires 2099-01-01", "Appearance").forEach {
+                compose.onNode(hasText(it) and inLeft).assertExists()
+            }
+            assertCompactInformation("settings-left-pane")
+            compose.onNodeWithText("Blue Wave").assertDoesNotExist()
+            compose.onNodeWithText("Appearance").performClick()
+            listOf("Blue Wave", "Server theme").forEach {
                 compose.onNode(hasText(it) and inLeft).assertExists()
             }
             listOf("Skins", "Edge lighting").forEach {
@@ -398,6 +412,7 @@ class SettingsUiTest {
             assertEquals(0f, scrollPosition(left), 0f)
             assertEquals(0f, scrollPosition(right), 0f)
 
+            compose.onNodeWithText("Appearance").performScrollTo().performClick()
             compose.onNodeWithContentDescription("Skins").performScrollTo().assertIsDisplayed()
                 .performClick().assertIsOn()
             compose.onNodeWithText("Vibration").performScrollTo().assertIsDisplayed()
@@ -482,7 +497,7 @@ class SettingsUiTest {
 
     @Test
     @Config(qualifiers = "w800dp-h1600dp")
-    fun settingsPlaceJobsAfterAppearanceAndCollapseBackupAndServerByDefault() {
+    fun settingsPlaceJobsAfterAppearanceAndCollapseAppearanceBackupAndServerByDefault() {
         withSettingsModel { model ->
             compose.runOnUiThread { owner.lifecycle.currentState = Lifecycle.State.CREATED }
             setPermissions(notifications = true, unrestrictedBattery = true)
@@ -499,6 +514,14 @@ class SettingsUiTest {
             val pane = compose.onNodeWithTag("settings-portrait-pane").getUnclippedBoundsInRoot()
             assertEquals(compose.onRoot().getUnclippedBoundsInRoot().width, pane.width)
             val collapsed = SemanticsMatcher.expectValue(SemanticsProperties.StateDescription, "Collapsed")
+            val expanded = SemanticsMatcher.expectValue(SemanticsProperties.StateDescription, "Expanded")
+            compose.onNodeWithText("Appearance").assert(collapsed)
+            listOf("Blue Wave", "Server theme", "Dark appearance").forEach {
+                compose.onNodeWithText(it).assertDoesNotExist()
+            }
+            listOf("Skins", "Edge lighting").forEach {
+                compose.onNodeWithContentDescription(it).assertDoesNotExist()
+            }
             compose.onNodeWithText("Library backup").assert(collapsed)
             compose.onNodeWithText("Server").assert(collapsed)
             compose.onNodeWithText("Back up").assertDoesNotExist()
@@ -506,13 +529,25 @@ class SettingsUiTest {
             val updates = compose.onNodeWithText("App updates").getUnclippedBoundsInRoot()
             val info = compose.onNodeWithText("Preview").getUnclippedBoundsInRoot()
             val appearance = compose.onNodeWithText("Appearance").getUnclippedBoundsInRoot()
-            val edge = compose.onNodeWithContentDescription("Edge lighting").getUnclippedBoundsInRoot()
             val jobs = compose.onNodeWithText("Jobs").getUnclippedBoundsInRoot()
             val backup = compose.onNodeWithText("Library backup").getUnclippedBoundsInRoot()
             assertTrue(updates.bottom < info.top && info.bottom < appearance.top)
-            assertTrue(appearance.bottom < edge.top && edge.bottom < jobs.top && jobs.bottom < backup.top)
+            assertTrue(appearance.bottom < jobs.top && jobs.bottom < backup.top)
+            assertCompactInformation("settings-portrait-pane")
             compose.onNodeWithText("Jobs").performClick()
             compose.runOnIdle { assertTrue(jobsOpened) }
+            restoration.emulateSavedInstanceStateRestore()
+            compose.onNodeWithText("Appearance").assert(collapsed).performClick().assert(expanded)
+            compose.onNodeWithText("Blue Wave").assertIsDisplayed().performClick().assertIsSelected()
+            compose.onNodeWithContentDescription("Skins").assertIsDisplayed()
+            compose.onNodeWithContentDescription("Edge lighting").assertIsDisplayed()
+            val edge = compose.onNodeWithContentDescription("Edge lighting").getUnclippedBoundsInRoot()
+            assertTrue(compose.onNodeWithText("Appearance").getUnclippedBoundsInRoot().bottom < edge.top)
+            assertTrue(edge.bottom < compose.onNodeWithText("Jobs").getUnclippedBoundsInRoot().top)
+            compose.onNodeWithText("Appearance").performClick().assert(collapsed)
+            compose.onNodeWithText("Blue Wave").assertDoesNotExist()
+            compose.onNodeWithText("Appearance").performClick()
+            compose.onNodeWithText("Blue Wave").assertIsSelected()
             compose.onNodeWithText("Library backup").performClick()
             compose.onNodeWithText("Back up").assertIsDisplayed()
             compose.onNodeWithText("iTunes").performClick().assertIsSelected()
@@ -523,8 +558,21 @@ class SettingsUiTest {
             compose.onNodeWithText("Server").performScrollTo().performClick()
             compose.onNodeWithText("Sign out").performScrollTo().assertIsDisplayed()
             restoration.emulateSavedInstanceStateRestore()
+            compose.onNodeWithText("Appearance").performScrollTo().assert(expanded)
+            compose.onNodeWithText("Blue Wave").performScrollTo().assertIsSelected()
             compose.onNodeWithText("iTunes").performScrollTo().assertIsSelected()
             compose.onNodeWithText("Sign out").performScrollTo().assertIsDisplayed()
+        }
+    }
+
+    @Test
+    @Config(qualifiers = "w320dp-h780dp")
+    fun compactSettingsKeepInformationWithinNarrowScreensWithLargeText() {
+        withSettingsModel { model ->
+            showSettings(model, fontScale = 1.5f)
+            assertCompactInformation("settings-portrait-pane")
+            compose.onNodeWithText("Appearance").performScrollTo()
+                .assert(SemanticsMatcher.expectValue(SemanticsProperties.StateDescription, "Collapsed"))
         }
     }
 
@@ -730,6 +778,23 @@ class SettingsUiTest {
 
     private fun scrollPosition(pane: SemanticsNodeInteraction): Float =
         pane.fetchSemanticsNode().config[SemanticsProperties.VerticalScrollAxisRange].value()
+
+    private fun assertCompactInformation(paneTag: String) {
+        val pane = compose.onNodeWithTag(paneTag).getUnclippedBoundsInRoot()
+        val updates = compose.onNodeWithText("App updates").assertIsDisplayed().getUnclippedBoundsInRoot()
+        val installed = compose.onNodeWithText("Installed:", substring = true).assertIsDisplayed().getUnclippedBoundsInRoot()
+        val check = compose.onNodeWithText("Check for updates").assertIsDisplayed().getUnclippedBoundsInRoot()
+        assertTrue(updates.right < check.left && installed.right < check.left)
+        assertTrue(check.bottom > updates.top && check.top < installed.bottom)
+        val name = compose.onNodeWithText("Preview").assertIsDisplayed().getUnclippedBoundsInRoot()
+        val origin = compose.onNodeWithText("https://music.example.com").assertIsDisplayed().getUnclippedBoundsInRoot()
+        val session = compose.onNodeWithText("Session expires 2099-01-01").assertIsDisplayed().getUnclippedBoundsInRoot()
+        assertTrue(name.right < session.left && origin.right < session.left)
+        assertTrue(session.bottom > name.top && session.top < origin.bottom)
+        listOf(updates, installed, check, name, origin, session).forEach {
+            assertTrue(it.left >= pane.left && it.right <= pane.right)
+        }
+    }
 
     private fun withSettingsModel(role: String = "user", test: (MusicViewModel) -> Unit) {
         val context = ApplicationProvider.getApplicationContext<Application>()
