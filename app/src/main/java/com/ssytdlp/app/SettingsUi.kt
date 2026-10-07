@@ -4,7 +4,6 @@ package com.ssytdlp.app
 
 import android.content.Intent
 import android.net.Uri
-import android.os.PowerManager
 import android.provider.Settings
 import androidx.browser.customtabs.CustomTabsIntent
 import androidx.compose.foundation.Image
@@ -38,9 +37,7 @@ import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.stateDescription
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
-import androidx.core.app.NotificationManagerCompat
 import androidx.lifecycle.Lifecycle
-import androidx.lifecycle.LifecycleEventObserver
 import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.repeatOnLifecycle
@@ -108,8 +105,6 @@ fun SettingsScreen(model: MusicViewModel, download: (String, String) -> Unit, on
     }, secondary = {
         if (showJobsAndBackup) {
             HorizontalDivider()
-            JobsSetting(onJobs)
-            HorizontalDivider()
             CollapsibleSettingsSection("Library backup", defaultExpanded = false) {
                 SingleChoiceSegmentedButtonRow(Modifier.fillMaxWidth()) {
                     listOf("Android", "iTunes").forEachIndexed { index, label -> SegmentedButton(selected = backupFormat == if (index == 0) "android" else "itunes",
@@ -143,6 +138,7 @@ fun SettingsScreen(model: MusicViewModel, download: (String, String) -> Unit, on
         DeviceSettings()
         HorizontalDivider()
         CollapsibleSettingsSection("Server", defaultExpanded = false) {
+            if (showJobsAndBackup) JobsSetting(onJobs)
             val media = model.health?.get("media") as? JsonObject
             Text("Media files: ${media?.get("totalFiles")?.jsonPrimitive?.content ?: "Unavailable"}")
             ListItem(headlineContent = { Text(if (account.user.role == "admin") "Passkeys and administration" else "Passkeys and account") }, leadingContent = { Icon(Icons.Rounded.Key, null) },
@@ -316,19 +312,7 @@ internal fun CollapsibleSettingsSection(
 @Composable
 internal fun DeviceSettings() {
     val context = LocalContext.current
-    val lifecycle = LocalLifecycleOwner.current.lifecycle
-    fun deviceReady(): Boolean =
-        NotificationManagerCompat.from(context).areNotificationsEnabled() &&
-            context.getSystemService(PowerManager::class.java)?.isIgnoringBatteryOptimizations(context.packageName) == true
-    var ready by remember(context) { mutableStateOf(deviceReady()) }
-    DisposableEffect(lifecycle, context) {
-        val observer = LifecycleEventObserver { _, event ->
-            if (event == Lifecycle.Event.ON_RESUME) ready = deviceReady()
-        }
-        lifecycle.addObserver(observer)
-        onDispose { lifecycle.removeObserver(observer) }
-    }
-    CollapsibleSettingsSection("Device", defaultExpanded = !ready) {
+    CollapsibleSettingsSection("Device Permissions", defaultExpanded = false) {
         ListItem(headlineContent = { Text("Notifications") }, leadingContent = { Icon(Icons.Rounded.Notifications, null) }, trailingContent = { Icon(Icons.AutoMirrored.Rounded.OpenInNew, null) },
             modifier = Modifier.clickable {
                 runCatching { context.startActivity(Intent(Settings.ACTION_APP_NOTIFICATION_SETTINGS).putExtra(Settings.EXTRA_APP_PACKAGE, context.packageName)) }
