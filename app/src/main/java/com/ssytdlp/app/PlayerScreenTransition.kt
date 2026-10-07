@@ -70,11 +70,6 @@ internal fun PlayerScreenTransition(screen: Int, expanded: Boolean, hasPlayer: B
             visible = { it }, enter = EnterTransition.None, exit = ExitTransition.None
         ) {
             Box(Modifier.fillMaxSize()) {
-                Box(Modifier.fillMaxSize().pointerInput(Unit) {
-                    awaitPointerEventScope {
-                        while (true) awaitPointerEvent().changes.forEach { it.consume() }
-                    }
-                })
                 content(1, Modifier.sharedBounds(
                     sharedContentState = rememberSharedContentState("player"),
                     animatedVisibilityScope = this@AnimatedVisibility,

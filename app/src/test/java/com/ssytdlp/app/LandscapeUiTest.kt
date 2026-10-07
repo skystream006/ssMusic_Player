@@ -301,9 +301,16 @@ class LandscapeUiTest {
         assertLibrary()
         compose.onNodeWithText("First song").performClick()
         compose.onNodeWithTag("now-playing-pane").assertIsDisplayed()
+        compose.onNodeWithContentDescription("Settings").performClick()
+        compose.onNodeWithTag("now-playing-pane").assertDoesNotExist()
+        compose.runOnUiThread { compose.activity.onBackPressedDispatcher.onBackPressed() }
+        compose.onNodeWithTag("now-playing-pane").assertIsDisplayed()
         compose.runOnUiThread { compose.activity.onBackPressedDispatcher.onBackPressed() }
         assertLibrary()
         compose.onNodeWithText("First song").assertIsDisplayed()
+        compose.onNodeWithContentDescription("Settings").performClick()
+        compose.onNodeWithContentDescription("Back").performClick()
+        assertLibrary()
     }
 
     private fun assertSplit(leftTag: String, rightTag: String, leftFraction: Float) {

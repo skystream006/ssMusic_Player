@@ -165,6 +165,17 @@ class LibraryNavigationTest {
         compose.runOnIdle { assertTrue(seek > 0.8f) }
     }
 
+    @Test fun overlayAcceptsPlayerSeekTapsWithoutExposingLibraryActions() {
+        compose.setContent { Navigation() }
+        compose.onNodeWithText("Open player").performClick()
+        compose.onNodeWithTag("player-seek").performTouchInput { click(centerRight) }
+        compose.runOnIdle {
+            assertTrue(seek > 0.8f)
+            assertEquals(0, libraryActions)
+        }
+        compose.onNodeWithText("Library action").assertDoesNotExist()
+    }
+
     @Test fun changingBrowsingContextResetsTrackPositionButNotBrowserFolder() {
         compose.setContent { Navigation() }
         compose.onNodeWithTag("library-tracks").performScrollToIndex(30)
