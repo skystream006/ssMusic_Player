@@ -506,7 +506,7 @@ internal fun PlayerArtwork(state: PlaybackState, metadata: SongMetadata?, modifi
         if (state.buffering) CircularProgressIndicator(Modifier.padding(12.dp).size(22.dp), strokeWidth = 2.dp)
         if (state.error != null) Text(state.error, color = MaterialTheme.colorScheme.error, modifier = Modifier.padding(top = 12.dp))
         if (track?.noVocalsVersion != null) TextButton(onClick = onInstrumental) {
-            Icon(Icons.Rounded.MicOff, null); Spacer(Modifier.width(8.dp)); Text("Instrumental version")
+            Icon(Icons.Rounded.MicExternalOn, null); Spacer(Modifier.width(8.dp)); Text("Instrumental version")
         }
     }
     if (landscape) BoxWithConstraints(modifier.fillMaxWidth().padding(8.dp)) {
