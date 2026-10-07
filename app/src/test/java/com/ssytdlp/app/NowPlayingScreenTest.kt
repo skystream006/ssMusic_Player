@@ -9,6 +9,7 @@ import android.view.WindowManager
 import android.view.inspector.WindowInspector
 import androidx.activity.ComponentActivity
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
@@ -1469,6 +1470,113 @@ class NowPlayingScreenTest {
         restoration.emulateSavedInstanceStateRestore()
         compose.onNodeWithText("Queue").assertIsSelected()
         compose.onNode(hasText("Blue hour") and !isSongHeading).assertIsDisplayed()
+    }
+
+    @Test fun queueMenusKeepAllowedLibraryActionsAndDownloadTheSelectedSong() {
+        val first = Track("source", "first.mp3", playlistId = "playlist")
+        val next = first.copy(name = "next.mp3", downloadUrl = "/api/download/next")
+        val state = PlaybackState(track = first, queue = listOf(first, next, next))
+        val downloads = mutableListOf<Pair<String, String>>()
+        val account = ReflectionHelpers.getField<MutableStateFlow<Account?>>(model.sessions, "mutableAccount")
+        val library = ReflectionHelpers.getField<MutableState<LibraryState>>(model, "library\$delegate")
+        compose.runOnIdle {
+            model.viewModelScope.cancel()
+            account.value = Account("https://music.example", User(id = "owner"), Session("test", "2099-01-01T00:00:00Z"))
+            library.value = LibraryState(
+                library = Library(jobs = listOf(Job("source", initiatedBy = account.value!!.user))),
+                selectedId = "playlist", tracks = TrackPage(files = listOf(next, first)))
+        }
+        compose.setContent {
+            MusicTheme { NowPlayingScreen(model, state) { url, name -> downloads += url to name } }
+        }
+        compose.onNodeWithText("Queue").performClick()
+        compose.onNodeWithContentDescription("Remove from queue").assertDoesNotExist()
+        compose.onNodeWithContentDescription("Options for first").assertIsDisplayed()
+        compose.onAllNodesWithContentDescription("Options for next").assertCountEquals(2)
+        compose.onAllNodesWithContentDescription("Options for next")[1].performClick()
+        listOf("Add to queue", "Move to playlist", "Remove from playlist", "Move up", "Move down").forEach {
+            compose.onNodeWithText(it).assertDoesNotExist()
+        }
+        listOf("Save file", "Share Media", "Make song private", "Add to playlist", "Edit song / rating",
+            "Transcribe lyrics", "Replace File", "Remove from queue").forEach {
+            compose.onNodeWithText(it).performScrollTo().assertIsDisplayed()
+        }
+        compose.onNodeWithText("Add to playlist").performScrollTo().performClick()
+        compose.onNode(isPopup()).assertDoesNotExist()
+        compose.onNode(isDialog()).assertIsDisplayed()
+        compose.onNodeWithText("Add to playlist").assertIsDisplayed()
+        compose.onNodeWithText("Cancel").performClick()
+        listOf(first, next, next).forEachIndexed { index, track ->
+            val occurrence = if (index == 2) 1 else 0
+            compose.onAllNodesWithContentDescription("Options for ${track.displayTitle}")[occurrence].performClick()
+            compose.onNodeWithText("Save file").performClick()
+            compose.onNode(isPopup()).assertDoesNotExist()
+        }
+        assertEquals(listOf(songPath(first, "download") to first.name,
+            next.downloadUrl!! to next.name, next.downloadUrl!! to next.name), downloads)
+        songHeading(first.displayTitle).assertIsDisplayed()
+    }
+
+    @Test fun queueMenusRespectSharedAndUnrelatedUserPermissions() {
+        val track = Track("source", "song.mp3", playlistId = "playlist")
+        val account = ReflectionHelpers.getField<MutableStateFlow<Account?>>(model.sessions, "mutableAccount")
+        val library = ReflectionHelpers.getField<MutableState<LibraryState>>(model, "library\$delegate")
+        compose.runOnIdle {
+            model.viewModelScope.cancel()
+            account.value = Account("https://music.example", User(id = "owner", role = "Shared"),
+                Session("test", "2099-01-01T00:00:00Z"))
+            library.value = LibraryState(library = Library(jobs = listOf(Job("source", initiatedBy = User(id = "owner")))))
+        }
+        compose.setContent {
+            MusicTheme { NowPlayingScreen(model, PlaybackState(track = track, queue = listOf(track))) { _, _ -> } }
+        }
+        compose.onNodeWithText("Queue").performClick()
+        compose.onNodeWithContentDescription("Options for song").performClick()
+        listOf("Save file", "View song metadata", "Remove from queue").forEach {
+            compose.onNodeWithText(it).assertIsDisplayed()
+        }
+        listOf("Add to queue", "Add to playlist", "Move to playlist", "Remove from playlist",
+            "Edit song / rating", "Transcribe lyrics", "Replace File", "Share Media", "Make song private").forEach {
+            compose.onNodeWithText(it).assertDoesNotExist()
+        }
+        compose.onNodeWithText("Remove from queue").performClick()
+        compose.onNode(isPopup()).assertDoesNotExist()
+        compose.runOnIdle { account.value = account.value!!.copy(user = User(id = "unrelated")) }
+        compose.onNodeWithContentDescription("Options for song").performClick()
+        listOf("Save file", "Add to playlist", "Remove from queue").forEach {
+            compose.onNodeWithText(it).assertIsDisplayed()
+        }
+        listOf("Add to queue", "Move to playlist", "Remove from playlist", "View song metadata",
+            "Edit song / rating", "Transcribe lyrics", "Replace File", "Share Media", "Make song private").forEach {
+            compose.onNodeWithText(it).assertDoesNotExist()
+        }
+    }
+
+    @Test fun queueMenuRemovalUsesTheSelectedOccurrenceWithoutPlaylistRequests() {
+        val track = Track("source", "song.mp3", playlistId = "playlist")
+        val queue = mutableStateOf(listOf(track, track.copy(name = "other.mp3"), track))
+        val removed = mutableListOf<Int>()
+        val requests = metadataResponses { 500 to "{}" }
+        compose.setContent {
+            MusicTheme {
+                Column {
+                    queue.value.forEachIndexed { index, queued ->
+                        TrackMenu(model, queued, index, onRemoveFromQueue = {
+                            removed += index
+                            queue.value = queue.value.filterIndexed { position, _ -> position != index }
+                        }) { _, _ -> }
+                    }
+                }
+            }
+        }
+        compose.onAllNodesWithContentDescription("Options for song")[1].performClick()
+        compose.onNodeWithText("Remove from queue").performClick()
+        compose.onNode(isPopup()).assertDoesNotExist()
+        compose.onNodeWithContentDescription("Options for song").assertIsDisplayed()
+        compose.onNodeWithContentDescription("Options for other").assertIsDisplayed()
+        assertEquals(listOf(2), removed)
+        assertEquals(listOf(track, track.copy(name = "other.mp3")), queue.value)
+        assertTrue(requests.isEmpty())
     }
 
     @Test fun playbackAndTabsUpdateWhileSnackbarRemainsVisible() {

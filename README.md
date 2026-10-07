@@ -285,6 +285,10 @@ the file, the completion message names the deleted song.
 
 Playback queues initially contain the displayed page; **Add to queue** can add
 tracks from other pages. Browsing another page or tab does not replace playback.
+Each queued song has a three-dot menu with the permitted Library song actions
+and **Remove from queue**, instead of a separate close button. Queue menus omit
+**Add to queue**, **Move to playlist**, **Remove from playlist**, and playlist
+reordering; removing a queued song does not change its playlist membership.
 The selected playlist or folder, queue order, current song and playback position,
 shuffle, and repeat are saved on this device. Reopening after the app has stopped
 restores the queue paused; press Play to continue from the saved timestamp.
