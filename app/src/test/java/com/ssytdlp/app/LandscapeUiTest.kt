@@ -43,6 +43,7 @@ import kotlinx.coroutines.cancel
 import kotlinx.coroutines.flow.MutableStateFlow
 import org.junit.After
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Before
 import org.junit.Rule
@@ -92,6 +93,27 @@ class LandscapeUiTest {
     @Config(qualifiers = "w360dp-h800dp-port")
     fun portraitAppUsesMiniPlayerAndBackWithoutBottomNavigation() {
         assertAppNavigationWithoutBottomBar()
+    }
+
+    @Test
+    @Config(qualifiers = "w360dp-h800dp-port")
+    fun systemBackKeepsSetupAndSignInOpen() {
+        compose.runOnUiThread {
+            ViewModelProvider(compose.activity)[AppUpdater::class.java].viewModelScope.cancel()
+        }
+        compose.setContent { MusicApp(model) {} }
+        repeat(3) {
+            pressBackWithoutLeavingApp()
+            compose.onNodeWithText("Set up your server").assertIsDisplayed()
+        }
+        compose.runOnIdle {
+            model.getApplication<MusicApplication>().serverConfig.set("https://music.example.com")
+        }
+        repeat(3) {
+            compose.onNodeWithText("Sign in with passkey").assertIsDisplayed()
+            pressBackWithoutLeavingApp()
+            compose.onNodeWithText("Sign in with passkey").assertIsDisplayed()
+        }
     }
 
     @Test fun landscapeLibrarySongSelectionOpensNowPlaying() {
@@ -364,9 +386,25 @@ class LandscapeUiTest {
             assertEquals(pane.top, playerTab.top)
         }
         assertLibrary()
+        repeat(3) {
+            pressBackWithoutLeavingApp()
+            assertLibrary()
+        }
         compose.onNodeWithContentDescription("Playback position").assertDoesNotExist()
         compose.runOnIdle { state.value = playback }
         compose.onNodeWithContentDescription("Playback position").assertIsDisplayed()
+        assertLibrary()
+        repeat(3) {
+            pressBackWithoutLeavingApp()
+            assertLibrary()
+            compose.onNodeWithContentDescription("Playback position").assertIsDisplayed()
+        }
+        compose.onNodeWithContentDescription("Search").performClick()
+        compose.onNodeWithText("Search your music").performTextInput("First")
+        pressBackWithoutLeavingApp()
+        compose.onNodeWithText("Search your music").assertDoesNotExist()
+        compose.runOnIdle { assertEquals("", model.library.search) }
+        pressBackWithoutLeavingApp()
         assertLibrary()
         compose.onNodeWithText("First song").performClick()
         compose.onNodeWithTag("now-playing-pane").assertIsDisplayed()
@@ -396,6 +434,22 @@ class LandscapeUiTest {
         compose.onNodeWithContentDescription("Settings").performClick()
         compose.onNodeWithContentDescription("Back").performClick()
         assertLibrary()
+        compose.onNodeWithContentDescription("Settings").performClick()
+        pressBackWithoutLeavingApp()
+        assertLibrary()
+        repeat(3) {
+            pressBackWithoutLeavingApp()
+            assertLibrary()
+        }
+    }
+
+    private fun pressBackWithoutLeavingApp() {
+        compose.runOnIdle {
+            assertTrue("Back must be handled inside the app",
+                compose.activity.onBackPressedDispatcher.hasEnabledCallbacks())
+            compose.activity.onBackPressedDispatcher.onBackPressed()
+            assertFalse(compose.activity.isFinishing)
+        }
     }
 
     private fun assertSplit(leftTag: String, rightTag: String, leftFraction: Float) {

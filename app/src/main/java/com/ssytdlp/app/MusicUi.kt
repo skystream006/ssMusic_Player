@@ -191,7 +191,7 @@ fun MusicApp(model: MusicViewModel, requestNotifications: () -> Unit) {
             else -> 0
         }
     }
-    BackHandler(enabled = account != null && (screen != 0 || playerExpanded), onBack = back)
+    BackHandler(onBack = back)
     var downloadPath by rememberSaveable { mutableStateOf<String?>(null) }
     val saveFile = rememberLauncherForActivityResult(ActivityResultContracts.CreateDocument("application/octet-stream")) { uri ->
         if (uri != null) downloadPath?.let { model.saveDownload(it, uri) }
