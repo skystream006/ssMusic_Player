@@ -264,31 +264,22 @@ fun NowPlayingScreen(model: MusicViewModel, state: PlaybackState, onBack: () -> 
                                 }, text = { Text(title) })
                             }
                         }
+                        val rating: @Composable () -> Unit = {
+                            PlayerRating(model.library.rating(state.track)) { ratingTrack = state.track }
+                        }
                         when (visibleTab) {
                             0 -> PlayerArtwork(state, model.metadata, Modifier.weight(1f), model.playback.controller,
                                 artworkOffset = { artworkOffset }, transcription = model.library.transcription(state.track),
                                 showVisualizer = model.audioVisualizerEnabled, onShowVisualizer = model::chooseAudioVisualizer,
-                                visualizerStyle = model.audioVisualizerStyle, onVisualizerStyle = model::chooseAudioVisualizerStyle) {
+                                visualizerStyle = model.audioVisualizerStyle, onVisualizerStyle = model::chooseAudioVisualizerStyle,
+                                rating = if (landscape) rating else ({})) {
                                 model.playback.play(listOfNotNull(state.track?.noVocalsVersion))
                             }
                             1 -> Lyrics(model, state, Modifier.weight(1f), showUslt,
                                 toggleSource = if (hasSylt && hasUslt) ({ preferUslt = !preferUslt }) else null)
                             else -> queue(Modifier.weight(1f))
                         }
-                        if (visibleTab == 0) {
-                            val rating = model.library.rating(state.track)
-                            Row(Modifier.align(Alignment.CenterHorizontally)
-                                .clickable(role = Role.Button, onClickLabel = "Rate song") { ratingTrack = state.track }
-                                .heightIn(min = 48.dp).padding(horizontal = 12.dp).clearAndSetSemantics {
-                                    contentDescription = "Rating: $rating out of 5"
-                                }, verticalAlignment = Alignment.CenterVertically,
-                                horizontalArrangement = Arrangement.spacedBy(4.dp)) {
-                                (1..5).forEach { star ->
-                                    Icon(if (rating >= star) Icons.Rounded.Star else Icons.Rounded.StarBorder,
-                                        null, Modifier.size(24.dp), tint = MaterialTheme.colorScheme.primary)
-                                }
-                            }
-                        }
+                        if (visibleTab == 0 && !landscape) rating()
                         PlayerTransport(state, model.playback::seek, model.playback::previous, model.playback::toggle,
                             model.playback::next, model.playback::shuffle, model.playback::repeat, compact = landscape)
                     }
@@ -462,7 +453,8 @@ internal fun PlayerArtwork(state: PlaybackState, metadata: SongMetadata?, modifi
     controller: MediaController? = null, artworkOffset: () -> Float = { 0f },
     transcription: Transcription? = null, showVisualizer: Boolean = false,
     onShowVisualizer: (Boolean) -> Unit = {}, visualizerStyle: AudioVisualizerStyle = AudioVisualizerStyle.WAVEFORM,
-    onVisualizerStyle: (AudioVisualizerStyle) -> Unit = {}, onInstrumental: () -> Unit = {}) {
+    onVisualizerStyle: (AudioVisualizerStyle) -> Unit = {}, rating: @Composable () -> Unit = {},
+    onInstrumental: () -> Unit = {}) {
     val track = state.track
     val landscape = isLandscape()
     val options: @Composable () -> Unit = {
@@ -525,10 +517,14 @@ internal fun PlayerArtwork(state: PlaybackState, metadata: SongMetadata?, modifi
         Row(Modifier.fillMaxSize(), verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.spacedBy(12.dp)) {
             visual(Modifier.size(visualSize).testTag("landscape-player-artwork"))
-            Column(Modifier.weight(1f).fillMaxHeight().verticalScroll(rememberScrollState()),
+            Column(Modifier.weight(1f).fillMaxHeight(),
                 horizontalAlignment = Alignment.CenterHorizontally) {
-                options()
-                details()
+                Column(Modifier.weight(1f).verticalScroll(rememberScrollState()),
+                    horizontalAlignment = Alignment.CenterHorizontally) {
+                    options()
+                    details()
+                }
+                rating()
             }
         }
     } else Column(modifier.fillMaxWidth().verticalScroll(rememberScrollState()).padding(horizontal = 28.dp, vertical = 24.dp),
@@ -538,6 +534,22 @@ internal fun PlayerArtwork(state: PlaybackState, metadata: SongMetadata?, modifi
             else Modifier.widthIn(max = 320.dp).fillMaxWidth().aspectRatio(1f))
         Spacer(Modifier.height(28.dp))
         details()
+    }
+}
+
+@Composable
+private fun PlayerRating(rating: Int, onClick: () -> Unit) {
+    Box(Modifier.fillMaxWidth(), contentAlignment = Alignment.Center) {
+        Row(Modifier.clickable(role = Role.Button, onClickLabel = "Rate song", onClick = onClick)
+            .heightIn(min = 48.dp).padding(horizontal = 12.dp).clearAndSetSemantics {
+                contentDescription = "Rating: $rating out of 5"
+            }, verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+            (1..5).forEach { star ->
+                Icon(if (rating >= star) Icons.Rounded.Star else Icons.Rounded.StarBorder,
+                    null, Modifier.size(24.dp), tint = MaterialTheme.colorScheme.primary)
+            }
+        }
     }
 }
 
