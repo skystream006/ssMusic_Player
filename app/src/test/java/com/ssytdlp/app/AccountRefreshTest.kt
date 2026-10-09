@@ -272,6 +272,101 @@ class AccountRefreshTest {
         assertNull(model.notice)
     }
 
+    @Test fun playerStarsSaveOnlyRatingAndClearWithoutOpeningADialogOrChangingPlayback() {
+        val track = Track("job", "song.mp3", title = "Song", rating = 3)
+        val next = track.copy(name = "next.mp3", title = "Next song", rating = 1)
+        val original = SongMetadata(title = "Song", artist = "Artist", album = "Album", genre = "Pop",
+            year = "2026", rating = 3, sylt = listOf(LyricLine(1.5, "Timed lyrics")), uslt = "Plain lyrics",
+            transcriptionLocked = true, canEdit = true)
+        val saved = AtomicReference(original)
+        val path = "/api/jobs/job/files/song.mp3/metadata"
+        val nextPath = "/api/jobs/job/files/next.mp3/metadata"
+        val model = startModel(track) { request ->
+            when (request.requestUrl!!.encodedPath) {
+                "/api/library" -> MockResponse().setBody(ApiJson.encodeToString(
+                    Library(jobs = listOf(Job("job", initiatedBy = account.user)))))
+                songPath(track, "lyrics") -> MockResponse().setBody(ApiJson.encodeToString(original))
+                songPath(next, "lyrics") -> MockResponse().setBody(ApiJson.encodeToString(original.copy(rating = 1)))
+                path, nextPath -> metadataResponse(saved.get())
+                "/api/library/tracks" -> MockResponse().setBody(ApiJson.encodeToString(
+                    if (request.requestUrl!!.queryParameter("page") == "2")
+                        TrackPage(files = listOf(Track("other", "other.mp3")), page = 2)
+                    else TrackPage(files = listOf(track))))
+                else -> null
+            }
+        }
+        showTrack(model, track)
+        val playback = PlaybackState(track = track, queue = listOf(track, next), position = 42_000, duration = 60_000)
+        setPlayback(model, playback)
+        compose.setContent {
+            MusicTheme { NowPlayingScreen(model, model.playback.state.collectAsState().value) { _, _ -> } }
+        }
+        // Browse another page so the original playback snapshot must use the saved rating cache.
+        compose.runOnUiThread { model.page(2) }
+        waitFor { !model.library.loading }
+        drainRequests()
+
+        listOf(5 to 5, 2 to 2, 2 to 0).forEach { (star, rating) ->
+            saved.set(original.copy(rating = rating))
+            compose.onNodeWithContentDescription("$star stars").assertIsEnabled().performClick()
+            waitFor { model.library.rating(track) == rating && !model.busy && !model.library.loading }
+            compose.onNodeWithContentDescription("Rating: $rating out of 5").assertIsDisplayed()
+            compose.onNode(isDialog()).assertDoesNotExist()
+            compose.onNodeWithText("Save").assertDoesNotExist()
+            compose.onNodeWithText("0:42").assertIsDisplayed()
+            assertEquals(playback, model.playback.state.value)
+            assertEquals(original.copy(rating = rating), model.metadata)
+            assertPatch(drainRequests().single { it.method == "PATCH" }, path, """{"rating":$rating}""")
+        }
+
+        setPlayback(model, playback.copy(track = next, index = 1))
+        waitFor { model.metadata?.rating == 1 }
+        compose.onNodeWithContentDescription("Rating: 1 out of 5").assertIsDisplayed()
+        saved.set(original.copy(rating = 4))
+        compose.onNodeWithContentDescription("4 stars").performClick()
+        waitFor { model.library.rating(next) == 4 && !model.busy && !model.library.loading }
+        assertEquals(0, model.library.rating(track))
+        assertPatch(drainRequests().single { it.method == "PATCH" }, nextPath, """{"rating":4}""")
+    }
+
+    @Test fun failedInlineRatingSaveKeepsPreviousRatingAndAllowsRetry() {
+        val track = Track("job", "song.mp3", rating = 3)
+        val original = SongMetadata(title = "Song", rating = 3, canEdit = true)
+        val status = AtomicInteger(403)
+        val path = "/api/jobs/job/files/song.mp3/metadata"
+        val model = startModel(track) { request ->
+            when (request.requestUrl!!.encodedPath) {
+                "/api/library" -> MockResponse().setBody(ApiJson.encodeToString(
+                    Library(jobs = listOf(Job("job", initiatedBy = account.user)))))
+                songPath(track, "lyrics") -> MockResponse().setBody(ApiJson.encodeToString(original))
+                path -> if (status.get() == 200) metadataResponse(original.copy(rating = 5))
+                    else MockResponse().setResponseCode(status.get()).setBody("""{"error":"Rating denied."}""")
+                "/api/library/tracks" -> MockResponse().setBody(ApiJson.encodeToString(
+                    TrackPage(files = listOf(track.copy(rating = if (status.get() == 200) 5 else 3)))))
+                else -> null
+            }
+        }
+        showTrack(model, track)
+        compose.setContent {
+            MusicTheme { NowPlayingScreen(model, model.playback.state.collectAsState().value) { _, _ -> } }
+        }
+        drainRequests()
+        compose.onNodeWithContentDescription("5 stars").performClick()
+        waitFor { model.notice != null && !model.busy }
+        assertEquals("Rating denied.", model.notice)
+        assertEquals(original, model.metadata)
+        assertEquals(3, model.library.rating(track))
+        compose.onNodeWithContentDescription("Rating: 3 out of 5").assertIsDisplayed()
+        compose.onNode(isDialog()).assertDoesNotExist()
+        assertPatch(drainRequests().single { it.method == "PATCH" }, path, """{"rating":5}""")
+
+        status.set(200)
+        compose.onNodeWithContentDescription("5 stars").assertIsEnabled().performClick()
+        waitFor { model.library.rating(track) == 5 && !model.busy && !model.library.loading }
+        compose.onNodeWithContentDescription("Rating: 5 out of 5").assertIsDisplayed()
+        assertPatch(drainRequests().single { it.method == "PATCH" }, path, """{"rating":5}""")
+    }
+
     @Test fun lockingAndUnlockingPatchMetadataWithoutTranscribingOrLosingPlaybackPermission() {
         val track = Track("job", "song.mp3", title = "Song")
         val original = SongMetadata(title = "Song", artist = "Artist", rating = 2,

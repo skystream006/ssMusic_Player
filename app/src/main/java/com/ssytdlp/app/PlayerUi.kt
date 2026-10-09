@@ -265,7 +265,14 @@ fun NowPlayingScreen(model: MusicViewModel, state: PlaybackState, onBack: () -> 
                             }
                         }
                         val rating: @Composable () -> Unit = {
-                            PlayerRating(model.library.rating(state.track)) { ratingTrack = state.track }
+                            val track = state.track
+                            val canRate = track.name.endsWith(".mp3", true) && metadata?.canEdit == true &&
+                                account?.user?.let { user ->
+                                    !user.isShared && model.library.library.jobs.find { it.id == track.jobId }?.canModify(user) == true
+                                } == true
+                            PlayerRating(model.library.rating(track), enabled = canRate && !model.busy) {
+                                model.saveRating(track, it)
+                            }
                         }
                         when (visibleTab) {
                             0 -> PlayerArtwork(state, model.metadata, Modifier.weight(1f), model.playback.controller,
@@ -540,16 +547,21 @@ internal fun PlayerArtwork(state: PlaybackState, metadata: SongMetadata?, modifi
 }
 
 @Composable
-private fun PlayerRating(rating: Int, onClick: () -> Unit) {
+internal fun PlayerRating(rating: Int, enabled: Boolean, onRating: (Int) -> Unit) {
     Box(Modifier.fillMaxWidth(), contentAlignment = Alignment.Center) {
-        Row(Modifier.clickable(role = Role.Button, onClickLabel = "Rate song", onClick = onClick)
-            .heightIn(min = 48.dp).padding(horizontal = 12.dp).clearAndSetSemantics {
+        Row(Modifier.widthIn(max = 240.dp).fillMaxWidth().semantics {
                 contentDescription = "Rating: $rating out of 5"
-            }, verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+            }, verticalAlignment = Alignment.CenterVertically) {
             (1..5).forEach { star ->
-                Icon(if (rating >= star) Icons.Rounded.Star else Icons.Rounded.StarBorder,
-                    null, Modifier.size(24.dp), tint = MaterialTheme.colorScheme.primary)
+                IconToggleButton(checked = rating >= star, enabled = enabled,
+                    onCheckedChange = { onRating(if (rating == star) 0 else star) },
+                    modifier = Modifier.weight(1f).height(48.dp),
+                    colors = IconButtonDefaults.iconToggleButtonColors(
+                        contentColor = MaterialTheme.colorScheme.primary,
+                        checkedContentColor = MaterialTheme.colorScheme.primary)) {
+                    Icon(if (rating >= star) Icons.Rounded.Star else Icons.Rounded.StarBorder,
+                        "$star stars", Modifier.size(24.dp))
+                }
             }
         }
     }

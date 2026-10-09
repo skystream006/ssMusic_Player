@@ -740,6 +740,14 @@ class MusicViewModel @JvmOverloads constructor(application: Application, private
         refreshTracks()
     }
 
+    fun saveRating(track: Track, rating: Int) = launchAction {
+        require(rating in 0..5) { "Rating must be between 0 and 5." }
+        val updated = patchMetadata(track, json("rating" to rating))
+        library = library.copy(ratings = library.ratings + (track.key to updated.rating))
+        refreshTracks()
+        message("Rating saved.")
+    }
+
     fun saveMetadata(track: Track, value: SongMetadata, transcriptionLocked: Boolean? = null) = launchAction {
         val body = json("title" to value.title, "artist" to value.artist, "album" to value.album,
             "genre" to value.genre, "year" to value.year, "rating" to value.rating)

@@ -175,7 +175,7 @@ class NowPlayingScreenTest {
         compose.onNodeWithTag("landscape-player-artwork").assertIsDisplayed().assertHeightIsAtLeast(1.dp)
         compose.onNodeWithContentDescription("Audio visualizer").performScrollTo().assertIsDisplayed()
         compose.onNodeWithContentDescription("Rating: 3 out of 5").performScrollTo().assertIsDisplayed()
-            .assertHasClickAction()
+            .assertHasNoClickAction()
         compose.onNodeWithContentDescription("Audio visualizer").performScrollTo().assertIsDisplayed()
         compose.onNodeWithContentDescription("Play").assertIsDisplayed()
         compose.onNodeWithContentDescription("Playback position").assertIsDisplayed()
@@ -1113,7 +1113,8 @@ class NowPlayingScreenTest {
                 compose.onNodeWithContentDescription("Transcription locked").assertHasNoClickAction()
                 compose.onNode(hasSetTextAction()).assertDoesNotExist()
                 compose.onNodeWithText("Save").assertDoesNotExist()
-                compose.onNodeWithContentDescription("3 stars").assertDoesNotExist()
+                compose.onNode(hasContentDescription("3 stars") and hasAnyAncestor(isDialog())).assertDoesNotExist()
+                if (location == "Player") compose.onNodeWithContentDescription("3 stars").assertIsNotEnabled()
                 compose.onNodeWithText("Close").performClick()
                 waitForPopupDismissal()
                 compose.onNode(isDialog()).assertDoesNotExist()
@@ -1627,7 +1628,7 @@ class NowPlayingScreenTest {
         val library = ReflectionHelpers.getField<MutableState<LibraryState>>(model, "library\$delegate")
         compose.setContent { MusicTheme { NowPlayingScreen(model, state.value) { _, _ -> } } }
         val rating = compose.onNodeWithContentDescription("Rating: 4 out of 5")
-            .assertIsDisplayed().assertHasClickAction().getUnclippedBoundsInRoot()
+            .assertIsDisplayed().assertHasNoClickAction().getUnclippedBoundsInRoot()
         val progress = compose.onNodeWithContentDescription("Playback position").getUnclippedBoundsInRoot()
         assertTrue(rating.bottom <= progress.top)
         assertTrue(rating.bottom - rating.top >= 48.dp)
@@ -1637,7 +1638,7 @@ class NowPlayingScreenTest {
             library.value = library.value.copy(ratings = mapOf(track.key to 0))
                 .withTrackPage(TrackPage(files = listOf(Track("other", "other.mp3"))))
         }
-        compose.onNodeWithContentDescription("Rating: 0 out of 5").assertIsDisplayed().assertHasClickAction()
+        compose.onNodeWithContentDescription("Rating: 0 out of 5").assertIsDisplayed().assertHasNoClickAction()
         compose.onNodeWithText("Lyrics").performClick()
         compose.onNodeWithContentDescription("Rating: 0 out of 5").assertDoesNotExist()
         compose.onNodeWithText("Queue").performClick()
@@ -1661,9 +1662,10 @@ class NowPlayingScreenTest {
                 duration = 60_000)) { _, _ -> } }
         }
         val rating = compose.onNode(hasContentDescription("Rating: 3 out of 5") and
-            hasAnyAncestor(hasTestTag("now-playing-pane"))).assertIsDisplayed().assertHasClickAction()
+            hasAnyAncestor(hasTestTag("now-playing-pane"))).assertIsDisplayed().assertHasNoClickAction()
         val progress = compose.onNodeWithContentDescription("Playback position").assertIsDisplayed()
         assertTrue(rating.getUnclippedBoundsInRoot().bottom <= progress.getUnclippedBoundsInRoot().top)
+        (1..5).forEach { compose.onNodeWithContentDescription("$it stars").assertIsDisplayed() }
         compose.onNodeWithContentDescription("Play").assertIsDisplayed()
         compose.onNode(hasContentDescription("Rating: 3 out of 5") and
             hasAnyAncestor(hasTestTag("now-playing-queue-pane"))).assertIsDisplayed()
@@ -1672,54 +1674,39 @@ class NowPlayingScreenTest {
         compose.onAllNodesWithContentDescription("Rating: 3 out of 5").assertCountEquals(1)
     }
 
-    @Test
-    @Config(qualifiers = "w320dp-h800dp")
-    fun playerRatingOpensEditorForCurrentSongAndAllowsChangingAndClearing() {
-        val track = Track("source", "song.mp3", rating = 3)
-        val state = PlaybackState(track = track, queue = listOf(track), position = 42_000, duration = 60_000)
-        val account = ReflectionHelpers.getField<MutableStateFlow<Account?>>(model.sessions, "mutableAccount")
-        val library = ReflectionHelpers.getField<MutableState<LibraryState>>(model, "library\$delegate")
-        val busy = ReflectionHelpers.getField<MutableState<Boolean>>(model, "busy\$delegate")
-        val requests = metadataResponses { 200 to ApiJson.encodeToString(SongMetadata(rating = 3, canEdit = true)) }
-        compose.runOnIdle {
-            account.value = Account("https://music.example", User(id = "owner"), Session("test", "2099-01-01T00:00:00Z"))
-            library.value = LibraryState(library = Library(jobs = listOf(Job("source", initiatedBy = account.value!!.user))))
+    @Test fun playerRatingStarsSelectAndClearDirectly() {
+        val rating = mutableStateOf(3)
+        val enabled = mutableStateOf(true)
+        val changes = mutableListOf<Int>()
+        compose.setContent {
+            MusicTheme {
+                PlayerRating(rating.value, enabled.value) { changes.add(it); rating.value = it }
+            }
         }
-        compose.setContent { MusicTheme { NowPlayingScreen(model, state) { _, _ -> } } }
-        compose.onNodeWithContentDescription("Rating: 3 out of 5").performClick()
-        compose.waitUntil(5_000) { compose.onAllNodesWithText("Rating: 3 / 5").fetchSemanticsNodes().isNotEmpty() }
-        compose.onAllNodes(isDialog()).assertCountEquals(1)
-        compose.onNodeWithText("Rate song").assertIsDisplayed()
-        compose.onNode(hasSetTextAction()).assertDoesNotExist()
-        compose.onNodeWithContentDescription("5 stars").performClick().assertIsOn()
-        compose.onNodeWithText("Rating: 5 / 5").assertIsDisplayed()
-        compose.onNodeWithContentDescription("5 stars").performClick().assertIsOff()
-        compose.onNodeWithText("Rating: 0 / 5").assertIsDisplayed()
-        compose.onNodeWithText("Save").assertIsEnabled()
-        compose.runOnIdle { busy.value = true }
-        compose.onNodeWithText("Save").assertIsNotEnabled()
-        compose.onNodeWithContentDescription("4 stars").assertIsNotEnabled()
-        compose.runOnIdle { busy.value = false }
-        compose.onNodeWithText("Cancel").performClick()
-        compose.onNode(isDialog()).assertDoesNotExist()
-        compose.onNodeWithContentDescription("Rating: 3 out of 5").assertIsDisplayed()
-        compose.onNodeWithText("0:42").assertIsDisplayed()
-        compose.runOnIdle {
-            assertEquals(listOf(songPath(track, "lyrics")), requests.map { it.url.encodedPath })
-            assertTrue(requests.all { it.method == "GET" })
+        listOf(5, 2, 1, 4, 3).forEach { value ->
+            compose.onNodeWithContentDescription("$value stars").performClick().assertIsOn()
+            compose.onNodeWithContentDescription("Rating: $value out of 5").assertIsDisplayed()
+            (1..5).forEach { star ->
+                val node = compose.onNodeWithContentDescription("$star stars")
+                    .assertIsDisplayed().assertHeightIsAtLeast(48.dp).assertWidthIsAtLeast(48.dp)
+                if (star <= value) node.assertIsOn() else node.assertIsOff()
+            }
+            compose.onNodeWithContentDescription("$value stars").performClick().assertIsOff()
+            compose.onNodeWithContentDescription("Rating: 0 out of 5").assertIsDisplayed()
+            compose.onNode(isDialog()).assertDoesNotExist()
         }
+        compose.runOnIdle { enabled.value = false }
+        (1..5).forEach { compose.onNodeWithContentDescription("$it stars").assertIsNotEnabled().performClick() }
+        compose.runOnIdle { assertEquals(listOf(5, 0, 2, 0, 1, 0, 4, 0, 3, 0), changes) }
     }
 
-    @Test
-    @Config(qualifiers = "w320dp-h800dp")
-    fun playerRatingHonorsSharedServerAndFileEditingRestrictions() {
+    @Test fun playerRatingHonorsSharedServerAndFileEditingRestrictions() {
         val track = mutableStateOf(Track("source", "song.mp3", rating = 3))
         val account = ReflectionHelpers.getField<MutableStateFlow<Account?>>(model.sessions, "mutableAccount")
         val library = ReflectionHelpers.getField<MutableState<LibraryState>>(model, "library\$delegate")
-        var serverCanEdit = true
-        val requests = metadataResponses {
-            200 to ApiJson.encodeToString(SongMetadata(rating = 3, canEdit = serverCanEdit))
-        }
+        val metadata = ReflectionHelpers.getField<MutableState<SongMetadata?>>(model, "metadata\$delegate")
+        val busy = ReflectionHelpers.getField<MutableState<Boolean>>(model, "busy\$delegate")
+        val requests = metadataResponses { 500 to "{}" }
         compose.setContent { MusicTheme { NowPlayingScreen(model, PlaybackState(track = track.value)) { _, _ -> } } }
         listOf(Triple(User("owner", role = "Shared"), "song.mp3", true),
             Triple(User("owner"), "song.mp3", false),
@@ -1729,20 +1716,23 @@ class NowPlayingScreenTest {
                 account.value = Account("https://music.example", user, Session("test", "2099-01-01T00:00:00Z"))
                 library.value = LibraryState(library = Library(jobs = listOf(Job("source", initiatedBy = User("owner")))))
                 track.value = track.value.copy(name = name)
-                serverCanEdit = canEdit
+                metadata.value = SongMetadata(rating = 3, canEdit = canEdit)
             }
-            compose.onNodeWithContentDescription("Rating: 3 out of 5").assertIsDisplayed().performClick()
-            compose.waitUntil(5_000) { compose.onAllNodesWithText("Rating: 3 / 5").fetchSemanticsNodes().isNotEmpty() }
-            compose.onNodeWithText("Song rating").assertIsDisplayed()
+            compose.onNodeWithContentDescription("Rating: 3 out of 5").assertIsDisplayed()
+            (1..5).forEach { compose.onNodeWithContentDescription("$it stars").assertIsNotEnabled().performClick() }
             compose.onNodeWithText("Save").assertDoesNotExist()
-            compose.onNodeWithContentDescription("3 stars").assertDoesNotExist()
-            compose.onNodeWithText("Close").performClick()
             compose.onNode(isDialog()).assertDoesNotExist()
         }
         compose.runOnIdle {
-            assertEquals(4, requests.size)
-            assertTrue(requests.all { it.method == "GET" })
+            track.value = track.value.copy(name = "song.mp3")
+            metadata.value = null
         }
+        compose.onNodeWithContentDescription("3 stars").assertIsNotEnabled()
+        compose.runOnIdle { metadata.value = SongMetadata(canEdit = true) }
+        compose.onNodeWithContentDescription("3 stars").assertIsEnabled()
+        compose.runOnIdle { busy.value = true }
+        compose.onNodeWithContentDescription("3 stars").assertIsNotEnabled()
+        compose.runOnIdle { assertTrue(requests.isEmpty()) }
     }
 
     @Test fun queueRatingOpensOnlyOneDialogAndCanBeDismissed() {
