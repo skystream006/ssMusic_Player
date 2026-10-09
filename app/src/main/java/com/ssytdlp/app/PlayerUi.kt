@@ -52,6 +52,7 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.painterResource
+import androidx.compose.ui.semantics.clearAndSetSemantics
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.heading
 import androidx.compose.ui.semantics.Role
@@ -273,6 +274,20 @@ fun NowPlayingScreen(model: MusicViewModel, state: PlaybackState, onBack: () -> 
                             1 -> Lyrics(model, state, Modifier.weight(1f), showUslt,
                                 toggleSource = if (hasSylt && hasUslt) ({ preferUslt = !preferUslt }) else null)
                             else -> queue(Modifier.weight(1f))
+                        }
+                        if (visibleTab == 0) {
+                            val rating = model.library.rating(state.track)
+                            Row(Modifier.align(Alignment.CenterHorizontally)
+                                .clickable(role = Role.Button, onClickLabel = "Rate song") { ratingTrack = state.track }
+                                .heightIn(min = 48.dp).padding(horizontal = 12.dp).clearAndSetSemantics {
+                                    contentDescription = "Rating: $rating out of 5"
+                                }, verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                                (1..5).forEach { star ->
+                                    Icon(if (rating >= star) Icons.Rounded.Star else Icons.Rounded.StarBorder,
+                                        null, Modifier.size(24.dp), tint = MaterialTheme.colorScheme.primary)
+                                }
+                            }
                         }
                         PlayerTransport(state, model.playback::seek, model.playback::previous, model.playback::toggle,
                             model.playback::next, model.playback::shuffle, model.playback::repeat, compact = landscape)
