@@ -116,6 +116,7 @@ internal data class PlaylistEditTarget(val id: String, val account: Account)
 private data class MetadataSelection(val owner: MetadataOwner, val identity: MetadataIdentity)
 private data class MetadataUpdate(val selection: MetadataSelection, val canEdit: Boolean?)
 private data class MetadataLoad(val owner: MetadataOwner?, val track: Track?, val generation: Long)
+private data class SongReorder(val track: Track, val target: Track, val after: Boolean, val before: LibraryState)
 private data class MetadataPrefetch(
     val current: MetadataSelection, val selection: MetadataSelection, val track: Track, val queue: List<Track>,
     val index: Int, val repeat: Int, val generation: Long
@@ -178,6 +179,10 @@ class MusicViewModel @JvmOverloads constructor(application: Application, private
     val serverOrigin = app.serverConfig.origin
     private var trackRequest: CoroutineJob? = null
     private var operation: CoroutineJob? = null
+    private var reorderRequest: CoroutineJob? = null
+    private val pendingReorders = ArrayDeque<SongReorder>()
+    internal var recoveringSongOrder by mutableStateOf(false)
+        private set
     private val accountRefresh = Mutex()
     private val transcriptionPoll = Mutex()
     private var transcriptionGeneration = 0L
@@ -194,6 +199,10 @@ class MusicViewModel @JvmOverloads constructor(application: Application, private
             sessions.account.distinctUntilChangedBy { account ->
                 account?.let { Triple(it.origin, it.user.id, it.session) }
             }.collectLatest { account ->
+                reorderRequest?.cancel()
+                pendingReorders.clear()
+                recoveringSongOrder = false
+                transcriptionGeneration++
                 playlistSaveResult = null
                 playlistEditTarget = null
                 playlistReloadRequired = false
@@ -437,6 +446,7 @@ class MusicViewModel @JvmOverloads constructor(application: Application, private
         trackRequest = viewModelScope.launch {
             library = library.copy(loading = true)
             try {
+                reorderRequest?.join()
                 if (debounce) delay(300)
                 val result = api.trackPage(library)
                 acceptTrackPage(result)
@@ -486,7 +496,7 @@ class MusicViewModel @JvmOverloads constructor(application: Application, private
             val selection = library
             val request = trackRequest
             var refreshedKeys = emptySet<String>()
-            if (!selection.loading) runAction {
+            if (!selection.loading && reorderRequest?.isActive != true) runAction {
                 val result = api.trackPage(selection)
                 if (sessions.account.value == account && generation == transcriptionGeneration &&
                     trackRequest === request) {
@@ -590,8 +600,70 @@ class MusicViewModel @JvmOverloads constructor(application: Application, private
         put("keys", buildJsonArray { add(track.key) })
     })
 
-    fun reorder(track: Track, target: Track, after: Boolean) = mutate("/api/library/songs/reorder", json(
-        "jobId" to track.jobId, "name" to track.name, "playlistId" to track.playlistId, "target" to target.key, "after" to after))
+    fun reorder(track: Track, target: Track, after: Boolean) {
+        val account = sessions.account.value ?: return
+        val before = library
+        if (busy || recoveringSongOrder || account.user.isShared || before.loading || before.search.isNotEmpty() ||
+            before.selectedId == null || track.playlistId != before.selectedId || target.playlistId != before.selectedId ||
+            track.name.startsWith("[NoVocals]/", true) != target.name.startsWith("[NoVocals]/", true)) return
+        val files = before.tracks.files.toMutableList()
+        val from = files.indexOfFirst { it.key == track.key }
+        if (from < 0 || track.key == target.key) return
+        val moved = files.removeAt(from)
+        val to = files.indexOfFirst { it.key == target.key }
+        if (to < 0) return
+        files.add(to + if (after) 1 else 0, moved)
+        if (files == before.tracks.files) return
+        pendingReorders.addLast(SongReorder(moved, target, after, before))
+        transcriptionGeneration++
+        library = before.copy(tracks = before.tracks.copy(files = files))
+        if (reorderRequest?.isActive == true) return
+        reorderRequest = viewModelScope.launch {
+            try {
+                while (pendingReorders.isNotEmpty() && sameAccount(account)) {
+                    val move = pendingReorders.first()
+                    try {
+                        val result = api.request("/api/library/songs/reorder", "POST", json(
+                            "jobId" to move.track.jobId, "name" to move.track.name, "playlistId" to move.track.playlistId,
+                            "target" to move.target.key, "after" to move.after, "version" to library.library.version))
+                        if (!sameAccount(account)) return@launch
+                        val version = (result as? JsonObject)?.get("version")?.jsonPrimitive?.longOrNull
+                        if (version != null) library = library.copy(library = library.library.copy(version = version))
+                        else loadLibrary()
+                        pendingReorders.removeFirst()
+                        transcriptionGeneration++
+                    } catch (error: Exception) {
+                        if (error is CancellationException) throw error
+                        if (!sameAccount(account)) return@launch
+                        pendingReorders.clear()
+                        recoveringSongOrder = true
+                        transcriptionGeneration++
+                        val previous = move.before
+                        if (library.selectedId == previous.selectedId && library.search == previous.search &&
+                            library.page == previous.page) {
+                            val positions = previous.tracks.files.mapIndexed { index, file -> file.key to index }.toMap()
+                            library = library.copy(tracks = library.tracks.copy(
+                                files = library.tracks.files.sortedBy { positions[it.key] ?: Int.MAX_VALUE }))
+                        }
+                        message("Unable to save song order: ${error.message ?: "Unable to contact the server."}")
+                        // A conflict or lost response may have changed the server order. Reconcile without a loading UI.
+                        try {
+                            loadLibrary()
+                            val selection = library
+                            val request = trackRequest
+                            val result = api.trackPage(selection)
+                            if (sameAccount(account) && trackRequest === request) acceptTrackPage(result)
+                        } catch (refreshError: Exception) {
+                            if (refreshError is CancellationException) throw refreshError
+                        }
+                        return@launch
+                    }
+                }
+            } finally {
+                if (sameAccount(account)) recoveringSongOrder = false
+            }
+        }
+    }
 
     fun remove(track: Track) = mutate("/api/library/songs/remove", json(
         "jobId" to track.jobId, "name" to track.name, "playlistId" to track.playlistId)) { result ->
@@ -953,8 +1025,20 @@ class MusicViewModel @JvmOverloads constructor(application: Application, private
 
     fun launchAction(block: suspend () -> Unit) {
         if (busy) return
+        val account = sessions.account.value
         busy = true
-        operation = viewModelScope.launch { try { runAction(block) } finally { busy = false } }
+        operation = viewModelScope.launch {
+            try {
+                reorderRequest?.join()
+                if (sameAccount(account)) runAction(block)
+            } finally { busy = false }
+        }
+    }
+
+    private fun sameAccount(account: Account?): Boolean {
+        val current = sessions.account.value
+        return current?.origin == account?.origin && current?.user?.id == account?.user?.id &&
+            current?.session == account?.session
     }
 
     fun cancelOperation() {

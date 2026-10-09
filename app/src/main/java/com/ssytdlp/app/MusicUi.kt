@@ -334,7 +334,7 @@ fun LibraryScreen(model: MusicViewModel, playback: PlaybackState, onPlay: (Int) 
         LibraryContent(model.library, playback, onPlay = onPlay, onPage = model::page,
             browsing = browsing,
             artwork = { rememberTrackArtwork(it, model.api, account) },
-            onReorder = if (model.busy || account?.user?.isShared != false) null
+            onReorder = if (model.busy || model.recoveringSongOrder || account?.user?.isShared != false) null
                 else { track, target, after -> model.reorder(track, target, after) },
             onRating = { ratingTrack = it }) { track, index -> TrackMenu(model, track, index, download = download) }
     }
