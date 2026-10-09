@@ -117,10 +117,7 @@ class PlaybackConnection(
     }
     fun move(from: Int, to: Int, expectedQueue: List<Track> = state.value.queue) {
         controller?.let { player ->
-            if (from != to && from in expectedQueue.indices && to in expectedQueue.indices && player.matchesQueue(expectedQueue)) {
-                player.moveMediaItem(from, to)
-                snapshot()
-            }
+            if (player.moveQueueItem(from, to, expectedQueue)) snapshot()
         }
     }
     fun replaceFile(file: Track) {
@@ -151,6 +148,14 @@ class PlaybackConnection(
 
 internal fun Player.matchesQueue(queue: List<Track>): Boolean =
     mediaItemCount == queue.size && queue.indices.all { getMediaItemAt(it).asTrack() == queue[it] }
+
+internal fun Player.moveQueueItem(from: Int, to: Int, expectedQueue: List<Track>): Boolean {
+    if (from == to || from !in expectedQueue.indices || to !in expectedQueue.indices || !matchesQueue(expectedQueue)) return false
+    // Manual ordering takes precedence over Media3's separate shuffle order.
+    shuffleModeEnabled = false
+    moveMediaItem(from, to)
+    return true
+}
 
 internal fun Player.replaceSongFile(file: Track, api: ServerApi) {
     val current = currentMediaItem?.asTrack()
