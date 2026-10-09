@@ -213,6 +213,9 @@ where permitted, without opening Now Playing or changing playback.
 Track ratings remain visible even at zero; tap the star beside a track's menu
 or queue controls to open **Rate song**. Saving uses the existing MP3 editing
 permissions. Tap the selected star again to clear a rating, then **Save**.
+On the Player tab, tap the stars above the progress bar to save a rating directly,
+without a dialog. Tap the selected star again to clear it. These stars are read-only
+when MP3 editing is not permitted and disabled while a change is saving.
 
 Shared accounts can choose **View song metadata** (the info icon) from a Library
 song's options or the Now Playing three-dot menu. For audio in their granted libraries,
