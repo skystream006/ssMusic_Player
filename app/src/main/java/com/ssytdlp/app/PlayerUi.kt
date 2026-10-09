@@ -514,6 +514,7 @@ internal fun PlayerArtwork(state: PlaybackState, metadata: SongMetadata?, modifi
     }
     if (landscape) BoxWithConstraints(modifier.fillMaxWidth().padding(8.dp)) {
         val visualSize = minOf(maxHeight, maxWidth * 0.4f, 200.dp)
+        val scrollRating = maxHeight < 96.dp
         Row(Modifier.fillMaxSize(), verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.spacedBy(12.dp)) {
             visual(Modifier.size(visualSize).testTag("landscape-player-artwork"))
@@ -523,8 +524,9 @@ internal fun PlayerArtwork(state: PlaybackState, metadata: SongMetadata?, modifi
                     horizontalAlignment = Alignment.CenterHorizontally) {
                     options()
                     details()
+                    if (scrollRating) rating()
                 }
-                rating()
+                if (!scrollRating) rating()
             }
         }
     } else Column(modifier.fillMaxWidth().verticalScroll(rememberScrollState()).padding(horizontal = 28.dp, vertical = 24.dp),

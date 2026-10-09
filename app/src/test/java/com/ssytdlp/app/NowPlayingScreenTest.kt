@@ -11,6 +11,7 @@ import androidx.activity.ComponentActivity
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.height
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.MaterialTheme
@@ -158,6 +159,26 @@ class NowPlayingScreenTest {
         compose.onAllNodes(isSongHeading).assertCountEquals(0)
         compose.onNodeWithText("Your queue").assertIsDisplayed()
         compose.onNodeWithContentDescription("More song actions").assertDoesNotExist()
+    }
+
+    @Test
+    @Config(qualifiers = "w800dp-h360dp-land")
+    fun playerRatingKeepsShortLandscapeDetailsScrollable() {
+        val track = Track("preview", "song.mp3", rating = 3)
+        compose.setContent {
+            MusicTheme {
+                Box(Modifier.height(200.dp)) {
+                    NowPlayingScreen(model, PlaybackState(track = track, duration = 60_000)) { _, _ -> }
+                }
+            }
+        }
+        compose.onNodeWithTag("landscape-player-artwork").assertIsDisplayed().assertHeightIsAtLeast(1.dp)
+        compose.onNodeWithContentDescription("Audio visualizer").performScrollTo().assertIsDisplayed()
+        compose.onNodeWithContentDescription("Rating: 3 out of 5").performScrollTo().assertIsDisplayed()
+            .assertHasClickAction()
+        compose.onNodeWithContentDescription("Audio visualizer").performScrollTo().assertIsDisplayed()
+        compose.onNodeWithContentDescription("Play").assertIsDisplayed()
+        compose.onNodeWithContentDescription("Playback position").assertIsDisplayed()
     }
 
     @Test
