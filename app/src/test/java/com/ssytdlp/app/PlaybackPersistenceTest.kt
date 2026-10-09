@@ -6,6 +6,7 @@ import android.os.Looper
 import androidx.media3.common.Player
 import androidx.media3.common.util.UnstableApi
 import androidx.media3.exoplayer.ExoPlayer
+import androidx.media3.exoplayer.source.ShuffleOrder
 import androidx.test.core.app.ApplicationProvider
 import com.ssytdlp.app.core.Account
 import com.ssytdlp.app.core.Session
@@ -116,6 +117,71 @@ class PlaybackPersistenceTest {
         assertEquals(listOf(first, first, second), store.playback(account)!!.queue)
         assertFalse(player.matchesQueue(queue))
         assertTrue(player.matchesQueue(listOf(first, first, second)))
+    }
+
+    @Test fun `moving a song in a new queue makes playback follow the displayed order`() {
+        attach()
+        player.setMediaItems(listOf(second.toMediaItem(api)))
+        player.shuffleModeEnabled = true
+        val third = first.copy(name = "third.mp3", streamUrl = "/api/stream/third.mp3")
+        val fourth = first.copy(name = "fourth.mp3", streamUrl = "/api/stream/fourth.mp3")
+        val playlist = listOf(first, second, third, fourth)
+        player.setMediaItems(playlist.map { it.toMediaItem(api) }, 0, 42_000)
+        player.setShuffleOrder(ShuffleOrder.DefaultShuffleOrder(intArrayOf(0, 2, 1, 3), 0L))
+        player.repeatMode = Player.REPEAT_MODE_ALL
+        player.playWhenReady = true
+
+        assertTrue(player.moveQueueItem(3, 1, playlist))
+        flushEvents()
+        val reordered = listOf(first, fourth, second, third)
+        assertTrue(player.matchesQueue(reordered))
+        assertEquals(first, player.currentMediaItem!!.asTrack())
+        assertEquals(42_000L, player.currentPosition)
+        assertTrue(player.playWhenReady)
+        for (index in 1..3) {
+            assertEquals(index, player.currentTimeline.getNextWindowIndex(
+                player.currentMediaItemIndex, player.repeatMode, player.shuffleModeEnabled))
+            player.seekToNextMediaItem()
+            assertEquals(reordered[index], player.currentMediaItem!!.asTrack())
+        }
+        player.seekToPreviousMediaItem()
+        assertEquals(second, player.currentMediaItem!!.asTrack())
+        assertFalse(player.shuffleModeEnabled)
+        assertEquals(Player.REPEAT_MODE_ALL, player.repeatMode)
+        flushEvents()
+        assertEquals(reordered, store.playback(account)!!.queue)
+        assertFalse(store.playback(account)!!.shuffle)
+    }
+
+    @Test fun `queue moves keep the selected duplicate and position without resuming playback`() {
+        attach()
+        val queue = listOf(first, second, first)
+        player.setMediaItems(queue.map { it.toMediaItem(api) }, 2, 42_000)
+        player.repeatMode = Player.REPEAT_MODE_ONE
+
+        assertTrue(player.moveQueueItem(2, 0, queue))
+        flushEvents()
+        assertEquals(0, player.currentMediaItemIndex)
+        assertEquals(42_000L, player.currentPosition)
+        assertFalse(player.playWhenReady)
+        assertEquals(Player.REPEAT_MODE_ONE, player.repeatMode)
+        assertEquals(SavedPlayback(listOf(first, first, second), 0, 42_000,
+            repeat = Player.REPEAT_MODE_ONE), store.playback(account))
+    }
+
+    @Test fun `stale invalid and unchanged queue moves leave playback and shuffle alone`() {
+        val queue = listOf(first, second, first)
+        player.setMediaItems(queue.map { it.toMediaItem(api) }, 2, 42_000)
+        player.shuffleModeEnabled = true
+
+        assertFalse(player.moveQueueItem(2, 0, listOf(first, first, second)))
+        assertFalse(player.moveQueueItem(-1, 0, queue))
+        assertFalse(player.moveQueueItem(0, queue.size, queue))
+        assertFalse(player.moveQueueItem(2, 2, queue))
+        assertTrue(player.matchesQueue(queue))
+        assertEquals(2, player.currentMediaItemIndex)
+        assertEquals(42_000L, player.currentPosition)
+        assertTrue(player.shuffleModeEnabled)
     }
 
     @Test fun `reconnection never replaces or rewinds a live queue`() {
