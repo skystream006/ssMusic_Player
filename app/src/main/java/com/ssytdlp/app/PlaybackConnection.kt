@@ -151,6 +151,8 @@ internal fun Player.matchesQueue(queue: List<Track>): Boolean =
 
 internal fun Player.moveQueueItem(from: Int, to: Int, expectedQueue: List<Track>): Boolean {
     if (from == to || from !in expectedQueue.indices || to !in expectedQueue.indices || !matchesQueue(expectedQueue)) return false
+    // Manual ordering takes precedence over Media3's separate shuffle order.
+    shuffleModeEnabled = false
     moveMediaItem(from, to)
     return true
 }

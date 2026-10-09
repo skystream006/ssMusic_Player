@@ -294,6 +294,8 @@ and **Remove from queue**, instead of a separate close button. Queue menus omit
 reordering; removing a queued song does not change its playlist membership.
 Drag a song's handle up or down to reorder the queue or an unfiltered playlist
 page in Library. Hold near the list's top or bottom to scroll while dragging.
+Manually reordering the queue turns shuffle off so playback follows the displayed
+order, without restarting the current song or changing the source playlist.
 Library dragging stays within the song's regular or expanded NoVocals group;
 it is unavailable in All Music, folders, search results, and read-only libraries.
 The three-dot menus no longer contain **Move up** or **Move down**; accessible

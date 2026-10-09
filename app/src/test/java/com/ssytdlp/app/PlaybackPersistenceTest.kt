@@ -107,13 +107,15 @@ class PlaybackPersistenceTest {
         val queue = listOf(first, second, first)
         player.setMediaItems(queue.map { it.toMediaItem(api) }, 2, 42_000)
         player.playWhenReady = true
+        player.shuffleModeEnabled = true
         assertTrue(player.matchesQueue(queue))
 
-        player.moveMediaItem(2, 0)
+        assertTrue(player.moveQueueItem(2, 0, queue))
         flushEvents()
         assertEquals(0, player.currentMediaItemIndex)
         assertEquals(42_000L, player.currentPosition)
         assertTrue(player.playWhenReady)
+        assertFalse(player.shuffleModeEnabled)
         assertEquals(listOf(first, first, second), store.playback(account)!!.queue)
         assertFalse(player.matchesQueue(queue))
         assertTrue(player.matchesQueue(listOf(first, first, second)))
@@ -151,6 +153,21 @@ class PlaybackPersistenceTest {
         flushEvents()
         assertEquals(reordered, store.playback(account)!!.queue)
         assertFalse(store.playback(account)!!.shuffle)
+    }
+
+    @Test fun `moving an upcoming song down changes next track without changing the source playlist`() {
+        val third = first.copy(name = "third.mp3", streamUrl = "/api/stream/third.mp3")
+        val playlist = listOf(first, second, third)
+        player.setMediaItems(playlist.map { it.toMediaItem(api) }, 0, 42_000)
+
+        assertTrue(player.moveQueueItem(1, 2, playlist))
+        assertEquals(listOf(first, second, third), playlist)
+        assertTrue(player.matchesQueue(listOf(first, third, second)))
+        assertEquals(42_000L, player.currentPosition)
+        player.seekToNextMediaItem()
+        assertEquals(third, player.currentMediaItem!!.asTrack())
+        player.seekToNextMediaItem()
+        assertEquals(second, player.currentMediaItem!!.asTrack())
     }
 
     @Test fun `queue moves keep the selected duplicate and position without resuming playback`() {
