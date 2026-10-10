@@ -23,10 +23,14 @@ import com.ssytdlp.app.core.*
 import java.security.Provider
 import java.security.Security
 import java.util.Collections
+import java.util.concurrent.CountDownLatch
+import java.util.concurrent.TimeUnit
 import java.util.concurrent.atomic.AtomicBoolean
+import java.util.concurrent.atomic.AtomicInteger
 import java.util.concurrent.atomic.AtomicReference
 import kotlinx.coroutines.cancel
 import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.launch
 import kotlinx.serialization.encodeToString
 import kotlinx.serialization.json.*
 import okhttp3.OkHttpClient
@@ -454,18 +458,25 @@ class PlaylistEditingTest {
 
     @Test fun songReorderSendsMembershipTargetAndVersionAndRefreshesAfterConflicts() {
         val conflict = AtomicBoolean(false)
-        startModel { request ->
-            if (request.url.encodedPath == "/api/library/songs/reorder") {
-                if (conflict.get()) {
-                    catalog.set(catalog.get().copy(version = 20))
-                    409 to """{"error":"Library changed. Refresh and try again."}"""
-                } else 200 to "{}"
-            } else null
-        }
         val source = Track(job.id, "folder/first.mp3", playlistId = entry.id)
         val target = Track("another job", "last.mp3", playlistId = entry.id)
+        val songs = listOf(source, target)
+        startModel { request ->
+            when (request.url.encodedPath) {
+                "/api/library/tracks" -> 200 to ApiJson.encodeToString(TrackPage(files = songs))
+                "/api/library/songs/reorder" -> if (conflict.get()) {
+                        catalog.set(catalog.get().copy(version = 20))
+                        409 to """{"error":"Library changed. Refresh and try again."}"""
+                    } else {
+                        catalog.set(catalog.get().copy(version = catalog.get().version + 1))
+                        200 to json("version" to catalog.get().version).toString()
+                    }
+                else -> null
+            }
+        }
+        showSongs(songs)
         compose.runOnUiThread { model.reorder(source, target, true) }
-        waitFor { !model.busy && !model.library.loading }
+        waitFor { model.library.library.version == 8L }
         val sent = body(requests.single { it.method == "POST" })
         assertEquals(source.jobId, sent.getValue("jobId").jsonPrimitive.content)
         assertEquals(source.name, sent.getValue("name").jsonPrimitive.content)
@@ -473,22 +484,370 @@ class PlaylistEditingTest {
         assertEquals(target.key, sent.getValue("target").jsonPrimitive.content)
         assertTrue(sent.getValue("after").jsonPrimitive.boolean)
         assertEquals(7, sent.getValue("version").jsonPrimitive.int)
-        assertEquals(listOf("/api/library/songs/reorder", "/api/library", "/api/library/tracks"),
-            requests.map { it.url.encodedPath })
+        assertEquals(listOf("/api/library/songs/reorder"), requests.map { it.url.encodedPath })
+        assertEquals(listOf(target, source), model.library.tracks.files)
 
         requests.clear()
         conflict.set(true)
-        compose.runOnUiThread { model.reorder(target, source, false) }
-        waitFor { !model.busy && !model.library.loading }
+        compose.runOnUiThread { model.reorder(target, source, true) }
+        waitFor { model.notice != null && !model.recoveringSongOrder }
         assertEquals(20L, model.library.library.version)
         assertTrue(model.notice.orEmpty().contains("Library changed"))
+        assertFalse(model.library.loading)
+        assertFalse(model.busy)
+        assertEquals(songs, model.library.tracks.files)
+        assertEquals(listOf("/api/library/songs/reorder", "/api/library", "/api/library/tracks"),
+            requests.map { it.url.encodedPath })
         requests.clear()
         conflict.set(false)
         compose.runOnUiThread { model.reorder(target, source, false) }
-        waitFor { !model.busy && !model.library.loading }
+        waitFor { model.library.library.version == 21L }
         val retried = body(requests.single { it.method == "POST" })
         assertEquals(20, retried.getValue("version").jsonPrimitive.int)
         assertFalse(retried.getValue("after").jsonPrimitive.boolean)
+    }
+
+    @Test fun songReordersUpdateLocallyWhileRequestsAreSerializedWithoutReloading() {
+        val release = CountDownLatch(1)
+        val songs = reorderSongs()
+        val saves = AtomicInteger()
+        startModel { request ->
+            if (request.url.encodedPath == "/api/library/songs/reorder") {
+                val number = saves.incrementAndGet()
+                if (number == 1) check(release.await(10, TimeUnit.SECONDS))
+                200 to json("version" to 7 + number).toString()
+            } else null
+        }
+        showSongs(songs)
+        try {
+            compose.runOnUiThread {
+                model.reorder(songs[0], songs[2], true)
+                assertEquals(listOf(songs[1], songs[2], songs[0]), model.library.tracks.files)
+                model.reorder(songs[1], songs[0], true)
+                assertEquals(listOf(songs[2], songs[0], songs[1]), model.library.tracks.files)
+                assertFalse(model.busy)
+                assertFalse(model.library.loading)
+            }
+            waitFor { saves.get() == 1 }
+            var played: Track? = null
+            compose.setContent { MusicTheme {
+                LibraryContent(model.library, PlaybackState(connected = true),
+                    onPlay = { played = model.library.tracks.files[it] }, onPage = {},
+                    onReorder = model::reorder) { _, _ -> }
+            } }
+            compose.onNodeWithContentDescription("Drag to reorder Song c").assertIsEnabled()
+            compose.onNodeWithText("Song c").performClick()
+            assertEquals(songs[2], played)
+        } finally { release.countDown() }
+        waitFor { model.library.library.version == 9L }
+        assertEquals(listOf(songs[2], songs[0], songs[1]), model.library.tracks.files)
+        assertEquals(listOf(7L, 8L), requests.map { body(it).getValue("version").jsonPrimitive.long })
+        assertTrue(requests.all { it.url.encodedPath == "/api/library/songs/reorder" })
+        assertEquals(3, model.library.page)
+        assertEquals(5, model.library.tracks.totalPages)
+        assertEquals(entry.id, model.library.selectedId)
+    }
+
+    @Test fun failedQueuedSongMoveRollsBackUnsavedMovesWithoutReplacingMetadata() {
+        val release = CountDownLatch(1)
+        val songs = reorderSongs()
+        val confirmed = listOf(songs[1], songs[2], songs[0])
+        val saves = AtomicInteger()
+        startModel { request ->
+            when (request.url.encodedPath) {
+                "/api/library/songs/reorder" -> if (saves.incrementAndGet() == 1) {
+                    200 to """{"version":8}"""
+                } else {
+                    check(release.await(10, TimeUnit.SECONDS))
+                    503 to """{"error":"Save failed"}"""
+                }
+                "/api/library" -> if (saves.get() > 1) 503 to "{}" else null
+                else -> null
+            }
+        }
+        showSongs(songs)
+        compose.runOnUiThread { model.reorder(songs[0], songs[2], true) }
+        waitFor { model.library.library.version == 8L }
+        try {
+            compose.runOnUiThread {
+                model.reorder(songs[1], songs[0], true)
+                model.reorder(songs[2], songs[1], true)
+                state.value = model.library.copy(ratings = mapOf(songs[0].key to 5))
+            }
+            waitFor { saves.get() == 2 }
+        } finally { release.countDown() }
+        waitFor { model.notice != null && !model.recoveringSongOrder }
+        assertEquals(confirmed, model.library.tracks.files)
+        assertEquals(5, model.library.rating(songs[0]))
+        assertEquals(2, saves.get())
+        assertTrue(model.notice.orEmpty().contains("Save failed"))
+        assertFalse(model.library.loading)
+        assertFalse(model.busy)
+    }
+
+    @Test fun emptyReorderResponseRefreshesVersionWithoutReloadingSongs() {
+        val songs = reorderSongs()
+        startModel { request ->
+            if (request.url.encodedPath == "/api/library/songs/reorder") {
+                catalog.set(catalog.get().copy(version = 8))
+                200 to "{}"
+            } else null
+        }
+        showSongs(songs)
+        compose.runOnUiThread { model.reorder(songs[0], songs[2], true) }
+        waitFor { model.library.library.version == 8L }
+        assertEquals(listOf(songs[1], songs[2], songs[0]), model.library.tracks.files)
+        assertEquals(listOf("/api/library/songs/reorder", "/api/library"), requests.map { it.url.encodedPath })
+        assertFalse(model.library.loading)
+        assertFalse(model.busy)
+    }
+
+    @Test fun movingAndLinkingSongsSaveWithoutBlockingAndReconcilePageMembership() {
+        val release = AtomicReference(CountDownLatch(1))
+        val songs = reorderSongs()
+        val serverFiles = AtomicReference(songs)
+        startModel { request ->
+            when (request.url.encodedPath) {
+                "/api/library/songs/transfer" -> {
+                    check(release.get().await(10, TimeUnit.SECONDS))
+                    if (body(request).getValue("action").jsonPrimitive.content == "move")
+                        serverFiles.set(songs.drop(1))
+                    catalog.set(catalog.get().copy(version = catalog.get().version + 1))
+                    200 to "{}"
+                }
+                "/api/library/tracks" -> 200 to ApiJson.encodeToString(
+                    TrackPage(files = serverFiles.get(), page = 3, total = serverFiles.get().size, totalPages = 5))
+                else -> null
+            }
+        }
+        for (link in listOf(false, true)) {
+            serverFiles.set(songs)
+            showSongs(songs)
+            requests.clear()
+            release.set(CountDownLatch(1))
+            val version = model.library.library.version
+            try {
+                compose.runOnUiThread {
+                    model.transfer(songs.first(), "destination", link)
+                    assertEquals(if (link) songs else songs.drop(1), model.library.tracks.files)
+                    assertTrue(model.songBusy(songs.first()))
+                    assertFalse(model.songBusy(songs.last()))
+                    assertFalse(model.busy)
+                    assertFalse(model.library.loading)
+                }
+                waitFor { requests.any { it.method == "POST" } }
+            } finally { release.get().countDown() }
+            waitFor { model.pendingSongs.isEmpty() &&
+                ReflectionHelpers.getField<kotlinx.coroutines.Job?>(model, "trackRequest")?.isActive != true }
+            val sent = requests.single { it.method == "POST" }
+            assertEquals(json("action" to if (link) "link" else "move",
+                "sourcePlaylistId" to entry.id, "playlistId" to "destination",
+                "version" to version) + ("keys" to buildJsonArray { add(songs.first().key) }), body(sent))
+            assertEquals(serverFiles.get(), model.library.tracks.files)
+            assertEquals(version + 1, model.library.library.version)
+            assertEquals(3, model.library.page)
+            assertFalse(model.library.loading)
+        }
+    }
+
+    @Test fun otherLibraryMutationsWaitForTheSavedSongOrderVersion() {
+        val release = CountDownLatch(1)
+        val started = AtomicBoolean(false)
+        val songs = reorderSongs()
+        startModel { request ->
+            if (request.url.encodedPath == "/api/library/songs/reorder") {
+                started.set(true)
+                check(release.await(10, TimeUnit.SECONDS))
+                catalog.set(catalog.get().copy(version = 8))
+                200 to """{"version":8}"""
+            } else null
+        }
+        showSongs(songs)
+        try {
+            compose.runOnUiThread {
+                model.reorder(songs[0], songs[2], true)
+                model.createFolder("New folder", null)
+            }
+            waitFor { started.get() }
+            assertEquals(1, requests.size)
+        } finally { release.countDown() }
+        waitFor { !model.busy && !model.library.loading }
+        val mutation = requests.single { it.url.encodedPath == "/api/library/entries" }
+        assertEquals(8, body(mutation).getValue("version").jsonPrimitive.int)
+    }
+
+    @Test fun staleTranscriptionPollCannotUndoSavedSongOrder() {
+        val release = CountDownLatch(1)
+        val polling = AtomicBoolean(false)
+        val started = AtomicBoolean(false)
+        val songs = reorderSongs()
+        startModel { request ->
+            when {
+                request.url.encodedPath == "/api/library/tracks" && polling.get() -> {
+                    started.set(true)
+                    check(release.await(10, TimeUnit.SECONDS))
+                    200 to ApiJson.encodeToString(TrackPage(files = songs, page = 3))
+                }
+                request.url.encodedPath == "/api/library/songs/reorder" -> 200 to """{"version":8}"""
+                else -> null
+            }
+        }
+        showSongs(songs)
+        var finished = false
+        try {
+            polling.set(true)
+            compose.runOnUiThread {
+                model.viewModelScope.launch { model.pollTranscriptions(); finished = true }
+            }
+            waitFor { started.get() }
+            compose.runOnUiThread { model.reorder(songs[0], songs[2], true) }
+            waitFor { model.library.library.version == 8L }
+        } finally { release.countDown() }
+        waitFor { finished }
+        assertEquals(listOf(songs[1], songs[2], songs[0]), model.library.tracks.files)
+        assertFalse(model.library.loading)
+    }
+
+    @Test fun navigatingDuringSongSaveLoadsOnlyTheNewPageAfterSaving() {
+        val release = CountDownLatch(1)
+        val started = AtomicBoolean(false)
+        val songs = reorderSongs()
+        val next = songs[0].copy(name = "next.mp3")
+        startModel { request ->
+            when {
+                request.url.encodedPath == "/api/library/songs/reorder" -> {
+                    started.set(true)
+                    check(release.await(10, TimeUnit.SECONDS))
+                    200 to """{"version":8}"""
+                }
+                request.url.queryParameter("page") == "4" ->
+                    200 to ApiJson.encodeToString(TrackPage(files = listOf(next), page = 4, totalPages = 5))
+                else -> null
+            }
+        }
+        showSongs(songs)
+        try {
+            compose.runOnUiThread { model.reorder(songs[0], songs[2], true); model.page(4) }
+            waitFor { started.get() }
+            assertTrue(model.library.loading)
+            assertEquals(1, requests.size)
+        } finally { release.countDown() }
+        waitFor { !model.library.loading }
+        assertEquals(4, model.library.page)
+        assertEquals(listOf(next), model.library.tracks.files)
+        assertEquals(listOf("/api/library/songs/reorder", "/api/library/tracks"),
+            requests.map { it.url.encodedPath })
+    }
+
+    @Test fun quietRefreshWaitsForAReorderThatStartedAfterItsFirstRead() {
+        val readRelease = CountDownLatch(1)
+        val saveRelease = CountDownLatch(1)
+        val reads = AtomicInteger()
+        val reading = AtomicBoolean(false)
+        val saving = AtomicBoolean(false)
+        val songs = reorderSongs()
+        val order = AtomicReference(songs)
+        startModel { request ->
+            when {
+                request.url.encodedPath == "/api/library/tracks" && reading.get() -> {
+                    val files = order.get()
+                    reads.incrementAndGet()
+                    check(readRelease.await(10, TimeUnit.SECONDS))
+                    200 to ApiJson.encodeToString(TrackPage(files = files, page = 3))
+                }
+                request.url.encodedPath == "/api/library/songs/reorder" -> {
+                    saving.set(true)
+                    check(saveRelease.await(10, TimeUnit.SECONDS))
+                    order.set(listOf(songs[1], songs[2], songs[0]))
+                    200 to """{"version":8}"""
+                }
+                else -> null
+            }
+        }
+        showSongs(songs)
+        try {
+            reading.set(true)
+            compose.runOnUiThread { model.refreshTracks(background = true) }
+            waitFor { reads.get() == 1 }
+            compose.runOnUiThread { model.reorder(songs[0], songs[2], true) }
+            waitFor { saving.get() }
+            readRelease.countDown()
+            val settled = System.nanoTime() + TimeUnit.MILLISECONDS.toNanos(200)
+            waitFor { System.nanoTime() >= settled }
+            compose.runOnIdle {
+                assertEquals(1, reads.get())
+                assertEquals(listOf(songs[1], songs[2], songs[0]), model.library.tracks.files)
+                assertFalse(model.library.loading)
+            }
+        } finally { readRelease.countDown(); saveRelease.countDown() }
+        waitFor { model.library.library.version == 8L &&
+            ReflectionHelpers.getField<kotlinx.coroutines.Job?>(model, "trackRequest")?.isActive != true }
+        assertEquals(order.get(), model.library.tracks.files)
+        assertEquals(2, reads.get())
+        assertFalse(model.library.loading)
+    }
+
+    @Test fun signingOutDiscardsQueuedReordersAndTheirLateResponses() {
+        val release = CountDownLatch(1)
+        val started = AtomicBoolean(false)
+        val finished = AtomicBoolean(false)
+        val songs = reorderSongs()
+        startModel { request ->
+            if (request.url.encodedPath == "/api/library/songs/reorder") {
+                started.set(true)
+                check(release.await(10, TimeUnit.SECONDS))
+                finished.set(true)
+                200 to """{"version":8}"""
+            } else null
+        }
+        showSongs(songs)
+        try {
+            compose.runOnUiThread {
+                model.reorder(songs[0], songs[2], true)
+                model.reorder(songs[1], songs[0], true)
+            }
+            waitFor { started.get() }
+            compose.runOnUiThread { account.value = null }
+            waitFor { model.library.tracks.files.isEmpty() }
+        } finally { release.countDown() }
+        waitFor { finished.get() }
+        compose.runOnIdle { assertEquals(LibraryState(), model.library) }
+        assertEquals(1, requests.size)
+        assertNull(model.notice)
+    }
+
+    @Test fun invalidOrReadOnlyReordersDoNotChangeLocalStateOrSendRequests() {
+        startModel()
+        val songs = reorderSongs()
+        showSongs(songs)
+        compose.runOnUiThread {
+            model.reorder(songs[0], songs[0], true)
+            model.reorder(songs[0], songs[1], false)
+            model.reorder(songs[0], songs[1].copy(playlistId = "other"), true)
+            model.reorder(songs[0], songs[1].copy(name = "[NoVocals]/b.mp3"), true)
+            model.reorder(songs[0].copy(name = "missing.mp3"), songs[1], true)
+            model.reorder(songs[0], songs[1].copy(name = "missing.mp3"), true)
+            state.value = model.library.copy(search = "song")
+            model.reorder(songs[0], songs[2], true)
+            state.value = model.library.copy(search = "", loading = true)
+            model.reorder(songs[0], songs[2], true)
+            state.value = model.library.copy(loading = false)
+            account.value = testAccount(owner.copy(role = "shared"))
+            model.reorder(songs[0], songs[2], true)
+        }
+        assertEquals(songs, model.library.tracks.files)
+        assertTrue(requests.isEmpty())
+    }
+
+    private fun reorderSongs() = listOf("a", "b", "c").map {
+        Track(job.id, "$it.mp3", title = "Song $it", playlistId = entry.id)
+    }
+
+    private fun showSongs(songs: List<Track>) {
+        compose.runOnUiThread {
+            state.value = model.library.copy(selectedId = entry.id, page = 3,
+                tracks = TrackPage(files = songs, page = 3, totalPages = 5))
+        }
     }
 
     private fun startModel(user: User = owner, response: (Request) -> Pair<Int, String>? = { null }) {

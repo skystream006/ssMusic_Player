@@ -265,7 +265,7 @@ class LyricsEditorDialogTest {
         }
     }
 
-    @Test fun busyDisablesEditingSwitchingSavingAndCancelButRetainsDraftForRetry() {
+    @Test fun busyDisablesEditingSwitchingAndSavingButAllowsBackgroundWorkAndRetainsDraft() {
         show(preferUslt = true)
         compose.onNodeWithTag("uslt-editor").performTextReplacement("Draft")
         compose.runOnIdle { busy.value = true }
@@ -274,7 +274,7 @@ class LyricsEditorDialogTest {
         compose.onNodeWithText("USLT").assertIsNotEnabled()
         compose.onNodeWithText("Clear USLT").performScrollTo().assertIsNotEnabled()
         compose.onNodeWithText("Saving...").assertIsNotEnabled().performClick()
-        compose.onNodeWithText("Cancel").assertIsNotEnabled().performClick()
+        compose.onNodeWithText("Continue in background").assertIsEnabled()
         compose.onNode(isDialog()).assertIsDisplayed()
         compose.runOnIdle {
             assertTrue(requests.isEmpty())
@@ -284,6 +284,13 @@ class LyricsEditorDialogTest {
         compose.onNodeWithTag("uslt-editor").assertIsEnabled().assertTextContains("Draft")
         compose.onNodeWithText("Save").assertIsEnabled().performClick()
         compose.runOnIdle { assertEquals(setOf("uslt"), requests.single().keys) }
+    }
+
+    @Test fun savingCanContinueAfterDismissingTheEditor() {
+        show(preferUslt = true)
+        compose.runOnIdle { busy.value = true }
+        compose.onNodeWithText("Continue in background").assertIsEnabled().performClick()
+        compose.runOnIdle { assertEquals(1, dismissals) }
     }
 
     @Test fun draftsAndSelectedModeSurviveStateRestoration() {

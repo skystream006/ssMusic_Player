@@ -50,7 +50,7 @@ internal fun ReplaceFileDialog(model: MusicViewModel, track: Track, dismiss: () 
             error = failure.message ?: "Cannot read the selected file."
         }
     }
-    ReplaceFileDialog(track, document?.name, error, model.busy, dismiss,
+    ReplaceFileDialog(track, document?.name, error, model.songBusy(track), dismiss,
         choose = { picker.launch(arrayOf("audio/*", "application/octet-stream")) },
         replace = { document?.let { model.replaceFile(track, it.uri, dismiss) } })
 }
@@ -58,7 +58,7 @@ internal fun ReplaceFileDialog(model: MusicViewModel, track: Track, dismiss: () 
 @Composable
 internal fun ReplaceFileDialog(track: Track, filename: String?, error: String?, busy: Boolean,
     dismiss: () -> Unit, choose: () -> Unit, replace: () -> Unit) {
-    AlertDialog(onDismissRequest = { if (!busy) dismiss() }, title = { Text("Replace File") }, text = {
+    AlertDialog(onDismissRequest = dismiss, title = { Text("Replace File") }, text = {
         Column(Modifier.verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(12.dp)) {
             Text(track.name)
             Text("This permanently overwrites the song, including embedded tags, artwork, ratings, and lyrics, in every playlist that links to it.")
@@ -73,5 +73,5 @@ internal fun ReplaceFileDialog(track: Track, filename: String?, error: String?, 
         }
     }, confirmButton = {
         TextButton(onClick = replace, enabled = filename != null && error == null && !busy) { Text("Replace File") }
-    }, dismissButton = { TextButton(onClick = dismiss, enabled = !busy) { Text("Cancel") } })
+    }, dismissButton = { TextButton(onClick = dismiss) { Text(if (busy) "Continue in background" else "Cancel") } })
 }

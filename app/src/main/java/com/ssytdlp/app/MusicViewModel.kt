@@ -102,6 +102,22 @@ data class LibraryState(
         transcriptionLocks = transcriptionLocks + (file.key to file.transcriptionLocked),
         pendingTranscriptions = pendingTranscriptions - file.key,
         transcriptions = transcriptions + (file.key to null))
+
+    fun withSongMetadata(track: Track, value: SongMetadata): LibraryState {
+        fun update(file: Track): Track = if (file.key == track.key) file.copy(
+            title = value.title, artist = value.artist, album = value.album,
+            rating = value.rating, transcriptionLocked = value.transcriptionLocked)
+        else file.copy(noVocalsVersion = file.noVocalsVersion?.let(::update))
+        return copy(tracks = tracks.copy(files = tracks.files.map(::update)),
+            ratings = ratings + (track.key to value.rating),
+            transcriptionLocks = transcriptionLocks + (track.key to value.transcriptionLocked))
+    }
+
+    fun withoutMembership(track: Track): LibraryState {
+        val files = tracks.files.filterNot { it.key == track.key && it.playlistId == track.playlistId }
+        return copy(tracks = tracks.copy(files = files,
+            total = (tracks.total - (tracks.files.size - files.size)).coerceAtLeast(0)))
+    }
 }
 
 internal fun Track.withReplacedFile(file: Track): Track = when {
@@ -116,6 +132,7 @@ internal data class PlaylistEditTarget(val id: String, val account: Account)
 private data class MetadataSelection(val owner: MetadataOwner, val identity: MetadataIdentity)
 private data class MetadataUpdate(val selection: MetadataSelection, val canEdit: Boolean?)
 private data class MetadataLoad(val owner: MetadataOwner?, val track: Track?, val generation: Long)
+private data class SongReorder(val track: Track, val target: Track, val after: Boolean, val before: LibraryState)
 private data class MetadataPrefetch(
     val current: MetadataSelection, val selection: MetadataSelection, val track: Track, val queue: List<Track>,
     val index: Int, val repeat: Int, val generation: Long
@@ -178,6 +195,16 @@ class MusicViewModel @JvmOverloads constructor(application: Application, private
     val serverOrigin = app.serverConfig.origin
     private var trackRequest: CoroutineJob? = null
     private var operation: CoroutineJob? = null
+    private var reorderRequest: CoroutineJob? = null
+    private val mutations = Mutex()
+    private val songRequests = mutableMapOf<String, CoroutineJob>()
+    private val songPreviews = mutableMapOf<String, (LibraryState) -> LibraryState>()
+    internal var pendingSongs by mutableStateOf<Set<String>>(emptySet())
+        private set
+    internal fun songBusy(track: Track): Boolean = busy || track.key in pendingSongs
+    private val pendingReorders = ArrayDeque<SongReorder>()
+    internal var recoveringSongOrder by mutableStateOf(false)
+        private set
     private val accountRefresh = Mutex()
     private val transcriptionPoll = Mutex()
     private var transcriptionGeneration = 0L
@@ -194,6 +221,14 @@ class MusicViewModel @JvmOverloads constructor(application: Application, private
             sessions.account.distinctUntilChangedBy { account ->
                 account?.let { Triple(it.origin, it.user.id, it.session) }
             }.collectLatest { account ->
+                reorderRequest?.cancel()
+                songRequests.values.toList().forEach { it.cancel() }
+                songRequests.clear()
+                songPreviews.clear()
+                pendingSongs = emptySet()
+                pendingReorders.clear()
+                recoveringSongOrder = false
+                transcriptionGeneration++
                 playlistSaveResult = null
                 playlistEditTarget = null
                 playlistReloadRequired = false
@@ -432,14 +467,22 @@ class MusicViewModel @JvmOverloads constructor(application: Application, private
     fun page(value: Int) { library = library.copy(page = value.coerceAtLeast(1)); refreshTracks() }
     fun refresh() = launchAction { loadLibrary(); refreshTracks(); refreshHealth() }
 
-    fun refreshTracks(debounce: Boolean = false) {
+    fun refreshTracks(debounce: Boolean = false, background: Boolean = false) {
+        val showLoading = !background || library.loading
         trackRequest?.cancel()
         trackRequest = viewModelScope.launch {
-            library = library.copy(loading = true)
+            if (showLoading) library = library.copy(loading = true)
             try {
                 if (debounce) delay(300)
-                val result = api.trackPage(library)
-                acceptTrackPage(result)
+                do {
+                    reorderRequest?.join()
+                    val generation = transcriptionGeneration
+                    val result = api.trackPage(library)
+                    if (generation == transcriptionGeneration && reorderRequest?.isActive != true) {
+                        acceptTrackPage(result)
+                        break
+                    }
+                } while (true)
             } catch (error: Exception) {
                 if (error is CancellationException) throw error
                 message(error.message ?: "Unable to load music.")
@@ -458,6 +501,7 @@ class MusicViewModel @JvmOverloads constructor(application: Application, private
     private fun acceptTrackPage(result: TrackPage) {
         val before = library
         library = library.withTrackPage(result)
+        songPreviews.values.forEach { library = it(library) }
         result.files.forEach { track ->
             val previous = before.tracks.files.find { it.key == track.key }
             if (before.transcriptions.containsKey(track.key) &&
@@ -486,7 +530,7 @@ class MusicViewModel @JvmOverloads constructor(application: Application, private
             val selection = library
             val request = trackRequest
             var refreshedKeys = emptySet<String>()
-            if (!selection.loading) runAction {
+            if (!selection.loading && reorderRequest?.isActive != true && pendingSongs.isEmpty()) runAction {
                 val result = api.trackPage(selection)
                 if (sessions.account.value == account && generation == transcriptionGeneration &&
                     trackRequest === request) {
@@ -583,17 +627,79 @@ class MusicViewModel @JvmOverloads constructor(application: Application, private
     fun moveEntry(entry: LibraryEntry, parentId: String?) = mutate("/api/library/entries", json(
         "action" to "move", "id" to entry.id, "parentId" to parentId, "targetId" to null, "after" to true))
 
-    fun transfer(track: Track, destination: String, link: Boolean) = mutate("/api/library/songs/transfer", buildJsonObject {
+    fun transfer(track: Track, destination: String, link: Boolean) = mutateSong(track, "/api/library/songs/transfer", buildJsonObject {
         put("action", if (link) "link" else "move")
         put("sourcePlaylistId", track.playlistId)
         put("playlistId", destination)
         put("keys", buildJsonArray { add(track.key) })
     })
 
-    fun reorder(track: Track, target: Track, after: Boolean) = mutate("/api/library/songs/reorder", json(
-        "jobId" to track.jobId, "name" to track.name, "playlistId" to track.playlistId, "target" to target.key, "after" to after))
+    fun reorder(track: Track, target: Track, after: Boolean) {
+        val account = sessions.account.value ?: return
+        val before = library
+        if (busy || pendingSongs.isNotEmpty() || recoveringSongOrder || account.user.isShared || before.loading || before.search.isNotEmpty() ||
+            before.selectedId == null || track.playlistId != before.selectedId || target.playlistId != before.selectedId ||
+            track.name.startsWith("[NoVocals]/", true) != target.name.startsWith("[NoVocals]/", true)) return
+        val files = before.tracks.files.toMutableList()
+        val from = files.indexOfFirst { it.key == track.key }
+        if (from < 0 || track.key == target.key) return
+        val moved = files.removeAt(from)
+        val to = files.indexOfFirst { it.key == target.key }
+        if (to < 0) return
+        files.add(to + if (after) 1 else 0, moved)
+        if (files == before.tracks.files) return
+        pendingReorders.addLast(SongReorder(moved, target, after, before))
+        transcriptionGeneration++
+        library = before.copy(tracks = before.tracks.copy(files = files))
+        if (reorderRequest?.isActive == true) return
+        reorderRequest = viewModelScope.launch {
+            mutations.withLock { try {
+                while (pendingReorders.isNotEmpty() && sameAccount(account)) {
+                    val move = pendingReorders.first()
+                    try {
+                        val result = api.request("/api/library/songs/reorder", "POST", json(
+                            "jobId" to move.track.jobId, "name" to move.track.name, "playlistId" to move.track.playlistId,
+                            "target" to move.target.key, "after" to move.after, "version" to library.library.version))
+                        if (!sameAccount(account)) return@launch
+                        val version = (result as? JsonObject)?.get("version")?.jsonPrimitive?.longOrNull
+                        if (version != null) library = library.copy(library = library.library.copy(version = version))
+                        else loadLibrary()
+                        pendingReorders.removeFirst()
+                        transcriptionGeneration++
+                    } catch (error: Exception) {
+                        if (error is CancellationException) throw error
+                        if (!sameAccount(account)) return@launch
+                        pendingReorders.clear()
+                        recoveringSongOrder = true
+                        transcriptionGeneration++
+                        val previous = move.before
+                        if (library.selectedId == previous.selectedId && library.search == previous.search &&
+                            library.page == previous.page) {
+                            val positions = previous.tracks.files.mapIndexed { index, file -> file.key to index }.toMap()
+                            library = library.copy(tracks = library.tracks.copy(
+                                files = library.tracks.files.sortedBy { positions[it.key] ?: Int.MAX_VALUE }))
+                        }
+                        message("Unable to save song order: ${error.message ?: "Unable to contact the server."}")
+                        // A conflict or lost response may have changed the server order. Reconcile without a loading UI.
+                        try {
+                            loadLibrary()
+                            val selection = library
+                            val request = trackRequest
+                            val result = api.trackPage(selection)
+                            if (sameAccount(account) && trackRequest === request) acceptTrackPage(result)
+                        } catch (refreshError: Exception) {
+                            if (refreshError is CancellationException) throw refreshError
+                        }
+                        return@launch
+                    }
+                }
+            } finally {
+                if (sameAccount(account)) recoveringSongOrder = false
+            } }
+        }
+    }
 
-    fun remove(track: Track) = mutate("/api/library/songs/remove", json(
+    fun remove(track: Track) = mutateSong(track, "/api/library/songs/remove", json(
         "jobId" to track.jobId, "name" to track.name, "playlistId" to track.playlistId)) { result ->
         message(if ((result as? JsonObject)?.get("fileDeleted")?.jsonPrimitive?.booleanOrNull == true)
             "Song deleted: ${track.displayTitle} after removing the last playlist link."
@@ -604,22 +710,27 @@ class MusicViewModel @JvmOverloads constructor(application: Application, private
 
     fun songPrivacy(track: Track): FilePrivacy = library.privacy(track, privacyJob(track))
 
-    fun setSongPrivate(track: Track, value: Boolean) = launchAction {
+    fun setSongPrivate(track: Track, value: Boolean) = launchSongAction(track, validate = {
+        require(privacyJob(track)?.let { job ->
+            job.canChangePrivacy(sessions.account.value?.user) && !job.active
+        } == true) { "Only the owner of an idle song can change its privacy." }
+        require(!songPrivacy(track).inherited) { "Change privacy on the source playlist or original song." }
+    }, preview = {
+        it.copy(filePrivacy = it.filePrivacy + (track.key to value))
+    }) {
         val job = privacyJob(track)
         require(job?.canChangePrivacy(sessions.account.value?.user) == true && !job.active) {
             "Only the owner of an idle song can change its privacy."
         }
-        require(!songPrivacy(track).inherited) { "Change privacy on the source playlist or original song." }
         transcriptionGeneration++
-        trackRequest?.cancel()
         val updated = ApiJson.decodeFromJsonElement<Job>(api.request(
             "/api/jobs/${encode(track.jobId)}/files/${encode(track.name)}/privacy", "PATCH", json("private" to value)))
         library = library.copy(privacyJobs = library.privacyJobs + (updated.id to updated),
             filePrivacy = library.filePrivacy + (track.key to value))
         jobs = jobs.map { if (it.id == updated.id) updated else it }
+        commitSongChange(track)
         refreshPrivacyFiles(updated)
         loadLibrary()
-        refreshTracks()
         message(when {
             value -> "Song is private. Only the owner can access it."
             songPrivacy(track).isPrivate -> "Song remains private because it inherits source privacy."
@@ -725,7 +836,6 @@ class MusicViewModel @JvmOverloads constructor(application: Application, private
     private suspend fun refreshPrivacyFiles(job: Job) {
         val result = ApiJson.decodeFromJsonElement<TrackPage>(api.request("/api/jobs/${encode(job.id)}/files"))
         transcriptionGeneration++
-        trackRequest?.cancel()
         library = library.withPrivacyFiles(result.files, job)
     }
 
@@ -740,21 +850,55 @@ class MusicViewModel @JvmOverloads constructor(application: Application, private
         refreshTracks()
     }
 
-    fun saveRating(track: Track, rating: Int) = launchAction {
+    private fun mutateSong(track: Track, path: String, body: JsonObject,
+        onSuccess: (JsonElement) -> Unit = {}) {
+        val removesMembership = path.endsWith("/remove") || body["action"]?.jsonPrimitive?.content == "move"
+        launchSongAction(track, preview = if (removesMembership) ({ it.withoutMembership(track) }) else null,
+            rollback = { current, before ->
+                if (current.selectedId != before.selectedId || current.search != before.search ||
+                    current.page != before.page) current
+                else {
+                    val index = before.tracks.files.indexOfFirst { it.key == track.key && it.playlistId == track.playlistId }
+                    if (index < 0 || current.tracks.files.any { it.key == track.key }) current
+                    else current.copy(tracks = current.tracks.copy(
+                        files = current.tracks.files.toMutableList().apply {
+                            add(index.coerceAtMost(size), before.tracks.files[index])
+                        }, total = current.tracks.total + (before.tracks.total -
+                            before.withoutMembership(track).tracks.total)))
+                }
+            }) {
+            val result = try {
+                api.request(path, "POST", JsonObject(body + ("version" to JsonPrimitive(library.library.version))))
+            } catch (error: ApiException) {
+                if (error.status == 409) {
+                    loadLibrary()
+                    refreshTracks(background = true)
+                }
+                throw error
+            }
+            commitSongChange(track)
+            onSuccess(result)
+            loadLibrary()
+            refreshTracks(background = true)
+        }
+    }
+
+    fun saveRating(track: Track, rating: Int) = launchSongAction(track, preview = {
         require(rating in 0..5) { "Rating must be between 0 and 5." }
-        val updated = patchMetadata(track, json("rating" to rating))
-        library = library.copy(ratings = library.ratings + (track.key to updated.rating))
-        refreshTracks()
+        it.copy(ratings = it.ratings + (track.key to rating))
+    }) {
+        require(rating in 0..5) { "Rating must be between 0 and 5." }
+        patchMetadata(track, json("rating" to rating))
         message("Rating saved.")
     }
 
-    fun saveMetadata(track: Track, value: SongMetadata, transcriptionLocked: Boolean? = null) = launchAction {
+    fun saveMetadata(track: Track, value: SongMetadata, transcriptionLocked: Boolean? = null) = launchSongAction(track,
+        preview = { it.withSongMetadata(track, value.copy(
+            transcriptionLocked = transcriptionLocked ?: it.transcriptionLocked(track))) }) {
         val body = json("title" to value.title, "artist" to value.artist, "album" to value.album,
             "genre" to value.genre, "year" to value.year, "rating" to value.rating)
         patchMetadata(track, if (transcriptionLocked == null) body
             else JsonObject(body + ("transcriptionLocked" to JsonPrimitive(transcriptionLocked))))
-        library = library.copy(ratings = library.ratings + (track.key to value.rating))
-        refreshTracks()
         message("Song information saved.")
     }
 
@@ -767,9 +911,8 @@ class MusicViewModel @JvmOverloads constructor(application: Application, private
                 "/api/jobs/${encode(track.jobId)}/files/${encode(track.name)}/metadata", "PATCH", body))
             require(currentMetadataOwner == update.selection.owner) { "Account changed. Refresh before retrying." }
             updated = result
-            transcriptionGeneration++
-            trackRequest?.cancel()
-            library = library.copy(transcriptionLocks = library.transcriptionLocks + (track.key to result.transcriptionLocked))
+            library = library.withSongMetadata(track, result)
+            commitSongChange(track)
             return result
         } catch (error: Exception) {
             reload = error !is ApiException || error.status !in 400..499
@@ -777,21 +920,21 @@ class MusicViewModel @JvmOverloads constructor(application: Application, private
         } finally { finishMetadataUpdate(update, updated, reload) }
     }
 
-    fun lockTranscription(track: Track, locked: Boolean) = launchAction {
+    fun lockTranscription(track: Track, locked: Boolean) = launchSongAction(track, preview = {
+        it.copy(transcriptionLocks = it.transcriptionLocks + (track.key to locked))
+    }) {
         patchMetadata(track, json("transcriptionLocked" to locked))
-        refreshTracks()
         message(if (locked) "Transcription locked for ${track.displayTitle}." else "Transcription unlocked for ${track.displayTitle}.")
     }
 
-    fun saveLyrics(track: Track, body: JsonObject, onSuccess: () -> Unit) = launchAction {
+    fun saveLyrics(track: Track, body: JsonObject, onSuccess: () -> Unit) = launchSongAction(track) {
         require(body.isNotEmpty() && body.keys.all { it == "sylt" || it == "uslt" }) { "No lyric changes to save." }
         patchMetadata(track, body)
-        refreshTracks()
         message("Lyrics saved.")
         onSuccess()
     }
 
-    fun replaceFile(track: Track, uri: Uri, onSuccess: () -> Unit) = launchAction {
+    fun replaceFile(track: Track, uri: Uri, onSuccess: () -> Unit) = launchSongAction(track) {
         val account = sessions.account.value
         require(canReplaceFile(account?.user,
             library.library.jobs.find { it.id == track.jobId } ?: jobs.find { it.id == track.jobId }, track)) {
@@ -820,10 +963,10 @@ class MusicViewModel @JvmOverloads constructor(application: Application, private
         message("Replaced ${track.displayTitle}.")
         onSuccess()
         loadLibrary()
-        refreshTracks()
+        refreshTracks(background = true)
     }
 
-    fun transcribe(track: Track, options: TranscriptionOptions) = launchAction {
+    fun transcribe(track: Track, options: TranscriptionOptions) = launchSongAction(track, allowShared = true) {
         require(options.noVocalsOnly || !library.transcriptionLocked(track)) { "Transcription is locked for this song." }
         require(transcriptionAvailable) { INACTIVE_TRANSCRIPTION_MESSAGE }
         val body = options.toRequestBody()
@@ -841,12 +984,12 @@ class MusicViewModel @JvmOverloads constructor(application: Application, private
             require(sessions.account.value == account) { "Account changed. Refresh before retrying." }
             acceptTranscriptions(job, listOf(track))
             message(if (options.noVocalsOnly) "NoVocals version generated." else "Transcription complete.")
-            refreshTracks()
+            refreshTracks(background = true)
         } finally {
             finishMetadataUpdate(update, reload = true)
             track.noVocalsVersion?.let { invalidateMetadata(it.key) }
             transcriptionGeneration++
-            library = library.copy(pendingTranscriptions = library.pendingTranscriptions - track.key)
+            if (sameAccount(account)) library = library.copy(pendingTranscriptions = library.pendingTranscriptions - track.key)
             if (account != null && sessions.account.value == account) viewModelScope.launch {
                 if (sessions.account.value == account) pollTranscriptions(listOf(track))
             }
@@ -944,7 +1087,8 @@ class MusicViewModel @JvmOverloads constructor(application: Application, private
 
     fun addJobToPlaylist(job: Job, playlistId: String) = mutate("/api/library/jobs/add", json("jobId" to job.id, "playlistId" to playlistId))
 
-    fun saveDownload(path: String, uri: Uri) = launchAction {
+    fun saveDownload(path: String, uri: Uri) = launchSongAction(
+        Track(name = path), allowShared = true) {
         api.download(path) { input ->
             requireNotNull(getApplication<Application>().contentResolver.openOutputStream(uri, "wt")) { "Cannot open the selected document." }.use { input.copyTo(it) }
         }
@@ -953,8 +1097,84 @@ class MusicViewModel @JvmOverloads constructor(application: Application, private
 
     fun launchAction(block: suspend () -> Unit) {
         if (busy) return
+        val account = sessions.account.value
         busy = true
-        operation = viewModelScope.launch { try { runAction(block) } finally { busy = false } }
+        operation = viewModelScope.launch {
+            try {
+                mutations.withLock { if (sameAccount(account)) runAction(block) }
+            } finally { busy = false }
+        }
+    }
+
+    private fun launchSongAction(track: Track, allowShared: Boolean = false,
+        validate: () -> Unit = {},
+        preview: ((LibraryState) -> LibraryState)? = null,
+        rollback: ((LibraryState, LibraryState) -> LibraryState)? = null, block: suspend () -> Unit) {
+        val account = sessions.account.value ?: return
+        if (songBusy(track)) return
+        if (!allowShared && account.user.isShared) { message("This library is read-only."); return }
+        val before = library
+        try { validate() }
+        catch (error: IllegalArgumentException) { message(error.message ?: "Invalid song change."); return }
+        if (preview != null) {
+            try { library = preview(library) }
+            catch (error: IllegalArgumentException) { message(error.message ?: "Invalid song change."); return }
+            songPreviews[track.key] = preview
+        }
+        pendingSongs = pendingSongs + track.key
+        transcriptionGeneration++
+        val request = viewModelScope.launch {
+            try {
+                mutations.withLock {
+                    if (!sameAccount(account)) return@withLock
+                    runAction {
+                        try {
+                            require(allowShared || sessions.account.value?.user?.isShared == false) {
+                                "This library is read-only."
+                            }
+                            block()
+                        }
+                        catch (error: Exception) {
+                            if (sameAccount(account) && track.key in songPreviews && rollback != null) {
+                                library = rollback(library, before)
+                            } else if (sameAccount(account) && track.key in songPreviews) {
+                                val previous = before.tracks.files.find { it.key == track.key } ?: track
+                                fun restore(file: Track): Track = if (file.key == track.key) file.copy(
+                                    title = previous.title, artist = previous.artist, album = previous.album,
+                                    rating = previous.rating, transcriptionLocked = previous.transcriptionLocked)
+                                else file.copy(noVocalsVersion = file.noVocalsVersion?.let(::restore))
+                                library = library.copy(
+                                    tracks = library.tracks.copy(files = library.tracks.files.map(::restore)),
+                                    ratings = library.ratings - track.key + before.ratings.filterKeys { it == track.key },
+                                    transcriptionLocks = library.transcriptionLocks - track.key +
+                                        before.transcriptionLocks.filterKeys { it == track.key },
+                                    filePrivacy = library.filePrivacy - track.key + before.filePrivacy.filterKeys { it == track.key })
+                            }
+                            throw error
+                        }
+                    }
+                }
+            } finally {
+                if (sameAccount(account)) {
+                    songPreviews.remove(track.key)
+                    pendingSongs = pendingSongs - track.key
+                    songRequests.remove(track.key)
+                    transcriptionGeneration++
+                }
+            }
+        }
+        if (request.isActive) songRequests[track.key] = request
+    }
+
+    private fun commitSongChange(track: Track) {
+        songPreviews.remove(track.key)
+        transcriptionGeneration++
+    }
+
+    private fun sameAccount(account: Account?): Boolean {
+        val current = sessions.account.value
+        return current?.origin == account?.origin && current?.user?.id == account?.user?.id &&
+            current?.session == account?.session
     }
 
     fun cancelOperation() {

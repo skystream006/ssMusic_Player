@@ -134,7 +134,7 @@ fun LyricsEditorDialog(value: SongMetadata, preferUslt: Boolean, busy: Boolean =
     val request = result.getOrNull()?.takeIf { it.isNotEmpty() }
     val error = result.exceptionOrNull()?.message
     val mode = if (editUslt) "USLT" else "SYLT"
-    Dialog(onDismissRequest = { if (!busy) dismiss() },
+    Dialog(onDismissRequest = dismiss,
         properties = DialogProperties(usePlatformDefaultWidth = false, decorFitsSystemWindows = false)) {
         Surface(Modifier.fillMaxSize()) {
             Column(Modifier.fillMaxSize().safeDrawingPadding().imePadding().padding(16.dp),
@@ -177,7 +177,7 @@ fun LyricsEditorDialog(value: SongMetadata, preferUslt: Boolean, busy: Boolean =
                     }
                 }
                 Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
-                    TextButton(enabled = !busy, onClick = { if (!busy) dismiss() }) { Text("Cancel") }
+                    TextButton(onClick = dismiss) { Text(if (busy) "Continue in background" else "Cancel") }
                     TextButton(enabled = !busy && request != null, onClick = { if (!busy) request?.let(save) }) {
                         Text(if (busy) "Saving..." else "Save")
                     }

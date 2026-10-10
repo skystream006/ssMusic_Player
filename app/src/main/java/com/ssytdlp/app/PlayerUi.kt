@@ -270,7 +270,7 @@ fun NowPlayingScreen(model: MusicViewModel, state: PlaybackState, onBack: () -> 
                                 account?.user?.let { user ->
                                     !user.isShared && model.library.library.jobs.find { it.id == track.jobId }?.canModify(user) == true
                                 } == true
-                            PlayerRating(model.library.rating(track), enabled = canRate && !model.busy) {
+                            PlayerRating(model.library.rating(track), enabled = canRate && !model.songBusy(track)) {
                                 model.saveRating(track, it)
                             }
                         }
@@ -306,8 +306,10 @@ fun NowPlayingScreen(model: MusicViewModel, state: PlaybackState, onBack: () -> 
     ratingTrack?.let { track -> MetadataDialog(model, track, ratingOnly = true) { ratingTrack = null } }
     editingLyrics?.takeIf { account?.user?.isShared == false }?.let { (editTrack, editMetadata, editUslt) ->
         key(editTrack.key) {
-            LyricsEditorDialog(editMetadata, editUslt, model.busy, dismiss = { editingLyrics = null }) { changes ->
-                model.saveLyrics(editTrack, changes) { editingLyrics = null }
+            LyricsEditorDialog(editMetadata, editUslt, model.songBusy(editTrack), dismiss = { editingLyrics = null }) { changes ->
+                model.saveLyrics(editTrack, changes) {
+                    if (editingLyrics?.first?.key == editTrack.key) editingLyrics = null
+                }
             }
         }
     }
@@ -368,17 +370,17 @@ private fun SongActionsMenu(model: MusicViewModel, track: Track?, download: (Str
             ToolButton(Icons.Rounded.MoreVert, "More song actions", modifier = Modifier.size(48.dp)) { moreActions = true }
             DropdownMenu(expanded = moreActions, onDismissRequest = { moreActions = false }) {
                 if (editLyrics != null) {
-                    DropdownMenuItem(text = { Text("Edit lyrics") }, enabled = !model.busy,
+                    DropdownMenuItem(text = { Text("Edit lyrics") }, enabled = !model.songBusy(track),
                         leadingIcon = { Icon(Icons.Rounded.EditNote, null) }, onClick = {
                             moreActions = false
                             editLyrics(track)
                         })
                 }
                 if (canEdit) {
-                    DropdownMenuItem(text = { Text("Edit metadata") }, enabled = !model.busy,
+                    DropdownMenuItem(text = { Text("Edit metadata") }, enabled = !model.songBusy(track),
                         leadingIcon = { Icon(Icons.Rounded.Edit, null) },
                         onClick = { moreActions = false; editingTrack = track })
-                    TranscribeMenuItem(model.library.transcriptionLocked(track), model.transcriptionAvailable, model.busy) {
+                    TranscribeMenuItem(model.library.transcriptionLocked(track), model.transcriptionAvailable, model.songBusy(track)) {
                         moreActions = false; transcribe = true
                     }
                 } else if (account?.user?.isShared == true && track.mediaType == "audio") {
@@ -387,13 +389,13 @@ private fun SongActionsMenu(model: MusicViewModel, track: Track?, download: (Str
                         onClick = { moreActions = false; editingTrack = track })
                 }
                 if (canReplaceFile(account?.user, job, track)) {
-                    DropdownMenuItem(text = { Text("Replace File") }, enabled = !model.busy,
+                    DropdownMenuItem(text = { Text("Replace File") }, enabled = !model.songBusy(track),
                         leadingIcon = { Icon(Icons.Rounded.UploadFile, null) },
                         onClick = { moreActions = false; replacingTrack = track })
                 }
                 SongPrivacyMenuItem(model, track) { moreActions = false }
                 if (canShare) {
-                    DropdownMenuItem(text = { Text("Share Media") }, enabled = !model.busy && !model.songPrivacy(track).isPrivate,
+                    DropdownMenuItem(text = { Text("Share Media") }, enabled = !model.songBusy(track) && !model.songPrivacy(track).isPrivate,
                         leadingIcon = { Icon(Icons.Rounded.Share, null) },
                         onClick = { moreActions = false; sharingTrack = track })
                 }
@@ -417,7 +419,9 @@ private fun SongActionsMenu(model: MusicViewModel, track: Track?, download: (Str
     replacingTrack?.let { track ->
         if (canReplaceFile(account?.user,
             model.library.library.jobs.find { it.id == track.jobId } ?: model.jobs.find { it.id == track.jobId }, track)) {
-            ReplaceFileDialog(model, track) { replacingTrack = null }
+            ReplaceFileDialog(model, track) {
+                if (replacingTrack?.key == track.key) replacingTrack = null
+            }
         }
     }
 }
@@ -858,16 +862,16 @@ fun TrackMenu(model: MusicViewModel, track: Track, index: Int, onRemoveFromQueue
             if (!inQueue) DropdownMenuItem(text = { Text("Add to queue") }, leadingIcon = { Icon(Icons.AutoMirrored.Rounded.PlaylistAdd, null) }, onClick = { open = false; model.playback.enqueue(track) })
             DropdownMenuItem(text = { Text("Save file") }, leadingIcon = { Icon(Icons.Rounded.Download, null) }, onClick = { open = false; download(track.downloadUrl ?: songPath(track, "download"), track.name) })
             if (canModify && track.mediaType == "audio") DropdownMenuItem(text = { Text("Share Media") },
-                enabled = !model.busy && !model.songPrivacy(track).isPrivate,
+                enabled = !model.songBusy(track) && !model.songPrivacy(track).isPrivate,
                 leadingIcon = { Icon(Icons.Rounded.Share, null) }, onClick = { open = false; share = true })
             SongPrivacyMenuItem(model, track) { open = false }
             if (canTransfer) {
-                DropdownMenuItem(text = { Text("Add to playlist") }, leadingIcon = { Icon(Icons.Rounded.LibraryAdd, null) }, onClick = { open = false; transfer = "link" })
-                if (!inQueue) DropdownMenuItem(text = { Text("Move to playlist") }, leadingIcon = { Icon(Icons.AutoMirrored.Rounded.DriveFileMove, null) }, onClick = { open = false; transfer = "move" })
+                DropdownMenuItem(text = { Text("Add to playlist") }, enabled = !model.songBusy(track), leadingIcon = { Icon(Icons.Rounded.LibraryAdd, null) }, onClick = { open = false; transfer = "link" })
+                if (!inQueue) DropdownMenuItem(text = { Text("Move to playlist") }, enabled = !model.songBusy(track), leadingIcon = { Icon(Icons.AutoMirrored.Rounded.DriveFileMove, null) }, onClick = { open = false; transfer = "move" })
             }
             if (canModify && track.name.endsWith(".mp3", true)) {
-                DropdownMenuItem(text = { Text("Edit song / rating") }, leadingIcon = { Icon(Icons.Rounded.Edit, null) }, onClick = { open = false; edit = true })
-                TranscribeMenuItem(model.library.transcriptionLocked(track), model.transcriptionAvailable, model.busy) {
+                DropdownMenuItem(text = { Text("Edit song / rating") }, enabled = !model.songBusy(track), leadingIcon = { Icon(Icons.Rounded.Edit, null) }, onClick = { open = false; edit = true })
+                TranscribeMenuItem(model.library.transcriptionLocked(track), model.transcriptionAvailable, model.songBusy(track)) {
                     open = false; transcribe = true
                 }
             } else if (user?.isShared == true && track.mediaType == "audio") {
@@ -875,9 +879,9 @@ fun TrackMenu(model: MusicViewModel, track: Track, index: Int, onRemoveFromQueue
                     onClick = { open = false; edit = true })
             }
             if (canReplace) DropdownMenuItem(text = { Text("Replace File") },
-                leadingIcon = { Icon(Icons.Rounded.UploadFile, null) }, enabled = !model.busy,
+                leadingIcon = { Icon(Icons.Rounded.UploadFile, null) }, enabled = !model.songBusy(track),
                 onClick = { open = false; replace = true })
-            if (!inQueue && canModify && track.playlistId != null) DropdownMenuItem(text = { Text("Remove from playlist") }, leadingIcon = { Icon(Icons.Rounded.DeleteOutline, null) }, onClick = { open = false; remove = true })
+            if (!inQueue && canModify && track.playlistId != null) DropdownMenuItem(text = { Text("Remove from playlist") }, enabled = !model.songBusy(track), leadingIcon = { Icon(Icons.Rounded.DeleteOutline, null) }, onClick = { open = false; remove = true })
             if (onRemoveFromQueue != null) DropdownMenuItem(text = { Text("Remove from queue") },
                 leadingIcon = { Icon(Icons.Rounded.Close, null) }, onClick = { open = false; onRemoveFromQueue() })
         }
@@ -905,7 +909,7 @@ private fun SongPrivacyMenuItem(model: MusicViewModel, track: Track, close: () -
             privacy.isPrivate -> "Make song public"
             else -> "Make song private"
         }) }, leadingIcon = { Icon(if (privacy.isPrivate) Icons.Rounded.Lock else Icons.Rounded.LockOpen, null) },
-            enabled = !model.busy && !job.active && !privacy.inherited, onClick = {
+            enabled = !model.songBusy(track) && !job.active && !privacy.inherited, onClick = {
                 close()
                 model.setSongPrivate(track, !privacy.isPrivate)
             })
@@ -1031,7 +1035,7 @@ fun MetadataDialog(model: MusicViewModel, track: Track, ratingOnly: Boolean = fa
         }
         catch (failure: Exception) { if (failure is kotlinx.coroutines.CancellationException) throw failure; error = failure.message }
     }
-    MetadataDialog(value, { value = it }, error = error, busy = model.busy, ratingOnly = ratingOnly,
+    MetadataDialog(value, { value = it }, error = error, busy = model.songBusy(track), ratingOnly = ratingOnly,
         canEdit = canEdit, dismiss = dismiss) { song ->
         if (canEdit) {
             model.saveMetadata(track, song, song.transcriptionLocked.takeIf { !ratingOnly && it != originalLock })
@@ -1085,7 +1089,7 @@ fun MetadataDialog(value: SongMetadata?, onValueChange: (SongMetadata) -> Unit, 
 
 @Composable
 fun TranscribeDialog(model: MusicViewModel, track: Track, dismiss: () -> Unit) {
-    TranscribeDialog(dismiss, { options -> model.transcribe(track, options); dismiss() }, model.busy,
+    TranscribeDialog(dismiss, { options -> model.transcribe(track, options); dismiss() }, model.songBusy(track),
         available = model.transcriptionAvailable, lock = { model.lockTranscription(track, it); dismiss() },
         transcriptionLocked = model.library.transcriptionLocked(track))
 }
