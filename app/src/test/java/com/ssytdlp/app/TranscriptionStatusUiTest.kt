@@ -247,6 +247,8 @@ class TranscriptionStatusUiTest {
         Transcription(status = "sent") to "Transcription request sent",
         Transcription(status = "transcribed") to "AI Transcribed",
         Transcription(status = "transcribed", lyricsIncluded = true) to "Lyrics Included",
+        Transcription(status = "transcribed", options = SavedTranscriptionOptions(noVocalsOnly = true)) to
+            "No-vocals version generated",
         Transcription(status = "failed") to "Transcription failed",
         Transcription(status = "interrupted") to "Interrupted",
         Transcription(status = "processing") to "Transcription status unknown",
