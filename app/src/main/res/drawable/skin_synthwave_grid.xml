@@ -1,0 +1,49 @@
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:aapt="http://schemas.android.com/aapt"
+    android:width="480dp" android:height="960dp"
+    android:viewportWidth="480" android:viewportHeight="960">
+    <path android:pathData="M0,0H480V960H0Z">
+        <aapt:attr name="android:fillColor">
+            <gradient android:startX="0" android:startY="0" android:endX="0" android:endY="960" android:type="linear">
+                <item android:offset="0" android:color="#100D30" />
+                <item android:offset="0.42" android:color="#54205F" />
+                <item android:offset="0.68" android:color="#A33479" />
+                <item android:offset="1" android:color="#120E30" />
+            </gradient>
+        </aapt:attr>
+    </path>
+    <path android:fillColor="#BDCBFF" android:pathData="M43,97h3v3h-3Z M117,185h2v2h-2Z M209,70h3v3h-3Z M322,136h2v2h-2Z M432,88h3v3h-3Z M372,256h2v2h-2Z M53,321h2v2h-2Z M280,223h2v2h-2Z" />
+    <path android:pathData="M20,455a220,220 0,1 0,440 0a220,220 0,1 0,-440 0">
+        <aapt:attr name="android:fillColor">
+            <gradient android:centerX="240" android:centerY="455" android:gradientRadius="220" android:type="radial">
+                <item android:offset="0" android:color="#99F65F9B" />
+                <item android:offset="1" android:color="#00F65F9B" />
+            </gradient>
+        </aapt:attr>
+    </path>
+    <path android:pathData="M130,425a110,110 0,0 1,220 0Z M130,433H350Q349,444 347,451H133Q131,444 130,433Z M136,461H344Q341,472 336,481H144Q139,472 136,461Z M152,494H328Q321,505 311,512H169Q159,505 152,494Z M190,529H290Q240,550 190,529Z">
+        <aapt:attr name="android:fillColor">
+            <gradient android:startX="0" android:startY="315" android:endX="0" android:endY="540" android:type="linear">
+                <item android:offset="0" android:color="#FFE590" />
+                <item android:offset="0.45" android:color="#FF9B72" />
+                <item android:offset="1" android:color="#F74B9B" />
+            </gradient>
+        </aapt:attr>
+    </path>
+    <path android:fillColor="#281C4B" android:pathData="M0,609L60,529L104,573L162,535L221,628L285,567L327,606L397,518L480,598V740H0Z" />
+    <path android:fillColor="#171632" android:pathData="M0,648L94,579L155,651L224,614L295,663L368,578L480,664V743H0Z" />
+    <path android:fillColor="#00000000" android:strokeColor="#D95AB2" android:strokeWidth="2" android:pathData="M0,609L60,529L104,573L162,535L221,628 M285,567L327,606L397,518L480,598" />
+    <path android:fillColor="#00000000" android:strokeColor="#7C72C1" android:strokeWidth="1.5" android:pathData="M60,529L73,610 M162,535L155,588L201,615 M397,518L405,584L451,620 M0,648L94,579L155,651L224,614L295,663L368,578L480,664 M94,579L101,649 M368,578L388,658" />
+    <path android:pathData="M0,700H480V960H0Z">
+        <aapt:attr name="android:fillColor">
+            <gradient android:startX="0" android:startY="700" android:endX="0" android:endY="960" android:type="linear">
+                <item android:offset="0" android:color="#421B59" />
+                <item android:offset="1" android:color="#100D28" />
+            </gradient>
+        </aapt:attr>
+    </path>
+    <path android:fillColor="#00000000" android:strokeColor="#7656B9" android:strokeWidth="1.5" android:pathData="M240,700L-480,960 M240,700L-240,960 M240,700L-60,960 M240,700L80,960 M240,700L190,960 M240,700L290,960 M240,700L400,960 M240,700L540,960 M240,700L720,960 M240,700L960,960 M0,708H480 M0,720H480 M0,740H480 M0,771H480 M0,817H480 M0,880H480 M0,959H480" />
+    <path android:fillColor="#00000000" android:strokeColor="#34D5E3" android:strokeWidth="2" android:pathData="M0,700H480 M0,740H480 M0,817H480 M0,959H480 M240,700L80,960 M240,700L400,960" />
+    <path android:fillColor="#00000000" android:strokeColor="#E453B6" android:strokeWidth="2" android:pathData="M0,880H480 M240,700L-240,960 M240,700L720,960" />
+    <path android:fillColor="#BEEFFF" android:pathData="M83,265l2,9l9,2l-9,2l-2,9l-2,-9l-9,-2l9,-2Z M397,182l2,8l8,2l-8,2l-2,8l-2,-8l-8,-2l8,-2Z" />
+</vector>

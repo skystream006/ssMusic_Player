@@ -68,6 +68,22 @@ class SettingsUiTest {
         compose.runOnUiThread { owner.lifecycle.currentState = Lifecycle.State.RESUMED }
     }
 
+    @Test fun skinCatalogKeepsOriginalChoicesAndAddsTenDistinctIllustrations() {
+        val originalNames = listOf("CHERRY_BLOSSOM", "STARRY_CITY", "OCEAN_WAVE", "OCEAN_MOONLIGHT",
+            "GALAXY", "TROPICAL", "MECHANICS")
+        val newNames = listOf("AURORA_BOREALIS", "DESERT_DUNES", "BAMBOO_GROVE", "AUTUMN_RIVER",
+            "ALPINE_DAWN", "RAINY_WINDOW", "VOLCANIC_EMBER", "CRYSTAL_CAVERN", "PAPER_LANTERNS", "SYNTHWAVE_GRID")
+        assertEquals(originalNames + newNames, AppSkin.entries.map { it.name })
+        assertEquals(AppSkin.entries.size, AppSkin.entries.map { it.label }.toSet().size)
+        assertEquals(AppSkin.entries.size, AppSkin.entries.map { it.description }.toSet().size)
+        assertEquals(AppSkin.entries.size, AppSkin.entries.map { it.drawable }.toSet().size)
+        AppSkin.entries.forEach {
+            assertTrue(it.label.isNotBlank())
+            assertTrue(it.description.isNotBlank())
+            assertEquals(it, AppSkin.fromPreference(it.name))
+        }
+    }
+
     @Test fun skinsShowSelectedNameAndKeepChoicesInADialogWhenEnabled() {
         val enabled = mutableStateOf(false)
         val skin = mutableStateOf(AppSkin.CHERRY_BLOSSOM)

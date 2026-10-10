@@ -21,7 +21,17 @@ enum class AppSkin(val label: String, val description: String, @DrawableRes val 
     OCEAN_MOONLIGHT("Ocean Moonlight", "A bright moon reflected on the ocean horizon", R.drawable.skin_ocean_moonlight),
     GALAXY("Galaxy", "Three distant galaxies surrounded by stars", R.drawable.skin_galaxy),
     TROPICAL("Tropical", "A coconut palm overlooking a beach sunset", R.drawable.skin_tropical),
-    MECHANICS("Mechanics", "Interlocking gears and intricate metal mechanisms", R.drawable.skin_mechanics);
+    MECHANICS("Mechanics", "Interlocking gears and intricate metal mechanisms", R.drawable.skin_mechanics),
+    AURORA_BOREALIS("Aurora Borealis", "Luminous northern lights above snowy pines", R.drawable.skin_aurora_borealis),
+    DESERT_DUNES("Desert Dunes", "Golden sand ridges beneath a hazy desert sun", R.drawable.skin_desert_dunes),
+    BAMBOO_GROVE("Bamboo Grove", "Misty green bamboo surrounding a quiet forest path", R.drawable.skin_bamboo_grove),
+    AUTUMN_RIVER("Autumn River", "Amber foliage along a winding reflective river", R.drawable.skin_autumn_river),
+    ALPINE_DAWN("Alpine Dawn", "Snow-capped peaks reflected in a still mountain lake", R.drawable.skin_alpine_dawn),
+    RAINY_WINDOW("Rainy Window", "Rain-speckled glass with softly glowing city lights", R.drawable.skin_rainy_window),
+    VOLCANIC_EMBER("Volcanic Ember", "Glowing lava flowing through dark volcanic rock", R.drawable.skin_volcanic_ember),
+    CRYSTAL_CAVERN("Crystal Cavern", "Luminous crystal facets in a violet underground cave", R.drawable.skin_crystal_cavern),
+    PAPER_LANTERNS("Paper Lanterns", "Warm hanging lanterns above twilight rooftops", R.drawable.skin_paper_lanterns),
+    SYNTHWAVE_GRID("Synthwave Grid", "A striped neon sun over a retro perspective grid", R.drawable.skin_synthwave_grid);
 
     companion object {
         fun fromPreference(value: String?): AppSkin = entries.find { it.name == value } ?: CHERRY_BLOSSOM

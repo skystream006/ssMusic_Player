@@ -419,8 +419,18 @@ scrollable preview dialog, then select a skin to apply it and close the dialog:
 - **Galaxy** — three different galaxies amid a field of stars.
 - **Tropical** — a coconut palm in front of a beach sunset.
 - **Mechanics** — interlocking gears and metal mechanisms.
+- **Aurora Borealis** — luminous northern lights above snowy pines.
+- **Desert Dunes** — golden sand ridges beneath a hazy desert sun.
+- **Bamboo Grove** — misty green bamboo surrounding a quiet forest path.
+- **Autumn River** — amber foliage along a winding reflective river.
+- **Alpine Dawn** — snow-capped peaks reflected in a still mountain lake.
+- **Rainy Window** — rain-speckled glass with softly glowing city lights.
+- **Volcanic Ember** — glowing lava flowing through dark volcanic rock.
+- **Crystal Cavern** — luminous crystal facets in a violet underground cave.
+- **Paper Lanterns** — warm hanging lanterns above twilight rooftops.
+- **Synthwave Grid** — a striped neon sun over a retro perspective grid.
 
-All are original bundled vector images, available offline without downloads.
+All 17 are original bundled vector images, available offline without downloads.
 The toggle and selected skin are remembered on this device; turning skins off
 restores the normal background without forgetting the selection. Skins work with
 Blue Wave and every server color theme in light or dark mode, without changing
