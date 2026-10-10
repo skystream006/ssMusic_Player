@@ -33,6 +33,7 @@ import java.security.Provider
 import java.security.Security
 import java.security.cert.Certificate
 import java.util.Collections
+import java.util.concurrent.CountDownLatch
 import java.util.Date
 import java.util.concurrent.TimeUnit
 import java.util.concurrent.atomic.AtomicReference
@@ -309,7 +310,7 @@ class AccountRefreshTest {
         listOf(5 to 5, 2 to 2, 2 to 0).forEach { (star, rating) ->
             saved.set(original.copy(rating = rating))
             compose.onNodeWithContentDescription("$star stars").assertIsEnabled().performClick()
-            waitFor { model.library.rating(track) == rating && !model.busy && !model.library.loading }
+            waitFor { model.library.rating(track) == rating && !model.songBusy(track) && !model.library.loading }
             compose.onNodeWithContentDescription("Rating: $rating out of 5").assertIsDisplayed()
             compose.onNode(isDialog()).assertDoesNotExist()
             compose.onNodeWithText("Save").assertDoesNotExist()
@@ -324,7 +325,7 @@ class AccountRefreshTest {
         compose.onNodeWithContentDescription("Rating: 1 out of 5").assertIsDisplayed()
         saved.set(original.copy(rating = 4))
         compose.onNodeWithContentDescription("4 stars").performClick()
-        waitFor { model.library.rating(next) == 4 && !model.busy && !model.library.loading }
+        waitFor { model.library.rating(next) == 4 && !model.songBusy(next) && !model.library.loading }
         assertEquals(0, model.library.rating(track))
         assertPatch(drainRequests().single { it.method == "PATCH" }, nextPath, """{"rating":4}""")
     }
@@ -352,7 +353,7 @@ class AccountRefreshTest {
         }
         drainRequests()
         compose.onNodeWithContentDescription("5 stars").performClick()
-        waitFor { model.notice != null && !model.busy }
+        waitFor { model.notice != null && !model.songBusy(track) }
         assertEquals("Rating denied.", model.notice)
         assertEquals(original, model.metadata)
         assertEquals(3, model.library.rating(track))
@@ -362,9 +363,141 @@ class AccountRefreshTest {
 
         status.set(200)
         compose.onNodeWithContentDescription("5 stars").assertIsEnabled().performClick()
-        waitFor { model.library.rating(track) == 5 && !model.busy && !model.library.loading }
+        waitFor { model.library.rating(track) == 5 && !model.songBusy(track) && !model.library.loading }
         compose.onNodeWithContentDescription("Rating: 5 out of 5").assertIsDisplayed()
         assertPatch(drainRequests().single { it.method == "PATCH" }, path, """{"rating":5}""")
+    }
+
+    @Test fun songSavesPreviewLocallyAndLeaveOtherSongsAndNavigationUsable() {
+        val first = Track("job", "first.mp3", title = "First", rating = 1)
+        val second = first.copy(name = "second.mp3", title = "Second", rating = 2)
+        val release = CountDownLatch(1)
+        val started = AtomicInteger()
+        val model = startModel(first) { request ->
+            when {
+                request.method == "PATCH" -> {
+                    started.incrementAndGet()
+                    check(release.await(10, TimeUnit.SECONDS))
+                    metadataResponse(SongMetadata(rating = if (request.path!!.contains("first.mp3")) 5 else 4))
+                }
+                request.requestUrl!!.queryParameter("page") == "2" ->
+                    MockResponse().setBody(ApiJson.encodeToString(TrackPage(files = listOf(second), page = 2)))
+                else -> null
+            }
+        }
+        drainRequests()
+        try {
+            compose.runOnUiThread {
+                model.saveRating(first, 5)
+                assertEquals(5, model.library.rating(first))
+                assertTrue(model.songBusy(first))
+                assertFalse(model.songBusy(second))
+                assertFalse(model.busy)
+                assertFalse(model.library.loading)
+                model.saveRating(first, 3)
+                model.saveRating(second, 4)
+                assertEquals(5, model.library.rating(first))
+                assertEquals(4, model.library.rating(second))
+                model.page(2)
+            }
+            waitFor { model.library.page == 2 && !model.library.loading }
+            assertEquals(4, model.library.rating(second))
+            assertEquals(1, started.get())
+        } finally { release.countDown() }
+        waitFor { model.pendingSongs.isEmpty() }
+        assertEquals(2, started.get())
+        assertEquals(5, model.library.rating(first))
+        assertEquals(4, model.library.rating(second))
+        assertFalse(model.busy)
+        val sent = drainRequests()
+        assertEquals(2, sent.count { it.method == "PATCH" })
+        assertEquals(1, sent.count { it.path!!.startsWith("/api/library/tracks?") })
+    }
+
+    @Test fun metadataPreviewRollsBackOnlyItsSongWhenSavingFails() {
+        val track = Track("job", "song.mp3", title = "Original", artist = "Artist", rating = 2)
+        val other = track.copy(name = "other.mp3")
+        val release = CountDownLatch(1)
+        val model = startModel(track) { request ->
+            if (request.method == "PATCH") {
+                check(release.await(10, TimeUnit.SECONDS))
+                MockResponse().setResponseCode(403).setBody("""{"error":"Edit denied"}""")
+            } else null
+        }
+        drainRequests()
+        try {
+            compose.runOnUiThread {
+                model.saveMetadata(track, SongMetadata(title = "Edited", artist = "New artist", rating = 5), true)
+                assertEquals("Edited", model.library.tracks.files.single().title)
+                assertEquals(5, model.library.rating(track))
+                assertTrue(model.library.transcriptionLocked(track))
+                ReflectionHelpers.getField<androidx.compose.runtime.MutableState<LibraryState>>(
+                    model, "library\$delegate").value = model.library.copy(ratings = model.library.ratings + (other.key to 4))
+                assertFalse(model.busy)
+                assertFalse(model.library.loading)
+            }
+        } finally { release.countDown() }
+        waitFor { model.pendingSongs.isEmpty() }
+        assertEquals(track, model.library.tracks.files.single())
+        assertEquals(2, model.library.rating(track))
+        assertEquals(4, model.library.rating(other))
+        assertFalse(model.library.transcriptionLocked(track))
+        assertEquals("Edit denied", model.notice)
+        assertEquals(1, drainRequests().size)
+    }
+
+    @Test fun removingSongPreviewsMembershipLocallyAndRestoresItOnFailure() {
+        val track = Track("job", "song.mp3", playlistId = "playlist")
+        val release = CountDownLatch(1)
+        val model = startModel(track) { request ->
+            if (request.path == "/api/library/songs/remove") {
+                check(release.await(10, TimeUnit.SECONDS))
+                MockResponse().setResponseCode(403).setBody("""{"error":"Removal denied"}""")
+            } else null
+        }
+        drainRequests()
+        try {
+            compose.runOnUiThread {
+                model.remove(track)
+                assertTrue(model.library.tracks.files.isEmpty())
+                assertFalse(model.busy)
+                assertFalse(model.library.loading)
+            }
+        } finally { release.countDown() }
+        waitFor { model.pendingSongs.isEmpty() }
+        assertEquals(listOf(track), model.library.tracks.files)
+        assertEquals("Removal denied", model.notice)
+        assertEquals(1, drainRequests().size)
+    }
+
+    @Test fun signOutCancelsPendingSongActionsWithoutPublishingLateResults() {
+        val track = Track("job", "song.mp3", rating = 2)
+        val release = CountDownLatch(1)
+        val started = AtomicInteger()
+        val responded = AtomicInteger()
+        val model = startModel(track) { request ->
+            if (request.method == "PATCH") {
+                started.incrementAndGet()
+                check(release.await(10, TimeUnit.SECONDS))
+                responded.incrementAndGet()
+                metadataResponse(SongMetadata(title = "Late", rating = 5))
+            } else null
+        }
+        drainRequests()
+        try {
+            compose.runOnUiThread {
+                model.saveRating(track, 5)
+                model.saveRating(track.copy(name = "queued.mp3"), 4)
+            }
+            waitFor { started.get() == 1 }
+            compose.runOnUiThread { sessions.clear() }
+            waitFor { model.pendingSongs.isEmpty() && model.library.tracks.files.isEmpty() }
+        } finally { release.countDown() }
+        waitFor { responded.get() == 1 }
+        idleFor(100)
+        assertEquals(LibraryState(), model.library)
+        assertNull(model.notice)
+        assertEquals(1, drainRequests().size)
     }
 
     @Test fun lockingAndUnlockingPatchMetadataWithoutTranscribingOrLosingPlaybackPermission() {
@@ -512,7 +645,7 @@ class AccountRefreshTest {
             }
             val requests = drainRequests()
             assertPatch(requests.single { it.path == path }, path, body)
-            assertTrue(requests.any { it.method == "GET" && it.path!!.startsWith("/api/library/tracks?") })
+            assertFalse(requests.any { it.method == "GET" && it.path!!.startsWith("/api/library/tracks?") })
             assertEquals(1, successes)
             assertEquals(result, model.metadata)
             assertEquals("Lyrics saved.", model.notice)
@@ -542,7 +675,7 @@ class AccountRefreshTest {
         }
         val requests = drainRequests()
         assertPatch(requests.single { it.path == path }, path, body)
-        assertTrue(requests.any { it.method == "GET" && it.path!!.startsWith("/api/library/tracks?") })
+        assertFalse(requests.any { it.method == "GET" && it.path!!.startsWith("/api/library/tracks?") })
         assertTrue(succeeded)
         assertEquals(original, model.metadata)
         assertTrue(model.library.transcriptionLocked(other))
@@ -1171,7 +1304,8 @@ class AccountRefreshTest {
 
     private fun perform(model: MusicViewModel, action: () -> Unit) {
         compose.runOnUiThread { model.message(null); action() }
-        waitFor { !model.busy && !model.library.loading }
+        waitFor { !model.busy && model.pendingSongs.isEmpty() && !model.library.loading &&
+            ReflectionHelpers.getField<kotlinx.coroutines.Job?>(model, "trackRequest")?.isActive != true }
     }
 
     @Test fun waitForRunsDelayedMainLooperWorkWithoutComposeContent() {

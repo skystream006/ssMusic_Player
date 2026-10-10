@@ -76,16 +76,18 @@ class ReplaceFileDialogTest {
         compose.onNode(hasText("Replace File") and hasClickAction()).assertIsNotEnabled()
     }
 
-    @Test fun `upload disables selection confirmation and dismissal`() {
+    @Test fun `upload disables edits but can continue after dismissal`() {
+        var dismissed = false
         compose.mainClock.autoAdvance = false
         compose.setContent {
             MusicTheme(waveAppearance = false) {
-                ReplaceFileDialog(track, "new.mp3", null, true, {}, {}, {})
+                ReplaceFileDialog(track, "new.mp3", null, true, { dismissed = true }, {}, {})
             }
         }
         compose.onNodeWithText("Uploading and replacing file...").assertExists()
         compose.onNodeWithText("new.mp3").assertIsNotEnabled()
-        compose.onNodeWithText("Cancel").assertIsNotEnabled()
+        compose.onNodeWithText("Continue in background").assertIsEnabled().performClick()
+        compose.runOnIdle { assertTrue(dismissed) }
         compose.onNode(hasText("Replace File") and hasClickAction()).assertIsNotEnabled()
     }
 }

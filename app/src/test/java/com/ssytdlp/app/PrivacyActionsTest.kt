@@ -114,16 +114,16 @@ class PrivacyActionsTest {
             openMenu("Options for Song")
             compose.onNodeWithText(if (isPrivate) "Make song private" else "Make song public")
                 .assertIsEnabled().performClick()
-            waitFor { !model.busy && !model.library.loading && model.notice != null }
+            waitFor { !model.songBusy(track) && !model.library.loading && model.notice != null }
 
             val sent = drainRequests()
-            assertEquals(listOf(songPrivacyPath, jobFilesPath, "/api/library", "/api/library/tracks"),
+            assertEquals(listOf(songPrivacyPath, jobFilesPath, "/api/library"),
                 sent.map { it.url.encodedPath })
             assertPatch(sent.first(), songPrivacyPath, isPrivate)
             assertTrue(sent.drop(1).all { it.method == "GET" })
-            assertEquals("2", sent.last().url.queryParameter("page"))
-            assertEquals(entry.id, sent.last().url.queryParameter("entryId"))
-            assertEquals("other", sent.last().url.queryParameter("search"))
+            assertEquals(2, model.library.page)
+            assertEquals(entry.id, model.library.selectedId)
+            assertEquals("other", model.library.search)
             assertEquals(isPrivate, model.library.filePrivacy[queued.key])
             assertEquals(isPrivate, model.library.filePrivacy[companion.key])
             assertEquals(updated, model.library.privacyJobs[job.id])
@@ -450,7 +450,7 @@ class PrivacyActionsTest {
 
     private fun perform(model: MusicViewModel, action: () -> Unit) {
         compose.runOnUiThread { model.message(null); action() }
-        waitFor { !model.busy && !model.library.loading }
+        waitFor { !model.busy && model.pendingSongs.isEmpty() && !model.library.loading }
     }
 
     private fun waitFor(condition: () -> Boolean) {
