@@ -585,6 +585,49 @@ class PlaylistEditingTest {
         assertFalse(model.busy)
     }
 
+    @Test fun emptyReorderResponseRefreshesVersionWithoutReloadingSongs() {
+        val songs = reorderSongs()
+        startModel { request ->
+            if (request.url.encodedPath == "/api/library/songs/reorder") {
+                catalog.set(catalog.get().copy(version = 8))
+                200 to "{}"
+            } else null
+        }
+        showSongs(songs)
+        compose.runOnUiThread { model.reorder(songs[0], songs[2], true) }
+        waitFor { model.library.library.version == 8L }
+        assertEquals(listOf(songs[1], songs[2], songs[0]), model.library.tracks.files)
+        assertEquals(listOf("/api/library/songs/reorder", "/api/library"), requests.map { it.url.encodedPath })
+        assertFalse(model.library.loading)
+        assertFalse(model.busy)
+    }
+
+    @Test fun otherLibraryMutationsWaitForTheSavedSongOrderVersion() {
+        val release = CountDownLatch(1)
+        val started = AtomicBoolean(false)
+        val songs = reorderSongs()
+        startModel { request ->
+            if (request.url.encodedPath == "/api/library/songs/reorder") {
+                started.set(true)
+                check(release.await(10, TimeUnit.SECONDS))
+                catalog.set(catalog.get().copy(version = 8))
+                200 to """{"version":8}"""
+            } else null
+        }
+        showSongs(songs)
+        try {
+            compose.runOnUiThread {
+                model.reorder(songs[0], songs[2], true)
+                model.createFolder("New folder", null)
+            }
+            waitFor { started.get() }
+            assertEquals(1, requests.size)
+        } finally { release.countDown() }
+        waitFor { !model.busy && !model.library.loading }
+        val mutation = requests.single { it.url.encodedPath == "/api/library/entries" }
+        assertEquals(8, body(mutation).getValue("version").jsonPrimitive.int)
+    }
+
     @Test fun staleTranscriptionPollCannotUndoSavedSongOrder() {
         val release = CountDownLatch(1)
         val polling = AtomicBoolean(false)
