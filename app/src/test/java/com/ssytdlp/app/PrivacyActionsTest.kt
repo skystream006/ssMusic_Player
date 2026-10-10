@@ -27,6 +27,7 @@ import com.ssytdlp.app.core.UserResponse
 import java.security.Provider
 import java.security.Security
 import java.util.Collections
+import java.util.concurrent.atomic.AtomicBoolean
 import java.util.concurrent.atomic.AtomicReference
 import kotlinx.coroutines.cancel
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -230,6 +231,7 @@ class PrivacyActionsTest {
         val model = startModel { request ->
             if (request.method == "PATCH") 403 to """{"error":"Privacy denied"}""" else null
         }
+
         for (isPrivate in listOf(false, true)) {
             val currentJob = job.copy(privateFiles = if (isPrivate) listOf(track.name) else emptyList())
             val currentPlaylist = playlist.copy(isPrivate = isPrivate)
@@ -246,6 +248,32 @@ class PrivacyActionsTest {
             assertEquals(before, model.library)
             assertPatch(drainRequests().single(), playlistPrivacyPath, !isPrivate)
         }
+    }
+
+    @Test fun successfulPrivacySaveIsNotRolledBackWhenCatalogRefreshFails() {
+        val original = job.copy(privateFiles = listOf(track.name))
+        val updated = job.copy(updatedAt = "new", privateFiles = emptyList())
+        val saved = AtomicBoolean(false)
+        val model = startModel(library(original), TrackPage(files = listOf(Track("other", "other.mp3")), page = 2)) { request ->
+            when (request.url.encodedPath) {
+                songPrivacyPath -> {
+                    saved.set(true)
+                    200 to ApiJson.encodeToString(updated)
+                }
+                jobFilesPath -> 200 to ApiJson.encodeToString(TrackPage(files = listOf(
+                    track.copy(isPrivate = false, sourceJob = updated,
+                        noVocalsVersion = companion.copy(isPrivate = false, sourceJob = updated)))))
+                "/api/library" -> if (saved.get()) 503 to """{"error":"Catalog unavailable"}""" else null
+                else -> null
+            }
+        }
+        perform(model) { model.setSongPrivate(track, false) }
+        assertEquals("Catalog unavailable", model.notice)
+        assertEquals(FilePrivacy(false, false), model.songPrivacy(track))
+        assertEquals(FilePrivacy(false, false), model.songPrivacy(companion))
+        assertEquals(updated, model.library.privacyJobs[job.id])
+        assertFalse(model.library.loading)
+        assertFalse(model.songBusy(track))
     }
 
     @Test fun inheritedSongCannotBeMadePublicEvenWhenActionIsCalledDirectly() {

@@ -602,6 +602,54 @@ class PlaylistEditingTest {
         assertFalse(model.busy)
     }
 
+    @Test fun movingAndLinkingSongsSaveWithoutBlockingAndReconcilePageMembership() {
+        val release = AtomicReference(CountDownLatch(1))
+        val songs = reorderSongs()
+        val serverFiles = AtomicReference(songs)
+        startModel { request ->
+            when (request.url.encodedPath) {
+                "/api/library/songs/transfer" -> {
+                    check(release.get().await(10, TimeUnit.SECONDS))
+                    if (body(request).getValue("action").jsonPrimitive.content == "move")
+                        serverFiles.set(songs.drop(1))
+                    catalog.set(catalog.get().copy(version = catalog.get().version + 1))
+                    200 to "{}"
+                }
+                "/api/library/tracks" -> 200 to ApiJson.encodeToString(
+                    TrackPage(files = serverFiles.get(), page = 3, total = serverFiles.get().size, totalPages = 5))
+                else -> null
+            }
+        }
+        for (link in listOf(false, true)) {
+            serverFiles.set(songs)
+            showSongs(songs)
+            requests.clear()
+            release.set(CountDownLatch(1))
+            val version = model.library.library.version
+            try {
+                compose.runOnUiThread {
+                    model.transfer(songs.first(), "destination", link)
+                    assertEquals(if (link) songs else songs.drop(1), model.library.tracks.files)
+                    assertTrue(model.songBusy(songs.first()))
+                    assertFalse(model.songBusy(songs.last()))
+                    assertFalse(model.busy)
+                    assertFalse(model.library.loading)
+                }
+                waitFor { requests.any { it.method == "POST" } }
+            } finally { release.get().countDown() }
+            waitFor { model.pendingSongs.isEmpty() &&
+                ReflectionHelpers.getField<kotlinx.coroutines.Job?>(model, "trackRequest")?.isActive != true }
+            val sent = requests.single { it.method == "POST" }
+            assertEquals(json("action" to if (link) "link" else "move",
+                "sourcePlaylistId" to entry.id, "playlistId" to "destination",
+                "version" to version) + ("keys" to buildJsonArray { add(songs.first().key) }), body(sent))
+            assertEquals(serverFiles.get(), model.library.tracks.files)
+            assertEquals(version + 1, model.library.library.version)
+            assertEquals(3, model.library.page)
+            assertFalse(model.library.loading)
+        }
+    }
+
     @Test fun otherLibraryMutationsWaitForTheSavedSongOrderVersion() {
         val release = CountDownLatch(1)
         val started = AtomicBoolean(false)
@@ -689,6 +737,54 @@ class PlaylistEditingTest {
         assertEquals(listOf(next), model.library.tracks.files)
         assertEquals(listOf("/api/library/songs/reorder", "/api/library/tracks"),
             requests.map { it.url.encodedPath })
+    }
+
+    @Test fun quietRefreshWaitsForAReorderThatStartedAfterItsFirstRead() {
+        val readRelease = CountDownLatch(1)
+        val saveRelease = CountDownLatch(1)
+        val reads = AtomicInteger()
+        val reading = AtomicBoolean(false)
+        val saving = AtomicBoolean(false)
+        val songs = reorderSongs()
+        val order = AtomicReference(songs)
+        startModel { request ->
+            when {
+                request.url.encodedPath == "/api/library/tracks" && reading.get() -> {
+                    val files = order.get()
+                    reads.incrementAndGet()
+                    check(readRelease.await(10, TimeUnit.SECONDS))
+                    200 to ApiJson.encodeToString(TrackPage(files = files, page = 3))
+                }
+                request.url.encodedPath == "/api/library/songs/reorder" -> {
+                    saving.set(true)
+                    check(saveRelease.await(10, TimeUnit.SECONDS))
+                    order.set(listOf(songs[1], songs[2], songs[0]))
+                    200 to """{"version":8}"""
+                }
+                else -> null
+            }
+        }
+        showSongs(songs)
+        try {
+            reading.set(true)
+            compose.runOnUiThread { model.refreshTracks(background = true) }
+            waitFor { reads.get() == 1 }
+            compose.runOnUiThread { model.reorder(songs[0], songs[2], true) }
+            waitFor { saving.get() }
+            readRelease.countDown()
+            val settled = System.nanoTime() + TimeUnit.MILLISECONDS.toNanos(200)
+            waitFor { System.nanoTime() >= settled }
+            compose.runOnIdle {
+                assertEquals(1, reads.get())
+                assertEquals(listOf(songs[1], songs[2], songs[0]), model.library.tracks.files)
+                assertFalse(model.library.loading)
+            }
+        } finally { readRelease.countDown(); saveRelease.countDown() }
+        waitFor { model.library.library.version == 8L &&
+            ReflectionHelpers.getField<kotlinx.coroutines.Job?>(model, "trackRequest")?.isActive != true }
+        assertEquals(order.get(), model.library.tracks.files)
+        assertEquals(2, reads.get())
+        assertFalse(model.library.loading)
     }
 
     @Test fun signingOutDiscardsQueuedReordersAndTheirLateResponses() {

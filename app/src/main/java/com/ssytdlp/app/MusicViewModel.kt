@@ -473,12 +473,12 @@ class MusicViewModel @JvmOverloads constructor(application: Application, private
         trackRequest = viewModelScope.launch {
             if (showLoading) library = library.copy(loading = true)
             try {
-                reorderRequest?.join()
                 if (debounce) delay(300)
                 do {
+                    reorderRequest?.join()
                     val generation = transcriptionGeneration
                     val result = api.trackPage(library)
-                    if (generation == transcriptionGeneration) {
+                    if (generation == transcriptionGeneration && reorderRequest?.isActive != true) {
                         acceptTrackPage(result)
                         break
                     }
@@ -728,6 +728,7 @@ class MusicViewModel @JvmOverloads constructor(application: Application, private
         library = library.copy(privacyJobs = library.privacyJobs + (updated.id to updated),
             filePrivacy = library.filePrivacy + (track.key to value))
         jobs = jobs.map { if (it.id == updated.id) updated else it }
+        commitSongChange(track)
         refreshPrivacyFiles(updated)
         loadLibrary()
         message(when {
@@ -862,7 +863,8 @@ class MusicViewModel @JvmOverloads constructor(application: Application, private
                     else current.copy(tracks = current.tracks.copy(
                         files = current.tracks.files.toMutableList().apply {
                             add(index.coerceAtMost(size), before.tracks.files[index])
-                        }, total = current.tracks.total + 1))
+                        }, total = current.tracks.total + (before.tracks.total -
+                            before.withoutMembership(track).tracks.total)))
                 }
             }) {
             val result = try {
@@ -874,6 +876,7 @@ class MusicViewModel @JvmOverloads constructor(application: Application, private
                 }
                 throw error
             }
+            commitSongChange(track)
             onSuccess(result)
             loadLibrary()
             refreshTracks(background = true)
@@ -908,8 +911,8 @@ class MusicViewModel @JvmOverloads constructor(application: Application, private
                 "/api/jobs/${encode(track.jobId)}/files/${encode(track.name)}/metadata", "PATCH", body))
             require(currentMetadataOwner == update.selection.owner) { "Account changed. Refresh before retrying." }
             updated = result
-            transcriptionGeneration++
             library = library.withSongMetadata(track, result)
+            commitSongChange(track)
             return result
         } catch (error: Exception) {
             reload = error !is ApiException || error.status !in 400..499
@@ -1125,11 +1128,16 @@ class MusicViewModel @JvmOverloads constructor(application: Application, private
                 mutations.withLock {
                     if (!sameAccount(account)) return@withLock
                     runAction {
-                        try { block() }
+                        try {
+                            require(allowShared || sessions.account.value?.user?.isShared == false) {
+                                "This library is read-only."
+                            }
+                            block()
+                        }
                         catch (error: Exception) {
-                            if (sameAccount(account) && preview != null && rollback != null) {
+                            if (sameAccount(account) && track.key in songPreviews && rollback != null) {
                                 library = rollback(library, before)
-                            } else if (sameAccount(account) && preview != null) {
+                            } else if (sameAccount(account) && track.key in songPreviews) {
                                 val previous = before.tracks.files.find { it.key == track.key } ?: track
                                 fun restore(file: Track): Track = if (file.key == track.key) file.copy(
                                     title = previous.title, artist = previous.artist, album = previous.album,
@@ -1156,6 +1164,11 @@ class MusicViewModel @JvmOverloads constructor(application: Application, private
             }
         }
         if (request.isActive) songRequests[track.key] = request
+    }
+
+    private fun commitSongChange(track: Track) {
+        songPreviews.remove(track.key)
+        transcriptionGeneration++
     }
 
     private fun sameAccount(account: Account?): Boolean {
