@@ -3,12 +3,14 @@ package com.ssytdlp.app
 import android.app.Application
 import androidx.activity.ComponentActivity
 import androidx.compose.foundation.layout.size
+import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableLongStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.snapshots.Snapshot
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.semantics.SemanticsActions
 import androidx.compose.ui.semantics.SemanticsProperties
@@ -16,10 +18,12 @@ import androidx.compose.ui.test.*
 import androidx.compose.ui.test.junit4.createAndroidComposeRule
 import androidx.compose.ui.text.TextLayoutResult
 import androidx.compose.ui.text.TextStyle
+import androidx.compose.ui.unit.Density
 import androidx.compose.ui.unit.dp
 import com.ssytdlp.app.core.LyricLine
 import com.ssytdlp.app.core.SongMetadata
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Rule
 import org.junit.Test
@@ -191,6 +195,14 @@ class LyricsUiTest {
         compose.onNodeWithText("00:00:00").assertIsDisplayed()
         compose.onNodeWithTag("lyrics").performScrollToIndex(20)
         compose.onNodeWithText("00:03:20").assertIsDisplayed()
+    }
+
+    @Test fun synchronizedTimestampsStayOnOneLineWhileLyricsWrap() {
+        assertSingleLineTimestamps(fontScale = 1f, compact = false)
+    }
+
+    @Test fun compactSynchronizedTimestampsStayOnOneLineWithLargeFonts() {
+        assertSingleLineTimestamps(fontScale = 2f, compact = true)
     }
 
     @Test fun unsynchronizedLyricsAreUsedOnlyWhenSynchronizedLyricsAreAbsent() {
@@ -437,11 +449,43 @@ class LyricsUiTest {
         }
     }
 
-    private fun textStyle(text: String): TextStyle {
+    private fun assertSingleLineTimestamps(fontScale: Float, compact: Boolean) {
+        val lyrics = SongMetadata(sylt = listOf(
+            LyricLine(0.0, "A long lyric that should still wrap onto multiple lines"),
+            LyricLine(3600.0, "An hour into the song"),
+            LyricLine(4_294_967.295, "A four-digit hour timestamp")
+        ))
+        compose.setContent {
+            CompositionLocalProvider(LocalDensity provides Density(LocalDensity.current.density, fontScale)) {
+                MusicTheme {
+                    LyricsContent(lyrics, 0, "track", {}, Modifier.size(280.dp, 400.dp).testTag("lyrics"),
+                        endPadding = 56.dp, compact = compact)
+                }
+            }
+        }
+        listOf("00:00:00", "01:00:00", "1193:02:47").forEachIndexed { index, timestamp ->
+            compose.onNodeWithTag("lyrics").performScrollToIndex(index)
+            compose.onNodeWithText(timestamp).assertIsDisplayed()
+            val layout = textLayout(timestamp)
+            assertEquals(1, layout.lineCount)
+            assertFalse(layout.isLineEllipsized(0))
+            assertEquals(timestamp.length, layout.getLineEnd(0, visibleEnd = true))
+            assertTrue(layout.getLineRight(0) <= layout.size.width)
+            val timestampBounds = compose.onNodeWithText(timestamp).fetchSemanticsNode().boundsInRoot
+            val lyricBounds = compose.onNodeWithText(lyrics.sylt[index].text).fetchSemanticsNode().boundsInRoot
+            assertTrue(timestampBounds.right < lyricBounds.left)
+        }
+        compose.onNodeWithTag("lyrics").performScrollToIndex(0)
+        assertTrue(textLayout(lyrics.sylt.first().text).lineCount > 1)
+    }
+
+    private fun textLayout(text: String): TextLayoutResult {
         val results = mutableListOf<TextLayoutResult>()
         compose.onNodeWithText(text).performSemanticsAction(SemanticsActions.GetTextLayoutResult) { it(results) }
-        return results.single().layoutInput.style
+        return results.single()
     }
+
+    private fun textStyle(text: String): TextStyle = textLayout(text).layoutInput.style
 
     private fun assertScaledStyle(original: TextStyle, scaled: TextStyle, scale: Float) {
         assertEquals(original.fontSize.value * scale, scaled.fontSize.value, 0.01f)
