@@ -468,7 +468,9 @@ class LyricsUiTest {
             compose.onNodeWithText(timestamp).assertIsDisplayed()
             val layout = textLayout(timestamp)
             assertEquals(1, layout.lineCount)
-            assertFalse(layout.hasVisualOverflow)
+            assertFalse(layout.isLineEllipsized(0))
+            assertEquals(timestamp.length, layout.getLineEnd(0, visibleEnd = true))
+            assertTrue(layout.getLineRight(0) <= layout.size.width)
             val timestampBounds = compose.onNodeWithText(timestamp).fetchSemanticsNode().boundsInRoot
             val lyricBounds = compose.onNodeWithText(lyrics.sylt[index].text).fetchSemanticsNode().boundsInRoot
             assertTrue(timestampBounds.right < lyricBounds.left)
