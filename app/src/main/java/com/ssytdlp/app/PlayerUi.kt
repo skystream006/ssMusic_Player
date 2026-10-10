@@ -737,7 +737,8 @@ internal fun LyricsContent(lyrics: SongMetadata?, position: Long, trackKey: Stri
                     Row(modifier = Modifier.fillMaxWidth().padding(vertical = if (compact) 2.dp else 12.dp),
                         verticalAlignment = Alignment.CenterVertically) {
                         Text(formatLyricTimestamp(line.time), style = MaterialTheme.typography.labelMedium,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.width(48.dp))
+                            color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 1, softWrap = false,
+                            modifier = Modifier.widthIn(min = 48.dp))
                         Spacer(Modifier.width(12.dp))
                         Text(line.text, modifier = Modifier.weight(1f).clickable {
                             onSeek((line.time * 1000).toLong())
