@@ -13,7 +13,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.Close
 import androidx.compose.material.icons.rounded.ErrorOutline
 import androidx.compose.material.icons.rounded.HelpOutline
-import androidx.compose.material.icons.rounded.MicOff
+import androidx.compose.material.icons.rounded.MicExternalOn
 import androidx.compose.material.icons.rounded.Refresh
 import androidx.compose.material.icons.rounded.Schedule
 import androidx.compose.material.icons.rounded.Subtitles
@@ -127,7 +127,7 @@ internal fun TranscriptionStatus(transcription: Transcription?, iconOnly: Boolea
                 "failed" -> Icons.Rounded.ErrorOutline
                 "interrupted" -> Icons.Rounded.Schedule
                 "transcribed" -> when {
-                    transcription.options?.noVocalsOnly == true -> Icons.Rounded.MicOff
+                    transcription.options?.noVocalsOnly == true -> Icons.Rounded.MicExternalOn
                     else -> Icons.Rounded.Subtitles
                 }
                 else -> Icons.Rounded.HelpOutline
