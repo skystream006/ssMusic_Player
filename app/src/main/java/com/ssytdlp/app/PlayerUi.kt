@@ -514,7 +514,9 @@ internal fun PlayerArtwork(state: PlaybackState, metadata: SongMetadata?, modifi
             textAlign = TextAlign.Center, maxLines = 3, overflow = TextOverflow.Ellipsis)
         Text(metadata?.artist?.ifBlank { null } ?: track?.displayArtist.orEmpty(), style = MaterialTheme.typography.bodyMedium,
             color = MaterialTheme.colorScheme.onSurfaceVariant, textAlign = TextAlign.Center, modifier = Modifier.padding(top = 8.dp))
-        TranscriptionStatus(transcription)
+        TranscriptionStatus(transcription?.takeUnless {
+            it.status == "transcribed" && it.options?.noVocalsOnly == true
+        })
         if (!metadata?.album.isNullOrBlank()) Text(metadata?.album.orEmpty(), style = MaterialTheme.typography.labelSmall,
             color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.padding(top = 6.dp))
         if (state.buffering) CircularProgressIndicator(Modifier.padding(12.dp).size(22.dp), strokeWidth = 2.dp)

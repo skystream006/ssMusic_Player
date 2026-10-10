@@ -6,6 +6,7 @@ import android.graphics.Canvas
 import android.view.ViewGroup
 import androidx.activity.ComponentActivity
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.width
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.MoreVert
@@ -124,6 +125,50 @@ class TranscriptionStatusUiTest {
         compose.onNodeWithText("Lyrics Included").assertDoesNotExist()
         compose.onNodeWithText("Add lyrics:", substring = true).assertDoesNotExist()
         compose.runOnIdle { assertEquals(0, playCount) }
+    }
+
+    @Test fun playerHidesCompletedNoVocalsStatusButKeepsOtherStatusesAndInstrumentalAction() {
+        checkPlayerStatuses()
+    }
+
+    @Test
+    @Config(qualifiers = "w800dp-h360dp-land")
+    fun landscapePlayerHidesCompletedNoVocalsStatusButKeepsOtherStatusesAndInstrumentalAction() {
+        checkPlayerStatuses()
+    }
+
+    private fun checkPlayerStatuses() {
+        val options = SavedTranscriptionOptions(noVocalsOnly = true)
+        val completed = Transcription(status = "transcribed", options = options)
+        val record = mutableStateOf<Transcription?>(null)
+        val track = Track(name = "song.mp3", noVocalsVersion = Track(name = "[NoVocals]/song.mp3"))
+        var instrumentalCount = 0
+        compose.setContent {
+            MusicTheme(waveAppearance = false) {
+                PlayerArtwork(PlaybackState(track = track), null, Modifier.fillMaxSize(),
+                    transcription = record.value, onInstrumental = { instrumentalCount++ })
+            }
+        }
+        compose.onNodeWithContentDescription("Transcription status unknown", substring = true).assertDoesNotExist()
+        val visibleStatuses = statuses.filter { it.first.options?.noVocalsOnly != true } + listOf(
+            Transcription(status = "sent", options = options) to "No-vocals request sent",
+            Transcription(status = "failed", options = options) to "No-vocals generation failed",
+            Transcription(status = "interrupted", options = options) to "No-vocals generation interrupted",
+            Transcription(status = "processing", options = options) to "No-vocals status unknown"
+        )
+        visibleStatuses.forEach { (transcription, label) ->
+            compose.runOnIdle { record.value = transcription }
+            compose.onNodeWithContentDescription(label, substring = true).performScrollTo().assertIsDisplayed()
+            compose.runOnIdle { record.value = completed }
+            compose.onNodeWithText("No-vocals version generated").assertDoesNotExist()
+            compose.onNodeWithContentDescription("No-vocals version generated", substring = true).assertDoesNotExist()
+            compose.onNodeWithContentDescription(label, substring = true).assertDoesNotExist()
+        }
+        compose.runOnIdle { record.value = completed.copy(lyricsIncluded = true) }
+        compose.onNodeWithText("No-vocals version generated").assertDoesNotExist()
+        compose.onNodeWithContentDescription("No-vocals version generated", substring = true).assertDoesNotExist()
+        compose.onNodeWithText("Instrumental version").performScrollTo().assertIsDisplayed().performClick()
+        compose.runOnIdle { assertEquals(1, instrumentalCount) }
     }
 
     @Test fun songWithoutTranscriptionInformationHidesStatus() {
