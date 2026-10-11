@@ -50,6 +50,33 @@ class LyricsUiTest {
     private val textScale = mutableFloatStateOf(1f)
     private val seeks = mutableListOf<Long>()
 
+    @Test fun portraitSynchronizedLyricsKeepTheirRowSpacing() {
+        showLyrics()
+        assertLyricRowSpacing()
+    }
+
+    @Test
+    @Config(qualifiers = "w800dp-h360dp-land")
+    fun landscapeSynchronizedLyricsHaveRoomBetweenRowsAndKeepZoomingAndFollowing() {
+        showLyrics(compact = true)
+        assertLyricRowSpacing()
+        val initialStyle = textStyle("Line 0")
+        pinchLyrics(zoomIn = true)
+        val scale = compose.runOnIdle {
+            assertTrue(textScale.floatValue > 1f)
+            assertTrue(seeks.isEmpty())
+            textScale.floatValue
+        }
+        assertScaledStyle(initialStyle, textStyle("Line 0"), scale)
+        assertLyricRowSpacing()
+        compose.onNodeWithText("Line 1").performClick()
+        compose.runOnIdle {
+            assertEquals(listOf(10_000L), seeks)
+            position.longValue = 300_000
+        }
+        compose.onNodeWithText("Line 30").assertIsDisplayed()
+    }
+
     @Test fun pinchResizesSynchronizedLyricsAndLineSpacingWithoutSeeking() {
         showLyrics()
         val activeStyle = textStyle("Line 0")
@@ -487,19 +514,26 @@ class LyricsUiTest {
 
     private fun textStyle(text: String): TextStyle = textLayout(text).layoutInput.style
 
+    private fun assertLyricRowSpacing() {
+        val first = compose.onNodeWithText("Line 0").fetchSemanticsNode().boundsInRoot
+        val second = compose.onNodeWithText("Line 1").fetchSemanticsNode().boundsInRoot
+        assertEquals(with(compose.density) { 24.dp.toPx() }, second.top - first.bottom, 1f)
+    }
+
     private fun assertScaledStyle(original: TextStyle, scaled: TextStyle, scale: Float) {
         assertEquals(original.fontSize.value * scale, scaled.fontSize.value, 0.01f)
         assertEquals(original.lineHeight.value * scale, scaled.lineHeight.value, 0.01f)
     }
 
-    private fun showLyrics(seekImmediately: Boolean = true) {
+    private fun showLyrics(seekImmediately: Boolean = true, compact: Boolean = false) {
         compose.setContent {
             MusicTheme {
                 LyricsContent(metadata.value, position.longValue, trackKey.value, {
                     seeks += it
                     if (seekImmediately) position.longValue = it
                 }, Modifier.size(320.dp, 240.dp).testTag("lyrics"), error.value, video.value, preferUslt.value,
-                    textScale.floatValue, { textScale.floatValue = normalizeLyricsTextScale(textScale.floatValue * it) })
+                    textScale.floatValue, { textScale.floatValue = normalizeLyricsTextScale(textScale.floatValue * it) },
+                    compact = compact)
             }
         }
     }

@@ -685,7 +685,8 @@ internal fun LyricsContent(lyrics: SongMetadata?, position: Long, trackKey: Stri
             var seekTarget by remember { mutableStateOf<Int?>(null) }
             val target = seekTarget ?: active
             val currentActive by rememberUpdatedState(target)
-            val linePadding = with(LocalDensity.current) { 12.dp.toPx() }
+            val rowPadding = if (compact) 2.dp else 12.dp
+            val linePadding = with(LocalDensity.current) { rowPadding.toPx() }
             val scrollConnection = remember(listState, linePadding) {
                 object : NestedScrollConnection {
                     private var highlightedWasVisible = false
@@ -731,10 +732,11 @@ internal fun LyricsContent(lyrics: SongMetadata?, position: Long, trackKey: Stri
                     listState.animateScrollToItem(target)
             }
             LazyColumn(zoomModifier.fillMaxWidth().nestedScroll(scrollConnection), state = listState,
+                verticalArrangement = Arrangement.spacedBy(if (compact) 20.dp else 0.dp),
                 contentPadding = PaddingValues(start = 28.dp, top = if (compact) 4.dp else 24.dp,
                     end = endPadding, bottom = if (compact) 4.dp else 24.dp)) {
                 itemsIndexed(lyrics.sylt) { index, line ->
-                    Row(modifier = Modifier.fillMaxWidth().padding(vertical = if (compact) 2.dp else 12.dp),
+                    Row(modifier = Modifier.fillMaxWidth().padding(vertical = rowPadding),
                         verticalAlignment = Alignment.CenterVertically) {
                         Text(formatLyricTimestamp(line.time), style = MaterialTheme.typography.labelMedium,
                             color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 1, softWrap = false,
