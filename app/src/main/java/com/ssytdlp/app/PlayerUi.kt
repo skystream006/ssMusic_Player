@@ -734,7 +734,7 @@ internal fun LyricsContent(lyrics: SongMetadata?, position: Long, trackKey: Stri
                 contentPadding = PaddingValues(start = 28.dp, top = if (compact) 4.dp else 24.dp,
                     end = endPadding, bottom = if (compact) 4.dp else 24.dp)) {
                 itemsIndexed(lyrics.sylt) { index, line ->
-                    Row(modifier = Modifier.fillMaxWidth().padding(vertical = if (compact) 2.dp else 12.dp),
+                    Row(modifier = Modifier.fillMaxWidth().padding(vertical = 12.dp),
                         verticalAlignment = Alignment.CenterVertically) {
                         Text(formatLyricTimestamp(line.time), style = MaterialTheme.typography.labelMedium,
                             color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 1, softWrap = false,
