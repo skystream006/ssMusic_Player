@@ -1,0 +1,40 @@
+name: Cleanup Releases
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: cleanup-releases
+  cancel-in-progress: false
+
+jobs:
+  cleanup:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Delete all but the five most recent releases
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+        shell: bash
+        run: |
+          release_ids=$(gh api "repos/${GH_REPO}/releases?per_page=100" \
+            --paginate --slurp | jq -r '
+              add
+              | sort_by((.published_at // .created_at), .id)
+              | reverse
+              | .[5:][]
+              | .id
+            ')
+
+          if [ -z "$release_ids" ]; then
+            echo "No releases to delete; keeping all existing releases (five or fewer)."
+            exit 0
+          fi
+
+          while IFS= read -r release_id; do
+            echo "Deleting release ${release_id}"
+            gh api --method DELETE "repos/${GH_REPO}/releases/${release_id}"
+          done <<< "$release_ids"

@@ -86,6 +86,12 @@ latest `main`, which may include merges made after the reminder. Closed,
 unmerged PRs receive no reminder, and re-running the reminder workflow does
 not post a duplicate comment.
 
+Run **Actions > Cleanup Releases > Run workflow** to keep only the five most
+recent releases and delete older releases and their attached assets. All releases,
+including drafts and prereleases, count toward the limit; recency uses publication
+time, falling back to creation time for unpublished drafts. Git tags are preserved.
+Nothing is deleted when there are five or fewer releases.
+
 Like ssMusic, this project bundles a debug signing key
 (`app/debug.keystore`, checked into the repository) that the release workflow
 uses by default. Because the same key signs debug CI builds, manual releases,
