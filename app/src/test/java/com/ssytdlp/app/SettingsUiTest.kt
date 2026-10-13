@@ -427,6 +427,7 @@ class SettingsUiTest {
         withSettingsModel { model ->
             compose.runOnUiThread {
                 model.chooseWaveAppearance(false)
+                model.chooseSkins(false)
                 model.chooseEdgeLighting(true)
             }
             setPermissions(notifications = false, unrestrictedBattery = false)
