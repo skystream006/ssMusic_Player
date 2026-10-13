@@ -151,7 +151,7 @@ class MusicViewModel @JvmOverloads constructor(application: Application, private
         private set
     var waveAppearance by mutableStateOf(application.getSharedPreferences("settings", 0).getBoolean("wave_appearance", true))
         private set
-    var skinsEnabled by mutableStateOf(application.getSharedPreferences("settings", 0).getBoolean("skins_enabled", false))
+    var skinsEnabled by mutableStateOf(application.getSharedPreferences("settings", 0).getBoolean("skins_enabled", true))
         private set
     var skin by mutableStateOf(AppSkin.fromPreference(
         application.getSharedPreferences("settings", 0).getString("skin", null)))

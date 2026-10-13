@@ -174,8 +174,10 @@ class SettingsUiTest {
         val models = ViewModelStore()
         try {
             withSettingsModel { initial ->
-                assertFalse(initial.skinsEnabled)
-                assertEquals(AppSkin.CHERRY_BLOSSOM, initial.skin)
+                assertTrue(initial.skinsEnabled)
+                assertEquals(AppSkin.OCEAN_MOONLIGHT, initial.skin)
+                assertFalse(preferences.contains("skins_enabled"))
+                assertFalse(preferences.contains("skin"))
                 compose.runOnUiThread {
                     val theme = initial.preferences
                     val wave = initial.waveAppearance
@@ -208,9 +210,9 @@ class SettingsUiTest {
                         models.put(unavailableSkin, unknown)
                         unknown.viewModelScope.cancel()
                         assertTrue(unknown.skinsEnabled)
-                        assertEquals(AppSkin.CHERRY_BLOSSOM, unknown.skin)
+                        assertEquals(AppSkin.OCEAN_MOONLIGHT, unknown.skin)
                     }
-                    assertEquals(AppSkin.CHERRY_BLOSSOM, AppSkin.fromPreference(null))
+                    assertEquals(AppSkin.OCEAN_MOONLIGHT, AppSkin.fromPreference(null))
                 }
             }
         } finally {
@@ -354,7 +356,8 @@ class SettingsUiTest {
             }
             compose.onNodeWithContentDescription("green theme").assertIsSelected()
             compose.onNodeWithText("Dark appearance").assertIsDisplayed()
-            compose.onNodeWithContentDescription("Skins").assertIsDisplayed().assertIsOff().performClick()
+            compose.onNodeWithContentDescription("Skins").assertIsDisplayed().assertIsOn()
+            compose.onNodeWithText(AppSkin.OCEAN_MOONLIGHT.label).assertIsDisplayed()
             compose.onNodeWithText(model.skin.label).performClick()
             skinOption(AppSkin.STARRY_CITY).performScrollTo().performClick()
             compose.onNode(isDialog()).assertDoesNotExist()
