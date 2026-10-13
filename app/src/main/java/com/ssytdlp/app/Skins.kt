@@ -34,7 +34,7 @@ enum class AppSkin(val label: String, val description: String, @DrawableRes val 
     SYNTHWAVE_GRID("Synthwave Grid", "A striped neon sun over a retro perspective grid", R.drawable.skin_synthwave_grid);
 
     companion object {
-        fun fromPreference(value: String?): AppSkin = entries.find { it.name == value } ?: CHERRY_BLOSSOM
+        fun fromPreference(value: String?): AppSkin = entries.find { it.name == value } ?: OCEAN_MOONLIGHT
     }
 }
 

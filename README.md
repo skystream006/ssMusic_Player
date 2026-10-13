@@ -410,8 +410,9 @@ The server's **Black** theme uses neutral charcoal surfaces with yellow accents 
 dark mode, and gray/white surfaces with darker gold accents in light mode.
 
 **Settings > Appearance > Skins** adds optional illustrated backgrounds alongside
-the color themes. Skins are off by default. The selected skin name appears beside
-the toggle, even when skins are off. Turn skins on and tap the name to open a
+the color themes. **Ocean Moonlight** is enabled by default; saved skin choices and
+disabled settings are preserved. The selected skin name appears beside the toggle,
+even when skins are off. With skins on, tap the name to open a
 scrollable preview dialog, then select a skin to apply it and close the dialog:
 
 - **Cherry Blossom Sunset** — flowing blossoms and windblown petals over a sunset.
