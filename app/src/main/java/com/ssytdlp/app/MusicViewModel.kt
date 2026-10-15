@@ -34,6 +34,7 @@ data class LibraryState(
     val library: Library = Library(), val tracks: TrackPage = TrackPage(),
     val selectedId: String? = null, val search: String = "", val page: Int = 1,
     val loading: Boolean = false, val sort: TrackSort = TrackSort.ORDER,
+    val allPagesLoaded: Boolean = false,
     val pendingTranscriptions: Map<String, Transcription> = emptyMap(),
     val transcriptions: Map<String, Transcription?> = emptyMap(),
     val ratings: Map<String, Int> = emptyMap(),
@@ -78,12 +79,19 @@ data class LibraryState(
 
     fun rating(track: Track): Int = ratings[track.key] ?: track.rating
 
+    val totalPages: Int
+        get() = if (allPagesLoaded) ((tracks.files.size + 49) / 50).coerceAtLeast(1) else tracks.totalPages.coerceAtLeast(1)
+
+    val currentPage: Int get() = page.coerceIn(1, totalPages)
+
     val orderedTracks: List<Track>
         get() {
-            if (sort == TrackSort.ORDER) return tracks.files
-            val sorted = sort.indices(tracks.files, ::rating).map { tracks.files[it] }
-            val (originals, instrumentals) = sorted.partition { !it.name.startsWith("[NoVocals]/", true) }
-            return originals + instrumentals
+            val ordered = if (sort == TrackSort.ORDER) tracks.files else {
+                val sorted = sort.indices(tracks.files, ::rating).map { tracks.files[it] }
+                val (originals, instrumentals) = sorted.partition { !it.name.startsWith("[NoVocals]/", true) }
+                originals + instrumentals
+            }
+            return if (allPagesLoaded) ordered.drop((currentPage - 1) * 50).take(50) else ordered
         }
 
     fun artworkUrl(track: Track): String? = if (artworkUrls.containsKey(track.key)) artworkUrls[track.key] else track.artworkUrl
@@ -91,13 +99,20 @@ data class LibraryState(
     fun transcriptionLocked(track: Track): Boolean = transcriptionLocks[track.key] ?: track.transcriptionLocked
 
     fun withTrackPage(result: TrackPage): LibraryState = withPrivacyFiles(result.files).copy(
-        tracks = result, page = result.page,
+        tracks = result, page = result.page, allPagesLoaded = false,
         ratings = ratings + result.files.associate { it.key to it.rating },
         artworkUrls = artworkUrls + result.files.associate { it.key to it.artworkUrl },
         transcriptionLocks = transcriptionLocks + result.files.associate { it.key to it.transcriptionLocked },
         transcriptions = transcriptions + result.files.associate { track ->
             track.key to (track.transcription ?: library.jobs.find { it.id == track.jobId }?.transcriptions?.get(track.name))
         })
+
+    fun withAllTracks(result: TrackPage): LibraryState {
+        val totalPages = ((result.files.size + 49) / 50).coerceAtLeast(1)
+        val page = page.coerceIn(1, totalPages)
+        return withTrackPage(result.copy(page = page, pageSize = 50, total = result.files.size, totalPages = totalPages))
+            .copy(allPagesLoaded = true)
+    }
 
     fun withTranscriptions(job: Job, tracks: List<Track>): LibraryState = copy(
         transcriptions = transcriptions + tracks.filter { it.jobId == job.id }
@@ -462,18 +477,20 @@ class MusicViewModel @JvmOverloads constructor(application: Application, private
     fun message(text: String?) { notice = text }
 
     fun selectLibrary(entryId: String?) {
-        library = library.copy(selectedId = entryId, page = 1, search = "", tracks = TrackPage())
+        library = library.copy(selectedId = entryId, page = 1, search = "", tracks = TrackPage(), allPagesLoaded = false)
         sessions.account.value?.let { sessions.playback.saveSelectedLibrary(it, entryId) }
         refreshTracks()
     }
 
     fun search(value: String) {
-        library = library.copy(search = value.take(200), page = 1)
+        library = library.copy(search = value.take(200), page = 1, tracks = TrackPage(), allPagesLoaded = false)
         refreshTracks(debounce = true)
     }
 
-    fun page(value: Int) { library = library.copy(page = value.coerceAtLeast(1)); refreshTracks() }
-    fun sortLibrary(sort: TrackSort) { library = library.copy(sort = sort) }
+    fun page(value: Int) {
+        library = library.copy(page = value.coerceIn(1, library.totalPages))
+    }
+    fun sortLibrary(sort: TrackSort) { library = library.copy(sort = sort, page = 1) }
     fun refresh() = launchAction { loadLibrary(); refreshTracks(); refreshHealth() }
 
     fun refreshTracks(debounce: Boolean = false, background: Boolean = false) {
@@ -486,7 +503,7 @@ class MusicViewModel @JvmOverloads constructor(application: Application, private
                 do {
                     reorderRequest?.join()
                     val generation = transcriptionGeneration
-                    val result = api.trackPage(library)
+                    val result = api.allTracks(library)
                     if (generation == transcriptionGeneration && reorderRequest?.isActive != true) {
                         acceptTrackPage(result)
                         break
@@ -509,10 +526,11 @@ class MusicViewModel @JvmOverloads constructor(application: Application, private
 
     private fun acceptTrackPage(result: TrackPage) {
         val before = library
-        library = library.withTrackPage(result)
+        library = library.withAllTracks(result)
         songPreviews.values.forEach { library = it(library) }
+        val previousTracks = before.tracks.files.associateBy { it.key }
         result.files.forEach { track ->
-            val previous = before.tracks.files.find { it.key == track.key }
+            val previous = previousTracks[track.key]
             if (before.transcriptions.containsKey(track.key) &&
                 before.transcriptions[track.key] != library.transcriptions[track.key] ||
                 before.artworkUrls.containsKey(track.key) && before.artworkUrls[track.key] != track.artworkUrl ||
@@ -540,7 +558,7 @@ class MusicViewModel @JvmOverloads constructor(application: Application, private
             val request = trackRequest
             var refreshedKeys = emptySet<String>()
             if (!selection.loading && reorderRequest?.isActive != true && pendingSongs.isEmpty()) runAction {
-                val result = api.trackPage(selection)
+                val result = api.allTracks(selection)
                 if (sessions.account.value == account && generation == transcriptionGeneration &&
                     trackRequest === request) {
                     acceptTrackPage(result)
@@ -684,7 +702,7 @@ class MusicViewModel @JvmOverloads constructor(application: Application, private
                         transcriptionGeneration++
                         val previous = move.before
                         if (library.selectedId == previous.selectedId && library.search == previous.search &&
-                            library.page == previous.page) {
+                            (library.allPagesLoaded && previous.allPagesLoaded || library.page == previous.page)) {
                             val positions = previous.tracks.files.mapIndexed { index, file -> file.key to index }.toMap()
                             library = library.copy(tracks = library.tracks.copy(
                                 files = library.tracks.files.sortedBy { positions[it.key] ?: Int.MAX_VALUE }))
@@ -695,7 +713,7 @@ class MusicViewModel @JvmOverloads constructor(application: Application, private
                             loadLibrary()
                             val selection = library
                             val request = trackRequest
-                            val result = api.trackPage(selection)
+                            val result = api.allTracks(selection)
                             if (sameAccount(account) && trackRequest === request) acceptTrackPage(result)
                         } catch (refreshError: Exception) {
                             if (refreshError is CancellationException) throw refreshError
@@ -866,7 +884,7 @@ class MusicViewModel @JvmOverloads constructor(application: Application, private
         launchSongAction(track, preview = if (removesMembership) ({ it.withoutMembership(track) }) else null,
             rollback = { current, before ->
                 if (current.selectedId != before.selectedId || current.search != before.search ||
-                    current.page != before.page) current
+                    (!(current.allPagesLoaded && before.allPagesLoaded) && current.page != before.page)) current
                 else {
                     val index = before.tracks.files.indexOfFirst { it.key == track.key && it.playlistId == track.playlistId }
                     if (index < 0 || current.tracks.files.any { it.key == track.key }) current
@@ -1218,10 +1236,32 @@ internal const val INACTIVE_TRANSCRIPTION_MESSAGE =
 internal val JsonObject?.transcriptionActive: Boolean
     get() = ((this?.get("transcription") as? JsonObject)?.get("status") as? JsonPrimitive)?.content == "active"
 
-internal suspend fun ServerApi.trackPage(selection: LibraryState): TrackPage {
-    val query = listOfNotNull("page=${selection.page}", "pageSize=50", "search=${encode(selection.search)}",
+internal suspend fun ServerApi.trackPage(selection: LibraryState, pageSize: Int = 50): TrackPage {
+    val query = listOfNotNull("page=${selection.page}", "pageSize=$pageSize", "search=${encode(selection.search)}",
         selection.selectedId?.let { "entryId=${encode(it)}" }).joinToString("&")
     return ApiJson.decodeFromJsonElement(request("/api/library/tracks?$query"))
+}
+
+internal suspend fun ServerApi.allTracks(selection: LibraryState): TrackPage {
+    // Omitting pagination returns the entire selected playlist/folder. All Music is always paginated.
+    repeat(2) {
+        val first = if (selection.selectedId == null) trackPage(selection.copy(page = 1), pageSize = 1000) else {
+            val query = "search=${encode(selection.search)}&entryId=${encode(selection.selectedId)}"
+            ApiJson.decodeFromJsonElement<TrackPage>(request("/api/library/tracks?$query"))
+        }
+        if (first.totalPages <= 1) return first
+        val files = first.files.toMutableList()
+        var consistent = first.page == 1 && first.pageSize > 0
+        for (page in 2..first.totalPages) {
+            if (!consistent) break
+            val next = trackPage(selection.copy(page = page), first.pageSize)
+            consistent = next.page == page && next.pageSize == first.pageSize && next.version == first.version &&
+                next.total == first.total && next.totalPages == first.totalPages
+            if (consistent) files += next.files
+        }
+        if (consistent && files.size == first.total) return first.copy(files = files)
+    }
+    error("Library changed while loading. Refresh and try again.")
 }
 
 fun encode(value: String): String = URLEncoder.encode(value, "UTF-8").replace("+", "%20")

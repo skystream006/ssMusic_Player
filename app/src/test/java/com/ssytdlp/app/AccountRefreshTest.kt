@@ -276,13 +276,14 @@ class AccountRefreshTest {
     @Test fun playerStarsSaveOnlyRatingAndClearWithoutOpeningADialogOrChangingPlayback() {
         val track = Track("job", "song.mp3", title = "Song", rating = 3)
         val next = track.copy(name = "next.mp3", title = "Next song", rating = 1)
+        val files = listOf(track) + (1..49).map { track.copy(name = "filler$it.mp3") } + Track("other", "other.mp3")
         val original = SongMetadata(title = "Song", artist = "Artist", album = "Album", genre = "Pop",
             year = "2026", rating = 3, sylt = listOf(LyricLine(1.5, "Timed lyrics")), uslt = "Plain lyrics",
             transcriptionLocked = true, canEdit = true)
         val saved = AtomicReference(original)
         val path = "/api/jobs/job/files/song.mp3/metadata"
         val nextPath = "/api/jobs/job/files/next.mp3/metadata"
-        val model = startModel(track) { request ->
+        val model = startModel(track, expectedTracks = 51) { request ->
             when (request.requestUrl!!.encodedPath) {
                 "/api/library" -> MockResponse().setBody(ApiJson.encodeToString(
                     Library(jobs = listOf(Job("job", initiatedBy = account.user)))))
@@ -291,8 +292,8 @@ class AccountRefreshTest {
                 path, nextPath -> metadataResponse(saved.get())
                 "/api/library/tracks" -> MockResponse().setBody(ApiJson.encodeToString(
                     if (request.requestUrl!!.queryParameter("page") == "2")
-                        TrackPage(files = listOf(Track("other", "other.mp3")), page = 2)
-                    else TrackPage(files = listOf(track))))
+                        TrackPage(files = files.drop(50), page = 2, total = 51, totalPages = 2)
+                    else TrackPage(files = files.take(50), total = 51, totalPages = 2)))
                 else -> null
             }
         }
@@ -305,6 +306,7 @@ class AccountRefreshTest {
         // Browse another page so the original playback snapshot must use the saved rating cache.
         compose.runOnUiThread { model.page(2) }
         waitFor { !model.library.loading }
+        assertEquals(listOf(files.last()), model.library.orderedTracks)
         drainRequests()
 
         listOf(5 to 5, 2 to 2, 2 to 0).forEach { (star, rating) ->
@@ -371,17 +373,21 @@ class AccountRefreshTest {
     @Test fun songSavesPreviewLocallyAndLeaveOtherSongsAndNavigationUsable() {
         val first = Track("job", "first.mp3", title = "First", rating = 1)
         val second = first.copy(name = "second.mp3", title = "Second", rating = 2)
+        val files = listOf(first) + (1..49).map { first.copy(name = "filler$it.mp3") } + second
         val release = CountDownLatch(1)
         val started = AtomicInteger()
-        val model = startModel(first) { request ->
+        val model = startModel(first, expectedTracks = 51) { request ->
             when {
                 request.method == "PATCH" -> {
                     started.incrementAndGet()
                     check(release.await(10, TimeUnit.SECONDS))
                     metadataResponse(SongMetadata(rating = if (request.path!!.contains("first.mp3")) 5 else 4))
                 }
-                request.requestUrl!!.queryParameter("page") == "2" ->
-                    MockResponse().setBody(ApiJson.encodeToString(TrackPage(files = listOf(second), page = 2)))
+                request.requestUrl!!.encodedPath == "/api/library/tracks" ->
+                    MockResponse().setBody(ApiJson.encodeToString(
+                        if (request.requestUrl!!.queryParameter("page") == "2")
+                            TrackPage(files = files.drop(50), page = 2, total = 51, totalPages = 2)
+                        else TrackPage(files = files.take(50), total = 51, totalPages = 2)))
                 else -> null
             }
         }
@@ -411,7 +417,7 @@ class AccountRefreshTest {
         assertFalse(model.busy)
         val sent = drainRequests()
         assertEquals(2, sent.count { it.method == "PATCH" })
-        assertEquals(1, sent.count { it.path!!.startsWith("/api/library/tracks?") })
+        assertEquals(0, sent.count { it.path!!.startsWith("/api/library/tracks?") })
     }
 
     @Test fun metadataPreviewRollsBackOnlyItsSongWhenSavingFails() {
@@ -1264,6 +1270,7 @@ class AccountRefreshTest {
     private fun startModel(
         track: Track = Track("job", "song.mp3"),
         user: User = account.user,
+        expectedTracks: Int = 1,
         response: (RecordedRequest) -> MockResponse? = { null }
     ): MusicViewModel {
         server.dispatcher = object : Dispatcher() {
@@ -1281,7 +1288,7 @@ class AccountRefreshTest {
         sessions.save(account.copy(user = user))
         val model = createModel(collectSession = true, connectPlayback = false)
         waitFor {
-            model.library.tracks.files.size == 1 && !model.library.loading &&
+            model.library.tracks.files.size == expectedTracks && !model.library.loading &&
                 (user.isShared || model.health != null)
         }
         assertNull(model.notice)

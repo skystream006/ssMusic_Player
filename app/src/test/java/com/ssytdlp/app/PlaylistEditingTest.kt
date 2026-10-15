@@ -96,14 +96,23 @@ class PlaylistEditingTest {
         Security.removeProvider(provider.name)
     }
 
-    @Test fun playlistSortsLoadedPageLocallyRestoresOrderAndKeepsPlaybackIndicesAligned() {
-        startModel()
-        val songs = listOf(
-            Track(job.id, "c.mp3", title = "Charlie", rating = 5, playlistId = entry.id),
-            Track(job.id, "a.mp3", title = "Alpha", rating = 1, playlistId = entry.id),
-            Track(job.id, "b.mp3", title = "Bravo", rating = 3, playlistId = entry.id))
-        showSongs(songs)
-        compose.runOnIdle { state.value = model.library.copy(ratings = mapOf(songs[0].key to 0)) }
+    @Test fun playlistSortsAcrossAllPagesLocallyAndKeepsPlaybackIndicesAligned() {
+        val songs = (0 until 103).map {
+            Track(job.id, "$it.mp3", title = "Song ${(102 - it).toString().padStart(3, '0')}",
+                rating = it % 6, playlistId = entry.id)
+        }
+        startModel { request ->
+            if (request.url.queryParameter("entryId") == entry.id)
+                200 to ApiJson.encodeToString(TrackPage(files = songs, total = songs.size))
+            else null
+        }
+        compose.runOnUiThread { model.selectLibrary(entry.id) }
+        waitFor { model.library.allPagesLoaded && !model.library.loading }
+        assertEquals(1, requests.size)
+        assertNull(requests.single().url.queryParameter("page"))
+        assertNull(requests.single().url.queryParameter("sort"))
+        requests.clear()
+        compose.runOnIdle { state.value = model.library.copy(ratings = mapOf(songs.last().key to 5)) }
         var played: List<Track> = emptyList()
         var selected = -1
         compose.setContent {
@@ -118,29 +127,113 @@ class PlaylistEditingTest {
             compose.onNodeWithContentDescription("Sort tracks").performClick()
             compose.onNodeWithText(label).performClick()
         }
-        choose("Name (A–Z)")
-        compose.onNodeWithText("Sorting loaded tracks on this page only").assertIsDisplayed()
-        compose.onNodeWithContentDescription("Drag to reorder Alpha").assertIsNotEnabled()
-        compose.onNodeWithText("Bravo").performClick()
-        compose.runOnIdle {
-            assertEquals(listOf(songs[1], songs[2], songs[0]), played)
-            assertEquals(1, selected)
-            assertEquals(3, model.library.page)
-            assertEquals(songs, model.library.tracks.files)
-            model.reorder(songs[0], songs[1], true)
+        for ((label, expected) in listOf(
+            "Name (A–Z)" to songs.reversed(),
+            "Rating (highest first)" to songs.sortedByDescending { model.library.rating(it) },
+            "Order number" to songs)) {
+            choose(label)
+            for (page in 1..3) {
+                val visible = expected.drop((page - 1) * 50).take(50)
+                compose.onNodeWithText(visible.first().title).performClick()
+                compose.runOnIdle {
+                    assertEquals(visible, played)
+                    assertEquals(0, selected)
+                    assertEquals(page, model.library.page)
+                    assertEquals(3, model.library.totalPages)
+                    assertEquals(songs, model.library.tracks.files)
+                    assertTrue(requests.isEmpty())
+                }
+                if (page < 3) compose.onNodeWithContentDescription("Next page").performClick()
+            }
+            compose.onNodeWithContentDescription("Next page").assertIsNotEnabled()
         }
-        choose("Rating (highest first)")
-        compose.onNodeWithText("Alpha").performClick()
-        compose.runOnIdle {
-            assertEquals(listOf(songs[2], songs[1], songs[0]), played)
-            assertEquals(1, selected)
+    }
+
+    @Test fun fullRefreshKeepsLocalSortAndPageChangesMadeWhilePolling() {
+        val songs = (0 until 60).map { Track(job.id, "$it.mp3", title = it.toString(), playlistId = entry.id) }
+        val release = CountDownLatch(1)
+        val started = AtomicBoolean(false)
+        val updated = songs.map { it.copy(rating = 5) }
+        startModel { request ->
+            if (request.url.queryParameter("entryId") == entry.id) {
+                started.set(true)
+                check(release.await(10, TimeUnit.SECONDS))
+                200 to ApiJson.encodeToString(TrackPage(files = updated))
+            } else null
         }
-        choose("Order number")
-        compose.onNodeWithContentDescription("Drag to reorder Alpha").assertIsEnabled()
-        compose.runOnIdle {
-            assertEquals(songs, model.library.orderedTracks)
-            assertTrue(requests.isEmpty())
+        var finished = false
+        try {
+            compose.runOnUiThread {
+                state.value = model.library.copy(selectedId = entry.id).withAllTracks(TrackPage(files = songs))
+                model.viewModelScope.launch { model.pollTranscriptions(); finished = true }
+            }
+            waitFor { started.get() }
+            compose.runOnUiThread { model.sortLibrary(TrackSort.RATING); model.page(2) }
+        } finally { release.countDown() }
+        waitFor { finished }
+        assertEquals(TrackSort.RATING, model.library.sort)
+        assertEquals(2, model.library.page)
+        assertEquals(updated.drop(50), model.library.orderedTracks)
+        assertEquals(updated, model.library.tracks.files)
+        assertTrue(model.library.allPagesLoaded)
+        assertEquals(1, requests.size)
+    }
+
+    @Test fun changingSelectionCancelsAnInFlightFullPlaylistLoad() {
+        val release = CountDownLatch(1)
+        val started = AtomicBoolean(false)
+        val old = Track(job.id, "old.mp3")
+        val current = old.copy(name = "current.mp3")
+        startModel { request ->
+            when (request.url.queryParameter("entryId")) {
+                entry.id -> {
+                    started.set(true)
+                    check(release.await(10, TimeUnit.SECONDS))
+                    200 to ApiJson.encodeToString(TrackPage(files = listOf(old)))
+                }
+                "parent" -> 200 to ApiJson.encodeToString(TrackPage(files = listOf(current)))
+                else -> null
+            }
         }
+        try {
+            compose.runOnUiThread { model.selectLibrary(entry.id) }
+            waitFor { started.get() }
+            assertFalse(model.library.allPagesLoaded)
+            compose.runOnUiThread { model.selectLibrary("parent") }
+            waitFor { model.library.allPagesLoaded && !model.library.loading }
+        } finally { release.countDown() }
+        compose.waitForIdle()
+        assertEquals("parent", model.library.selectedId)
+        assertEquals(listOf(current), model.library.orderedTracks)
+        assertFalse(model.library.tracks.files.contains(old))
+    }
+
+    @Test fun failedRemovalRestoresTheCompleteCollectionAfterLocalPageNavigation() {
+        val songs = (0 until 101).map { Track(job.id, "$it.mp3", playlistId = entry.id) }
+        val release = CountDownLatch(1)
+        val started = AtomicBoolean(false)
+        startModel { request ->
+            if (request.url.encodedPath == "/api/library/songs/remove") {
+                started.set(true)
+                check(release.await(10, TimeUnit.SECONDS))
+                503 to """{"error":"Remove failed"}"""
+            } else null
+        }
+        try {
+            compose.runOnUiThread {
+                state.value = model.library.copy(selectedId = entry.id).withAllTracks(TrackPage(files = songs))
+                model.remove(songs.first())
+                model.page(2)
+                assertEquals(songs.drop(1).drop(50), model.library.orderedTracks)
+                assertEquals(2, model.library.totalPages)
+            }
+            waitFor { started.get() }
+        } finally { release.countDown() }
+        waitFor { model.pendingSongs.isEmpty() }
+        assertEquals(songs, model.library.tracks.files)
+        assertEquals(songs.subList(50, 100), model.library.orderedTracks)
+        assertEquals(3, model.library.totalPages)
+        assertEquals(2, model.library.currentPage)
     }
 
     @Test fun menuAllowsPersonalLocationEditsButNotFoldersSharedUsersOrActiveJobs() {
@@ -663,7 +756,7 @@ class PlaylistEditingTest {
                     200 to "{}"
                 }
                 "/api/library/tracks" -> 200 to ApiJson.encodeToString(
-                    TrackPage(files = serverFiles.get(), page = 3, total = serverFiles.get().size, totalPages = 5))
+                    TrackPage(files = serverFiles.get(), total = serverFiles.get().size))
                 else -> null
             }
         }
@@ -692,7 +785,7 @@ class PlaylistEditingTest {
                 "version" to version) + ("keys" to buildJsonArray { add(songs.first().key) }), body(sent))
             assertEquals(serverFiles.get(), model.library.tracks.files)
             assertEquals(version + 1, model.library.library.version)
-            assertEquals(3, model.library.page)
+            assertEquals(1, model.library.page)
             assertFalse(model.library.loading)
         }
     }
@@ -755,11 +848,10 @@ class PlaylistEditingTest {
         assertFalse(model.library.loading)
     }
 
-    @Test fun navigatingDuringSongSaveLoadsOnlyTheNewPageAfterSaving() {
+    @Test fun navigatingDuringSongSaveUsesTheCompleteLocalCollectionWithoutReloading() {
         val release = CountDownLatch(1)
         val started = AtomicBoolean(false)
-        val songs = reorderSongs()
-        val next = songs[0].copy(name = "next.mp3")
+        val songs = (0 until 201).map { Track(job.id, "$it.mp3", playlistId = entry.id) }
         startModel { request ->
             when {
                 request.url.encodedPath == "/api/library/songs/reorder" -> {
@@ -767,22 +859,23 @@ class PlaylistEditingTest {
                     check(release.await(10, TimeUnit.SECONDS))
                     200 to """{"version":8}"""
                 }
-                request.url.queryParameter("page") == "4" ->
-                    200 to ApiJson.encodeToString(TrackPage(files = listOf(next), page = 4, totalPages = 5))
                 else -> null
             }
         }
-        showSongs(songs)
+        compose.runOnUiThread {
+            state.value = model.library.copy(selectedId = entry.id).withAllTracks(TrackPage(files = songs))
+        }
         try {
             compose.runOnUiThread { model.reorder(songs[0], songs[2], true); model.page(4) }
             waitFor { started.get() }
-            assertTrue(model.library.loading)
+            assertFalse(model.library.loading)
+            assertEquals(songs.subList(150, 200), model.library.orderedTracks)
             assertEquals(1, requests.size)
         } finally { release.countDown() }
-        waitFor { !model.library.loading }
+        waitFor { model.library.library.version == 8L }
         assertEquals(4, model.library.page)
-        assertEquals(listOf(next), model.library.tracks.files)
-        assertEquals(listOf("/api/library/songs/reorder", "/api/library/tracks"),
+        assertEquals(songs.subList(150, 200), model.library.orderedTracks)
+        assertEquals(listOf("/api/library/songs/reorder"),
             requests.map { it.url.encodedPath })
     }
 
@@ -892,7 +985,7 @@ class PlaylistEditingTest {
 
     private fun showSongs(songs: List<Track>) {
         compose.runOnUiThread {
-            state.value = model.library.copy(selectedId = entry.id, page = 3,
+            state.value = model.library.copy(selectedId = entry.id, page = 3, allPagesLoaded = false,
                 tracks = TrackPage(files = songs, page = 3, totalPages = 5))
         }
     }

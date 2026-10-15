@@ -6,6 +6,7 @@ import com.ssytdlp.app.core.ApiJson
 import com.ssytdlp.app.core.Job
 import com.ssytdlp.app.core.Library
 import com.ssytdlp.app.core.Session
+import com.ssytdlp.app.core.TrackSort
 import com.ssytdlp.app.core.User
 import java.io.ByteArrayOutputStream
 import java.io.IOException
@@ -281,5 +282,57 @@ class ServerApiTest {
         }
         assertTrue(state.library.jobs.single().transcriptions.isEmpty())
         assertEquals(7L, state.library.version)
+    }
+
+    @Test fun `selected playlists load without pagination or a server sort parameter`() = runBlocking {
+        server.enqueue(MockResponse().setBody("""{"files":[{"name":"z.mp3"},{"name":"a.mp3"}],
+            "page":1,"pageSize":null,"total":2,"totalPages":1}"""))
+        val result = api.allTracks(LibraryState(selectedId = "folder/playlist", search = "a & b",
+            page = 8, sort = TrackSort.RATING))
+        assertEquals(listOf("z.mp3", "a.mp3"), result.files.map { it.name })
+        assertEquals("/api/library/tracks?search=a%20%26%20b&entryId=folder%2Fplaylist",
+            server.takeRequest(2, TimeUnit.SECONDS)!!.path)
+        assertEquals(1, server.requestCount)
+    }
+
+    @Test fun `paginated selections load every page in saved order before local sorting`() = runBlocking {
+        server.enqueue(MockResponse().setBody("""{"files":[{"name":"z.mp3"},{"name":"y.mp3"}],
+            "page":1,"pageSize":2,"total":3,"totalPages":2,"version":7}"""))
+        server.enqueue(MockResponse().setBody("""{"files":[{"name":"a.mp3","rating":5}],
+            "page":2,"pageSize":2,"total":3,"totalPages":2,"version":7}"""))
+        val result = api.allTracks(LibraryState(search = "song", page = 3, sort = TrackSort.NAME))
+        assertEquals(listOf("z.mp3", "y.mp3", "a.mp3"), result.files.map { it.name })
+        assertEquals(7L, result.version)
+        assertEquals(listOf("a.mp3", "y.mp3", "z.mp3"),
+            LibraryState(sort = TrackSort.NAME).withAllTracks(result).orderedTracks.map { it.name })
+        assertEquals("/api/library/tracks?page=1&pageSize=1000&search=song", server.takeRequest().path)
+        assertEquals("/api/library/tracks?page=2&pageSize=2&search=song", server.takeRequest().path)
+    }
+
+    @Test fun `changed pagination is retried as a whole rather than combining inconsistent pages`() = runBlocking {
+        server.enqueue(MockResponse().setBody("""{"files":[{"name":"old.mp3"}],
+            "page":1,"pageSize":1,"total":2,"totalPages":2,"version":1}"""))
+        server.enqueue(MockResponse().setBody("""{"files":[{"name":"moved.mp3"}],
+            "page":2,"pageSize":1,"total":2,"totalPages":2,"version":2}"""))
+        server.enqueue(MockResponse().setBody("""{"files":[{"name":"new.mp3"}],
+            "page":1,"pageSize":1,"total":2,"totalPages":2,"version":2}"""))
+        server.enqueue(MockResponse().setBody("""{"files":[{"name":"last.mp3"}],
+            "page":2,"pageSize":1,"total":2,"totalPages":2,"version":2}"""))
+        assertEquals(listOf("new.mp3", "last.mp3"), api.allTracks(LibraryState()).files.map { it.name })
+        assertEquals(listOf("1", "2", "1", "2"), (1..4).map { server.takeRequest().requestUrl!!.queryParameter("page") })
+    }
+
+    @Test fun `failed or repeatedly changing later pages never return a partial collection`() = runBlocking {
+        val first = """{"files":[{"name":"first.mp3"}],"page":1,"pageSize":1,"total":2,"totalPages":2,"version":1}"""
+        val changed = """{"files":[],"page":1,"pageSize":1,"total":0,"totalPages":1,"version":2}"""
+        repeat(2) {
+            server.enqueue(MockResponse().setBody(first))
+            server.enqueue(MockResponse().setBody(changed))
+        }
+        assertTrue(runCatching { api.allTracks(LibraryState()) }.exceptionOrNull() is IllegalStateException)
+        server.enqueue(MockResponse().setBody(first))
+        server.enqueue(MockResponse().setResponseCode(503).setBody("{}"))
+        assertTrue(runCatching { api.allTracks(LibraryState()) }.exceptionOrNull() is ApiException)
+        assertEquals(6, server.requestCount)
     }
 }

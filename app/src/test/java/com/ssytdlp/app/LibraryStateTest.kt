@@ -5,6 +5,7 @@ import com.ssytdlp.app.core.FilePrivacy
 import com.ssytdlp.app.core.Library
 import com.ssytdlp.app.core.LibraryEntry
 import com.ssytdlp.app.core.LibraryPlaylist
+import com.ssytdlp.app.core.SongMetadata
 import com.ssytdlp.app.core.Track
 import com.ssytdlp.app.core.TrackPage
 import com.ssytdlp.app.core.TrackSort
@@ -16,6 +17,50 @@ class LibraryStateTest {
     private val track = Track(jobId = "source", name = "folder/song.mp3")
     private val sent = Transcription(status = "sent")
     private val done = Transcription(status = "transcribed", lyricsIncluded = true)
+
+    @Test fun `sorting precedes pagination and all pages retain stable ties and saved order`() {
+        val files = (0 until 103).map {
+            track.copy(name = "$it.mp3", title = (102 - it).toString().padStart(3, '0'), rating = it % 6)
+        }
+        val state = LibraryState().withAllTracks(TrackPage(files = files))
+            .copy(ratings = mapOf(files.last().key to 5))
+        for ((sort, expected) in listOf(
+            TrackSort.NAME to files.reversed(),
+            TrackSort.RATING to files.sortedByDescending(state::rating),
+            TrackSort.ORDER to files)) {
+            val sorted = state.copy(sort = sort)
+            val pages = (1..sorted.totalPages).flatMap { sorted.copy(page = it).orderedTracks }
+            assertEquals(expected, pages)
+            assertEquals(files, sorted.tracks.files)
+            assertEquals(3, sorted.totalPages)
+        }
+    }
+
+    @Test fun `off-page edits and refreshes re-sort the full collection and preserve local page`() {
+        val files = (0 until 51).map { track.copy(name = "$it.mp3", title = "Z", rating = 1) }
+        val state = LibraryState().withAllTracks(TrackPage(files = files)).copy(sort = TrackSort.RATING, page = 2)
+        val edited = state.withSongMetadata(files.last(), SongMetadata(title = "A", rating = 5))
+        assertEquals(files.last().key, edited.copy(page = 1).orderedTracks.first().key)
+        assertEquals(files[49].key, edited.orderedTracks.single().key)
+        assertEquals(files.last().key, edited.copy(sort = TrackSort.NAME, page = 1).orderedTracks.first().key)
+        val refreshed = edited.withAllTracks(TrackPage(files = edited.tracks.files, version = 9))
+        assertEquals(2, refreshed.currentPage)
+        assertEquals(edited.orderedTracks, refreshed.orderedTracks)
+        assertEquals(TrackSort.RATING, refreshed.sort)
+    }
+
+    @Test fun `removing the last page clamps pagination and a removed selection can load empty`() {
+        val files = (0 until 51).map { track.copy(name = "$it.mp3") }
+        val state = LibraryState().withAllTracks(TrackPage(files = files)).copy(page = 2)
+        val removed = state.withoutMembership(files.last())
+        assertEquals(1, removed.totalPages)
+        assertEquals(1, removed.currentPage)
+        assertEquals(files.take(50), removed.orderedTracks)
+        val empty = removed.withAllTracks(TrackPage())
+        assertEquals(1, empty.page)
+        assertEquals(1, empty.totalPages)
+        assertTrue(empty.orderedTracks.isEmpty())
+    }
 
     @Test fun `local sorting uses cached ratings and preserves saved order and no vocals groups`() {
         val instrumental = track.copy(name = "[NoVocals]/a.mp3", title = "A", rating = 5)

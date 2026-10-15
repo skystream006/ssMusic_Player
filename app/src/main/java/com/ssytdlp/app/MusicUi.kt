@@ -358,9 +358,9 @@ class LibraryBrowsingState internal constructor(
 
 @Composable
 fun rememberLibraryBrowsingState(state: LibraryState): LibraryBrowsingState {
-    val tracks = rememberSaveable(state.selectedId, state.search, state.page, saver = LazyListState.Saver) { LazyListState() }
+    val tracks = rememberSaveable(state.selectedId, state.search, state.currentPage, state.sort, saver = LazyListState.Saver) { LazyListState() }
     val browser = rememberSaveable(saver = LazyListState.Saver) { LazyListState() }
-    val expanded = rememberSaveable(state.selectedId, state.search, state.page) { mutableStateOf(false) }
+    val expanded = rememberSaveable(state.selectedId, state.search, state.currentPage) { mutableStateOf(false) }
     val parent = rememberSaveable { mutableStateOf<String?>(null) }
     return remember(tracks, browser, expanded, parent) { LibraryBrowsingState(tracks, browser, expanded, parent) }
 }
@@ -373,7 +373,7 @@ fun LibraryContent(state: LibraryState, playback: PlaybackState, onPlay: (Int) -
     onReorder: ((Track, Track, Boolean) -> Unit)? = null,
     onSort: ((TrackSort) -> Unit)? = null,
     trackActions: @Composable (Track, Int) -> Unit) {
-    val files = remember(state.tracks.files, state.sort, state.ratings) { state.orderedTracks }
+    val files = remember(state.tracks.files, state.sort, state.ratings, state.allPagesLoaded, state.currentPage) { state.orderedTracks }
     val groups = remember(files) {
         files.withIndex().partition { !it.value.name.startsWith("[NoVocals]/", ignoreCase = true) }
     }
@@ -409,13 +409,9 @@ fun LibraryContent(state: LibraryState, playback: PlaybackState, onPlay: (Int) -
             verticalAlignment = Alignment.CenterVertically) {
             Text(if (state.search.isEmpty()) "TRACKS" else "SEARCH RESULTS", modifier = Modifier.weight(1f),
                 style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-            Text("${state.page} / ${state.tracks.totalPages}", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            Text("${state.currentPage} / ${state.totalPages}", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
             if (onSort != null) TrackSortMenu("Sort tracks", selected = state.sort,
                 enabled = !state.loading && files.isNotEmpty(), onSort = onSort)
-        }
-        if (onSort != null && state.sort != TrackSort.ORDER && state.tracks.totalPages > 1) {
-            Text("Sorting loaded tracks on this page only", Modifier.padding(horizontal = 24.dp),
-                style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
         }
         if (state.loading) LinearProgressIndicator(Modifier.fillMaxWidth())
         LazyColumn(Modifier.weight(1f).testTag("library-tracks"), state = browsing.tracks,
@@ -435,11 +431,11 @@ fun LibraryContent(state: LibraryState, playback: PlaybackState, onPlay: (Int) -
                     key = { it.value.key }) { row(it) }
             }
         }
-        if (state.tracks.totalPages > 1) Row(Modifier.fillMaxWidth().padding(horizontal = 20.dp),
+        if (state.totalPages > 1) Row(Modifier.fillMaxWidth().padding(horizontal = 20.dp),
             horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
-            ToolButton(Icons.AutoMirrored.Rounded.ArrowBack, "Previous page", enabled = !state.loading && state.page > 1) { onPage(state.page - 1) }
-            Text("Page ${state.page}", style = MaterialTheme.typography.labelLarge)
-            ToolButton(Icons.AutoMirrored.Rounded.ArrowForward, "Next page", enabled = !state.loading && state.page < state.tracks.totalPages) { onPage(state.page + 1) }
+            ToolButton(Icons.AutoMirrored.Rounded.ArrowBack, "Previous page", enabled = !state.loading && state.currentPage > 1) { onPage(state.currentPage - 1) }
+            Text("Page ${state.currentPage}", style = MaterialTheme.typography.labelLarge)
+            ToolButton(Icons.AutoMirrored.Rounded.ArrowForward, "Next page", enabled = !state.loading && state.currentPage < state.totalPages) { onPage(state.currentPage + 1) }
         }
     }
 }
