@@ -216,19 +216,23 @@ The mini-player has the same **More song actions** menu beside its progress slid
 including Replace File, Share Media, and read-only metadata for shared accounts
 where permitted, without opening Now Playing or changing playback.
 Track ratings remain visible even at zero; tap the star beside a track's menu
-or queue controls to open **Rate song**. Saving uses the existing MP3 editing
-permissions. Tap the selected star again to clear a rating, then **Save**.
+or queue controls to open **Rate song**. Shared accounts can update or clear MP3
+ratings in their granted libraries without permission to edit other metadata.
+Ratings are saved to the song and visible to everyone with access, not personal
+ratings. Tap the selected star again to clear a rating, then **Save**.
 On the Player tab, tap the stars above the progress bar to save a rating directly,
 without a dialog. Tap the selected star again to clear it. These stars are read-only
-when MP3 editing is not permitted and disabled while a change is saving.
+for non-MP3 files or accounts without rating permission and disabled while a change
+is saving.
 
 Shared accounts can choose **View song metadata** (the info icon) from a Library
 song's options or the Now Playing three-dot menu. For audio in their granted libraries,
 including non-MP3 and `[NoVocals]/` files, the dialog displays title, artist, album,
 genre, year, artwork, rating, and transcription-lock status read-only. It has a
 **Close** button and no save, rating, artwork, or lock editing controls. Tapping a
-track's rating also shows its value read-only; existing MP3 editing permissions
-remain unchanged, and the server still enforces library grants.
+track's rating instead opens **Rate song** for MP3 files; other formats remain
+read-only. Other metadata editing permissions remain unchanged, and the server
+still enforces library grants.
 
 Choose **Replace File** from a Library song's options or the Now Playing three-dot menu
 to upload one non-empty audio file in the same format, up to 512 MB. Selecting
