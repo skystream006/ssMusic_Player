@@ -225,6 +225,9 @@ class MusicViewModel @JvmOverloads constructor(application: Application, private
     internal var pendingSongs by mutableStateOf<Set<String>>(emptySet())
         private set
     internal fun songBusy(track: Track): Boolean = busy || track.key in pendingSongs
+    internal fun canRate(track: Track, metadata: SongMetadata?, user: User?): Boolean =
+        track.name.endsWith(".mp3", true) && metadata != null && user != null &&
+            (user.isShared || (metadata.canEdit && library.library.jobs.find { it.id == track.jobId }?.canModify(user) == true))
     private val pendingReorders = ArrayDeque<SongReorder>()
     internal var recoveringSongOrder by mutableStateOf(false)
         private set
@@ -911,7 +914,7 @@ class MusicViewModel @JvmOverloads constructor(application: Application, private
         }
     }
 
-    fun saveRating(track: Track, rating: Int) = launchSongAction(track, preview = {
+    fun saveRating(track: Track, rating: Int) = launchSongAction(track, allowShared = true, preview = {
         require(rating in 0..5) { "Rating must be between 0 and 5." }
         it.copy(ratings = it.ratings + (track.key to rating))
     }) {

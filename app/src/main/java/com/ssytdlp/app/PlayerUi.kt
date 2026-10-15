@@ -267,10 +267,7 @@ fun NowPlayingScreen(model: MusicViewModel, state: PlaybackState, onBack: () -> 
                         }
                         val rating: @Composable () -> Unit = {
                             val track = state.track
-                            val canRate = track.name.endsWith(".mp3", true) && metadata?.canEdit == true &&
-                                account?.user?.let { user ->
-                                    !user.isShared && model.library.library.jobs.find { it.id == track.jobId }?.canModify(user) == true
-                                } == true
+                            val canRate = model.canRate(track, metadata, account?.user)
                             PlayerRating(model.library.rating(track), enabled = canRate && !model.songBusy(track)) {
                                 model.saveRating(track, it)
                             }
@@ -1037,7 +1034,7 @@ fun MetadataDialog(model: MusicViewModel, track: Track, ratingOnly: Boolean = fa
     var value by remember(track.key, account) { mutableStateOf<SongMetadata?>(null) }
     var originalLock by remember(track.key, account) { mutableStateOf(false) }
     var error by remember(track.key, account) { mutableStateOf<String?>(null) }
-    val canEdit = track.name.endsWith(".mp3", true) && account?.user?.let { user ->
+    val canEdit = if (ratingOnly) model.canRate(track, value, account?.user) else track.name.endsWith(".mp3", true) && account?.user?.let { user ->
         !user.isShared && model.library.library.jobs.find { it.id == track.jobId }?.canModify(user) == true
     } == true && value?.canEdit != false
     LaunchedEffect(track.key, account) {
@@ -1050,7 +1047,8 @@ fun MetadataDialog(model: MusicViewModel, track: Track, ratingOnly: Boolean = fa
     MetadataDialog(value, { value = it }, error = error, busy = model.songBusy(track), ratingOnly = ratingOnly,
         canEdit = canEdit, dismiss = dismiss) { song ->
         if (canEdit) {
-            model.saveMetadata(track, song, song.transcriptionLocked.takeIf { !ratingOnly && it != originalLock })
+            if (ratingOnly) model.saveRating(track, song.rating)
+            else model.saveMetadata(track, song, song.transcriptionLocked.takeIf { it != originalLock })
             dismiss()
         }
     }

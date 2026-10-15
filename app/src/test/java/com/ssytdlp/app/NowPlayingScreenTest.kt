@@ -1708,7 +1708,8 @@ class NowPlayingScreenTest {
         val busy = ReflectionHelpers.getField<MutableState<Boolean>>(model, "busy\$delegate")
         val requests = metadataResponses { 500 to "{}" }
         compose.setContent { MusicTheme { NowPlayingScreen(model, PlaybackState(track = track.value)) { _, _ -> } } }
-        listOf(Triple(User("owner", role = "Shared"), "song.mp3", true),
+        listOf(Triple(User("reader", role = "Shared"), "song.flac", false),
+            Triple(User("reader", role = "SHARED"), "video.mp4", true),
             Triple(User("owner"), "song.mp3", false),
             Triple(User("other"), "song.mp3", true),
             Triple(User("owner"), "song.flac", true)).forEach { (user, name, canEdit) ->
@@ -1731,6 +1732,28 @@ class NowPlayingScreenTest {
         compose.runOnIdle { metadata.value = SongMetadata(canEdit = true) }
         compose.onNodeWithContentDescription("3 stars").assertIsEnabled()
         compose.runOnIdle { busy.value = true }
+        compose.onNodeWithContentDescription("3 stars").assertIsNotEnabled()
+        for (role in listOf("shared", "Shared", "SHARED")) {
+            compose.runOnIdle {
+                account.value = account.value!!.copy(user = User("reader", role = role))
+                library.value = LibraryState()
+                metadata.value = SongMetadata(canEdit = false)
+                busy.value = false
+            }
+            (1..5).forEach { compose.onNodeWithContentDescription("$it stars").assertIsEnabled() }
+            compose.runOnIdle { account.value = account.value!!.copy(user = User("reader")) }
+            compose.onNodeWithContentDescription("3 stars").assertIsNotEnabled()
+            compose.runOnIdle { account.value = account.value!!.copy(user = User("reader", role = role)) }
+            compose.onNodeWithContentDescription("3 stars").assertIsEnabled()
+            compose.runOnIdle { busy.value = true }
+            compose.onNodeWithContentDescription("3 stars").assertIsNotEnabled()
+            compose.runOnIdle { busy.value = false; metadata.value = null }
+            compose.onNodeWithContentDescription("3 stars").assertIsNotEnabled()
+        }
+        compose.runOnIdle {
+            account.value = null
+            metadata.value = SongMetadata(canEdit = true)
+        }
         compose.onNodeWithContentDescription("3 stars").assertIsNotEnabled()
         compose.runOnIdle { assertTrue(requests.isEmpty()) }
     }

@@ -7,6 +7,7 @@ import android.os.Looper
 import android.net.Uri
 import androidx.activity.ComponentActivity
 import androidx.compose.runtime.collectAsState
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.ui.test.*
 import androidx.compose.ui.test.junit4.createAndroidComposeRule
 import androidx.lifecycle.ViewModelStore
@@ -274,16 +275,24 @@ class AccountRefreshTest {
     }
 
     @Test fun playerStarsSaveOnlyRatingAndClearWithoutOpeningADialogOrChangingPlayback() {
+        verifyPlayerRatingSaves(account.user)
+    }
+
+    @Test fun sharedPlayerStarsSaveOnlyRatingAndClearWithoutMetadataEditingPermission() {
+        verifyPlayerRatingSaves(User("reader", role = "Shared"))
+    }
+
+    private fun verifyPlayerRatingSaves(user: User) {
         val track = Track("job", "song.mp3", title = "Song", rating = 3)
         val next = track.copy(name = "next.mp3", title = "Next song", rating = 1)
         val files = listOf(track) + (1..49).map { track.copy(name = "filler$it.mp3") } + Track("other", "other.mp3")
         val original = SongMetadata(title = "Song", artist = "Artist", album = "Album", genre = "Pop",
             year = "2026", rating = 3, sylt = listOf(LyricLine(1.5, "Timed lyrics")), uslt = "Plain lyrics",
-            transcriptionLocked = true, canEdit = true)
+            transcriptionLocked = true, canEdit = !user.isShared)
         val saved = AtomicReference(original)
         val path = "/api/jobs/job/files/song.mp3/metadata"
         val nextPath = "/api/jobs/job/files/next.mp3/metadata"
-        val model = startModel(track, expectedTracks = 51) { request ->
+        val model = startModel(track, user = user, expectedTracks = 51) { request ->
             when (request.requestUrl!!.encodedPath) {
                 "/api/library" -> MockResponse().setBody(ApiJson.encodeToString(
                     Library(jobs = listOf(Job("job", initiatedBy = account.user)))))
@@ -333,11 +342,19 @@ class AccountRefreshTest {
     }
 
     @Test fun failedInlineRatingSaveKeepsPreviousRatingAndAllowsRetry() {
+        verifyFailedRatingSave(account.user)
+    }
+
+    @Test fun deniedSharedRatingSaveKeepsPreviousRatingAndAllowsRetry() {
+        verifyFailedRatingSave(User("reader", role = "shared"))
+    }
+
+    private fun verifyFailedRatingSave(user: User) {
         val track = Track("job", "song.mp3", rating = 3)
-        val original = SongMetadata(title = "Song", rating = 3, canEdit = true)
+        val original = SongMetadata(title = "Song", rating = 3, canEdit = !user.isShared)
         val status = AtomicInteger(403)
         val path = "/api/jobs/job/files/song.mp3/metadata"
-        val model = startModel(track) { request ->
+        val model = startModel(track, user = user) { request ->
             when (request.requestUrl!!.encodedPath) {
                 "/api/library" -> MockResponse().setBody(ApiJson.encodeToString(
                     Library(jobs = listOf(Job("job", initiatedBy = account.user)))))
@@ -354,20 +371,81 @@ class AccountRefreshTest {
             MusicTheme { NowPlayingScreen(model, model.playback.state.collectAsState().value) { _, _ -> } }
         }
         drainRequests()
-        compose.onNodeWithContentDescription("5 stars").performClick()
-        waitFor { model.notice != null && !model.songBusy(track) }
-        assertEquals("Rating denied.", model.notice)
-        assertEquals(original, model.metadata)
-        assertEquals(3, model.library.rating(track))
-        compose.onNodeWithContentDescription("Rating: 3 out of 5").assertIsDisplayed()
-        compose.onNode(isDialog()).assertDoesNotExist()
-        assertPatch(drainRequests().single { it.method == "PATCH" }, path, """{"rating":5}""")
+        for (code in listOf(403, 409)) {
+            status.set(code)
+            compose.runOnUiThread { model.message(null) }
+            compose.onNodeWithContentDescription("5 stars").performClick()
+            waitFor { model.notice != null && !model.songBusy(track) }
+            assertEquals("Rating denied.", model.notice)
+            assertEquals(original, model.metadata)
+            assertEquals(3, model.library.rating(track))
+            compose.onNodeWithContentDescription("Rating: 3 out of 5").assertIsDisplayed()
+            compose.onNode(isDialog()).assertDoesNotExist()
+            assertPatch(drainRequests().single { it.method == "PATCH" }, path, """{"rating":5}""")
+        }
 
         status.set(200)
         compose.onNodeWithContentDescription("5 stars").assertIsEnabled().performClick()
         waitFor { model.library.rating(track) == 5 && !model.songBusy(track) && !model.library.loading }
         compose.onNodeWithContentDescription("Rating: 5 out of 5").assertIsDisplayed()
         assertPatch(drainRequests().single { it.method == "PATCH" }, path, """{"rating":5}""")
+    }
+
+    @Config(qualifiers = "w320dp-h800dp")
+    @Test fun sharedLibraryAndQueueRatingDialogsSaveOnlyRatingAndKeepOtherMutationsBlocked() {
+        val track = Track("source job", "[NoVocals]/song.MP3", rating = 3)
+        val original = SongMetadata(title = "Song", artist = "Artist", album = "Album", genre = "Pop",
+            year = "2026", rating = 3, uslt = "Lyrics", transcriptionLocked = true, canEdit = false)
+        val saved = AtomicReference(original)
+        val path = "/api/jobs/source%20job/files/%5BNoVocals%5D%2Fsong.MP3/metadata"
+        val model = startModel(track, user = User("reader", role = "SHARED")) { request ->
+            when (request.requestUrl!!.encodedPath) {
+                songPath(track, "lyrics") -> MockResponse().setBody(ApiJson.encodeToString(saved.get()))
+                path -> metadataResponse(saved.get())
+                else -> null
+            }
+        }
+        showTrack(model, track)
+        val playback = model.playback.state.value
+        val showLibrary = mutableStateOf(true)
+        compose.setContent {
+            MusicTheme {
+                if (showLibrary.value) LibraryScreen(model, playback, {}) { _, _ -> }
+                else NowPlayingScreen(model, playback) { _, _ -> }
+            }
+        }
+        drainRequests()
+        for ((library, rating) in listOf(true to 5, false to 0)) {
+            compose.runOnUiThread { showLibrary.value = library }
+            if (library) compose.onNodeWithContentDescription("Expand NoVocals").performClick()
+            else compose.onNodeWithText("Queue").performClick()
+            compose.onNodeWithContentDescription("Rating: ${model.library.rating(track)} out of 5").performClick()
+            waitFor { compose.onAllNodesWithText("Rate song").fetchSemanticsNodes().isNotEmpty() }
+            compose.onNodeWithText("Save").assertIsEnabled()
+            compose.onNode(hasSetTextAction()).assertDoesNotExist()
+            compose.onNodeWithContentDescription("Unlock transcription").assertDoesNotExist()
+            compose.onNode(hasContentDescription("5 stars") and hasAnyAncestor(isDialog())).performClick()
+            saved.set(original.copy(rating = rating))
+            compose.onNodeWithText("Save").performClick()
+            waitFor { model.library.rating(track) == rating && !model.songBusy(track) }
+            compose.onNode(isDialog()).assertDoesNotExist()
+            compose.onNodeWithContentDescription("Rating: $rating out of 5").assertIsDisplayed()
+            assertEquals(original.copy(rating = rating), model.metadata)
+            assertEquals(playback, model.playback.state.value)
+            assertPatch(drainRequests().single { it.method == "PATCH" }, path, """{"rating":$rating}""")
+        }
+        perform(model) { model.saveMetadata(track, original.copy(title = "Not allowed")) }
+        assertEquals("This library is read-only.", model.notice)
+        perform(model) { model.lockTranscription(track, false) }
+        assertEquals("This library is read-only.", model.notice)
+        perform(model) { model.saveLyrics(track, json("uslt" to "Not allowed")) {} }
+        assertEquals("This library is read-only.", model.notice)
+        for (rating in listOf(-1, 6)) {
+            perform(model) { model.saveRating(track, rating) }
+            assertEquals("Rating must be between 0 and 5.", model.notice)
+        }
+        assertFalse(drainRequests().any { it.method != "GET" })
+        assertEquals(0, model.library.rating(track))
     }
 
     @Test fun songSavesPreviewLocallyAndLeaveOtherSongsAndNavigationUsable() {
