@@ -16,6 +16,7 @@ import androidx.compose.ui.text.TextLayoutResult
 import androidx.compose.ui.unit.dp
 import com.ssytdlp.app.core.Track
 import com.ssytdlp.app.core.TrackPage
+import com.ssytdlp.app.core.TrackSort
 import com.ssytdlp.app.core.Transcription
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
@@ -32,6 +33,44 @@ class SongListGesturesTest {
     private val first = Track("job", "first.mp3", playlistId = "playlist")
     private val second = Track("job", "second.mp3", playlistId = "playlist")
     private val third = Track("job", "third.mp3", playlistId = "playlist")
+
+    @Test fun queueSortMenuUsesLocalOrderAndKeepsSelectionAndRemovalIndicesAligned() {
+        val queue = mutableStateOf(listOf(third, first, second))
+        val connected = mutableStateOf(true)
+        val sorts = mutableListOf<TrackSort>()
+        val played = mutableListOf<Int>()
+        val removed = mutableListOf<Int>()
+        compose.setContent {
+            MusicTheme {
+                QueueContent(PlaybackState(connected = connected.value, queue = queue.value), LibraryState(),
+                    onSelect = { played += it }, onMove = { _, _ -> error("Unexpected move") },
+                    onRemove = { removed += it }, onSort = { sort ->
+                        sorts += sort
+                        queue.value = sort.indices(queue.value).map { queue.value[it] }
+                    })
+            }
+        }
+        compose.onNodeWithContentDescription("Sort queue").performClick()
+        compose.onNodeWithText("Order number").assertDoesNotExist()
+        compose.onNodeWithText("Name (A–Z)").performClick()
+        compose.onNodeWithText("first").performClick()
+        compose.onNodeWithTag("queue-row-2").performTouchInput { swipeLeft() }
+        compose.runOnIdle {
+            assertEquals(listOf(first, second, third), queue.value)
+            assertEquals(listOf(0), played)
+            assertEquals(listOf(2), removed)
+            assertEquals(listOf(TrackSort.NAME), sorts)
+        }
+        compose.onNodeWithContentDescription("Sort queue").performClick()
+        compose.onNodeWithText("Rating (highest first)").performClick()
+        compose.runOnIdle {
+            assertEquals(listOf(TrackSort.NAME, TrackSort.RATING), sorts)
+            connected.value = false
+        }
+        compose.onNodeWithContentDescription("Sort queue").assertIsNotEnabled()
+        compose.runOnIdle { connected.value = true; queue.value = listOf(first) }
+        compose.onNodeWithContentDescription("Sort queue").assertIsNotEnabled()
+    }
 
     @Test fun playlistDragUsesServerKeysAndKeepsPlaybackIndicesInRawOrder() {
         val instrumental = first.copy(name = "[NoVocals]/first.mp3")

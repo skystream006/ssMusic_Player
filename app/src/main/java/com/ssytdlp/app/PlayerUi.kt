@@ -222,6 +222,7 @@ fun NowPlayingScreen(model: MusicViewModel, state: PlaybackState, onBack: () -> 
         QueueContent(state, model.library, modifier, onSelect = model.playback::select,
             onMove = { from, to -> model.playback.move(from, to, state.queue) },
             onRemove = { model.playback.remove(it, state.queue) },
+            onSort = { model.playback.sort(it, model.library, state.queue) },
             onRating = { ratingTrack = it },
             artwork = { rememberTrackArtwork(it, model.api, account) }) { queued, index ->
             TrackMenu(model, queued, index, onRemoveFromQueue = { model.playback.remove(index, state.queue) }, download = download)

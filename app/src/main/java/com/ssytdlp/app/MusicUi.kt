@@ -211,7 +211,7 @@ fun MusicApp(model: MusicViewModel, requestNotifications: () -> Unit) {
     }
     val playLibrary: (Int) -> Unit = { index ->
         requestNotifications()
-        model.playback.play(model.library.tracks.files, index)
+        model.playback.play(model.library.orderedTracks, index)
         playerExpanded = true
     }
     CompositionLocalProvider(LocalMetadataArtworkOwner provides account?.let(::MetadataOwner)) {
@@ -332,7 +332,7 @@ fun LibraryScreen(model: MusicViewModel, playback: PlaybackState, onPlay: (Int) 
     var ratingTrack by remember { mutableStateOf<Track?>(null) }
     val songs: @Composable () -> Unit = {
         LibraryContent(model.library, playback, onPlay = onPlay, onPage = model::page,
-            browsing = browsing,
+            browsing = browsing, onSort = model::sortLibrary,
             artwork = { rememberTrackArtwork(it, model.api, account) },
             onReorder = if (model.busy || model.pendingSongs.isNotEmpty() || model.recoveringSongOrder || account?.user?.isShared != false) null
                 else { track, target, after -> model.reorder(track, target, after) },
@@ -371,13 +371,16 @@ fun LibraryContent(state: LibraryState, playback: PlaybackState, onPlay: (Int) -
     artwork: @Composable (Track) -> ImageBitmap? = { null },
     browsing: LibraryBrowsingState = rememberLibraryBrowsingState(state),
     onReorder: ((Track, Track, Boolean) -> Unit)? = null,
+    onSort: ((TrackSort) -> Unit)? = null,
     trackActions: @Composable (Track, Int) -> Unit) {
-    val groups = remember(state.tracks.files) {
-        state.tracks.files.withIndex().partition { !it.value.name.startsWith("[NoVocals]/", ignoreCase = true) }
+    val files = remember(state.tracks.files, state.sort, state.ratings) { state.orderedTracks }
+    val groups = remember(files) {
+        files.withIndex().partition { !it.value.name.startsWith("[NoVocals]/", ignoreCase = true) }
     }
-    val tracksByKey = remember(state.tracks.files) { state.tracks.files.withIndex().associateBy { it.value.key } }
+    val tracksByKey = remember(files) { files.withIndex().associateBy { it.value.key } }
     val visibleKeys = (groups.first + if (browsing.showNoVocals) groups.second else emptyList()).map { it.value.key }
-    val canReorder = onReorder != null && state.selectedId != null && state.search.isEmpty() && !state.loading
+    val canReorder = onReorder != null && state.selectedId != null && state.search.isEmpty() && !state.loading &&
+        state.sort == TrackSort.ORDER
     val reorder = rememberSongReorderState(browsing.tracks, visibleKeys, canReorder,
         canMove = { source, target ->
             val from = tracksByKey.getValue(source).value
@@ -402,9 +405,17 @@ fun LibraryContent(state: LibraryState, playback: PlaybackState, onPlay: (Int) -
       }
     }
     Column(Modifier.fillMaxSize()) {
-        Row(Modifier.fillMaxWidth().padding(horizontal = 24.dp, vertical = 8.dp), horizontalArrangement = Arrangement.SpaceBetween) {
-            Text(if (state.search.isEmpty()) "TRACKS" else "SEARCH RESULTS", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        Row(Modifier.fillMaxWidth().padding(horizontal = 24.dp, vertical = 8.dp),
+            verticalAlignment = Alignment.CenterVertically) {
+            Text(if (state.search.isEmpty()) "TRACKS" else "SEARCH RESULTS", modifier = Modifier.weight(1f),
+                style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
             Text("${state.page} / ${state.tracks.totalPages}", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            if (onSort != null) TrackSortMenu("Sort tracks", selected = state.sort,
+                enabled = !state.loading && files.isNotEmpty(), onSort = onSort)
+        }
+        if (onSort != null && state.sort != TrackSort.ORDER && state.tracks.totalPages > 1) {
+            Text("Sorting loaded tracks on this page only", Modifier.padding(horizontal = 24.dp),
+                style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
         }
         if (state.loading) LinearProgressIndicator(Modifier.fillMaxWidth())
         LazyColumn(Modifier.weight(1f).testTag("library-tracks"), state = browsing.tracks,
@@ -429,6 +440,25 @@ fun LibraryContent(state: LibraryState, playback: PlaybackState, onPlay: (Int) -
             ToolButton(Icons.AutoMirrored.Rounded.ArrowBack, "Previous page", enabled = !state.loading && state.page > 1) { onPage(state.page - 1) }
             Text("Page ${state.page}", style = MaterialTheme.typography.labelLarge)
             ToolButton(Icons.AutoMirrored.Rounded.ArrowForward, "Next page", enabled = !state.loading && state.page < state.tracks.totalPages) { onPage(state.page + 1) }
+        }
+    }
+}
+
+@Composable
+internal fun TrackSortMenu(description: String, enabled: Boolean, selected: TrackSort? = null,
+    onSort: (TrackSort) -> Unit) {
+    var open by remember { mutableStateOf(false) }
+    Box {
+        ToolButton(Icons.AutoMirrored.Rounded.Sort, description, enabled = enabled) { open = true }
+        DropdownMenu(open && enabled, { open = false }) {
+            TrackSort.entries.filter { selected != null || it != TrackSort.ORDER }.forEach { sort ->
+                DropdownMenuItem(text = { Text(when (sort) {
+                    TrackSort.ORDER -> "Order number"
+                    TrackSort.NAME -> "Name (A–Z)"
+                    TrackSort.RATING -> "Rating (highest first)"
+                }) }, trailingIcon = { if (selected == sort) Icon(Icons.Rounded.Check, "Selected") },
+                    onClick = { open = false; onSort(sort) })
+            }
         }
     }
 }

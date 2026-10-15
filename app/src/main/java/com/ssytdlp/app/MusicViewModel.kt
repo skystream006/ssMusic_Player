@@ -33,7 +33,7 @@ import kotlinx.serialization.json.*
 data class LibraryState(
     val library: Library = Library(), val tracks: TrackPage = TrackPage(),
     val selectedId: String? = null, val search: String = "", val page: Int = 1,
-    val loading: Boolean = false,
+    val loading: Boolean = false, val sort: TrackSort = TrackSort.ORDER,
     val pendingTranscriptions: Map<String, Transcription> = emptyMap(),
     val transcriptions: Map<String, Transcription?> = emptyMap(),
     val ratings: Map<String, Int> = emptyMap(),
@@ -77,6 +77,14 @@ data class LibraryState(
         else track.transcription ?: library.jobs.find { it.id == track.jobId }?.transcriptions?.get(track.name)
 
     fun rating(track: Track): Int = ratings[track.key] ?: track.rating
+
+    val orderedTracks: List<Track>
+        get() {
+            if (sort == TrackSort.ORDER) return tracks.files
+            val sorted = sort.indices(tracks.files, ::rating).map { tracks.files[it] }
+            val (originals, instrumentals) = sorted.partition { !it.name.startsWith("[NoVocals]/", true) }
+            return originals + instrumentals
+        }
 
     fun artworkUrl(track: Track): String? = if (artworkUrls.containsKey(track.key)) artworkUrls[track.key] else track.artworkUrl
 
@@ -465,6 +473,7 @@ class MusicViewModel @JvmOverloads constructor(application: Application, private
     }
 
     fun page(value: Int) { library = library.copy(page = value.coerceAtLeast(1)); refreshTracks() }
+    fun sortLibrary(sort: TrackSort) { library = library.copy(sort = sort) }
     fun refresh() = launchAction { loadLibrary(); refreshTracks(); refreshHealth() }
 
     fun refreshTracks(debounce: Boolean = false, background: Boolean = false) {
@@ -638,6 +647,7 @@ class MusicViewModel @JvmOverloads constructor(application: Application, private
         val account = sessions.account.value ?: return
         val before = library
         if (busy || pendingSongs.isNotEmpty() || recoveringSongOrder || account.user.isShared || before.loading || before.search.isNotEmpty() ||
+            before.sort != TrackSort.ORDER ||
             before.selectedId == null || track.playlistId != before.selectedId || target.playlistId != before.selectedId ||
             track.name.startsWith("[NoVocals]/", true) != target.name.startsWith("[NoVocals]/", true)) return
         val files = before.tracks.files.toMutableList()

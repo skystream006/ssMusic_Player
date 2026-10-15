@@ -7,6 +7,7 @@ import com.ssytdlp.app.core.LibraryEntry
 import com.ssytdlp.app.core.LibraryPlaylist
 import com.ssytdlp.app.core.Track
 import com.ssytdlp.app.core.TrackPage
+import com.ssytdlp.app.core.TrackSort
 import com.ssytdlp.app.core.Transcription
 import org.junit.Assert.*
 import org.junit.Test
@@ -15,6 +16,25 @@ class LibraryStateTest {
     private val track = Track(jobId = "source", name = "folder/song.mp3")
     private val sent = Transcription(status = "sent")
     private val done = Transcription(status = "transcribed", lyricsIncluded = true)
+
+    @Test fun `local sorting uses cached ratings and preserves saved order and no vocals groups`() {
+        val instrumental = track.copy(name = "[NoVocals]/a.mp3", title = "A", rating = 5)
+        val first = track.copy(title = "Z", rating = 5)
+        val second = track.copy(name = "b.mp3", title = "B", rating = 2)
+        val files = listOf(instrumental, first, second)
+        val state = LibraryState(tracks = TrackPage(files = files, page = 3, totalPages = 5),
+            page = 3, selectedId = "playlist", ratings = mapOf(first.key to 0))
+        assertEquals(listOf(second, first, instrumental), state.copy(sort = TrackSort.NAME).orderedTracks)
+        val rated = state.copy(sort = TrackSort.RATING)
+        assertEquals(listOf(second, first, instrumental), rated.orderedTracks)
+        assertEquals(files, rated.tracks.files)
+        assertEquals(files, rated.copy(sort = TrackSort.ORDER).orderedTracks)
+        assertEquals(3, rated.page)
+        assertEquals(5, rated.tracks.totalPages)
+        val nextPage = rated.withTrackPage(TrackPage(files = listOf(first, second), page = 4))
+        assertEquals(TrackSort.RATING, nextPage.sort)
+        assertEquals(listOf(first, second), nextPage.orderedTracks)
+    }
 
     @Test fun `restored playlist or folder remains selected after the library loads`() {
         val library = Library(entries = listOf(LibraryEntry("playlist", "playlist"), LibraryEntry("folder", "folder")))

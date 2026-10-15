@@ -11,6 +11,7 @@ import androidx.test.core.app.ApplicationProvider
 import com.ssytdlp.app.core.Account
 import com.ssytdlp.app.core.Session
 import com.ssytdlp.app.core.Track
+import com.ssytdlp.app.core.TrackSort
 import com.ssytdlp.app.core.User
 import org.junit.After
 import org.junit.Assert.*
@@ -119,6 +120,63 @@ class PlaybackPersistenceTest {
         assertEquals(listOf(first, first, second), store.playback(account)!!.queue)
         assertFalse(player.matchesQueue(queue))
         assertTrue(player.matchesQueue(listOf(first, first, second)))
+    }
+
+    @Test fun `queue sorts preserve the playing duplicate position modes and persisted order without loading media`() {
+        attach()
+        val a = first.copy(title = "Alpha", rating = 5)
+        val z = second.copy(title = "Zulu", rating = 1)
+        val queue = listOf(z, a, z, a)
+        player.setMediaItems(queue.map { it.toMediaItem(api) }, 2, 42_000)
+        player.playWhenReady = true
+        player.shuffleModeEnabled = true
+        player.repeatMode = Player.REPEAT_MODE_ALL
+
+        assertTrue(player.sortQueue(TrackSort.NAME, queue) { it.rating })
+        flushEvents()
+        val alphabetical = listOf(a, a, z, z)
+        assertTrue(player.matchesQueue(alphabetical))
+        assertEquals(3, player.currentMediaItemIndex)
+        assertEquals(42_000L, player.currentPosition)
+        assertTrue(player.playWhenReady)
+        assertFalse(player.shuffleModeEnabled)
+        assertEquals(Player.REPEAT_MODE_ALL, player.repeatMode)
+        assertEquals(Player.STATE_IDLE, player.playbackState)
+        assertEquals(SavedPlayback(alphabetical, 3, 42_000, repeat = Player.REPEAT_MODE_ALL),
+            store.playback(account))
+
+        player.pause()
+        val library = LibraryState(ratings = mapOf(a.key to 0, z.key to 5))
+        assertTrue(player.sortQueue(TrackSort.RATING, alphabetical, library::rating))
+        flushEvents()
+        val rated = listOf(z, z, a, a)
+        assertTrue(player.matchesQueue(rated))
+        assertEquals(1, player.currentMediaItemIndex)
+        assertEquals(42_000L, player.currentPosition)
+        assertFalse(player.playWhenReady)
+        assertEquals(Player.STATE_IDLE, player.playbackState)
+        assertEquals(rated, store.playback(account)!!.queue)
+        player.seekToNextMediaItem()
+        assertEquals(a, player.currentMediaItem!!.asTrack())
+        assertEquals(listOf(z, a, z, a), queue)
+    }
+
+    @Test fun `queue sorting rejects stale snapshots and default order but explicit sorting disables shuffle`() {
+        val queue = listOf(first, second)
+        player.setMediaItems(queue.map { it.toMediaItem(api) }, 1, 42_000)
+        player.shuffleModeEnabled = true
+        assertFalse(player.sortQueue(TrackSort.NAME, queue.reversed()) { it.rating })
+        assertFalse(player.sortQueue(TrackSort.ORDER, queue) { it.rating })
+        assertTrue(player.shuffleModeEnabled)
+        assertTrue(player.matchesQueue(queue))
+        assertTrue(player.sortQueue(TrackSort.NAME, queue) { it.rating })
+        assertFalse(player.shuffleModeEnabled)
+        assertEquals(1, player.currentMediaItemIndex)
+        assertEquals(42_000L, player.currentPosition)
+        player.clearMediaItems()
+        assertFalse(player.sortQueue(TrackSort.RATING, emptyList()) { it.rating })
+        player.setMediaItem(first.toMediaItem(api))
+        assertFalse(player.sortQueue(TrackSort.NAME, listOf(first)) { it.rating })
     }
 
     @Test fun `moving a song in a new queue makes playback follow the displayed order`() {

@@ -9,6 +9,7 @@ import androidx.media3.common.Player
 import androidx.media3.session.MediaController
 import androidx.media3.session.SessionToken
 import com.ssytdlp.app.core.Track
+import com.ssytdlp.app.core.TrackSort
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -120,6 +121,11 @@ class PlaybackConnection(
             if (player.moveQueueItem(from, to, expectedQueue)) snapshot()
         }
     }
+    fun sort(sort: TrackSort, library: LibraryState, expectedQueue: List<Track> = state.value.queue) {
+        controller?.let { player ->
+            if (player.sortQueue(sort, expectedQueue, library::rating)) snapshot()
+        }
+    }
     fun replaceFile(file: Track) {
         controller?.let { player ->
             player.replaceSongFile(file, api)
@@ -154,6 +160,22 @@ internal fun Player.moveQueueItem(from: Int, to: Int, expectedQueue: List<Track>
     // Manual ordering takes precedence over Media3's separate shuffle order.
     shuffleModeEnabled = false
     moveMediaItem(from, to)
+    return true
+}
+
+internal fun Player.sortQueue(sort: TrackSort, expectedQueue: List<Track>, rating: (Track) -> Int): Boolean {
+    if (sort == TrackSort.ORDER || expectedQueue.size < 2 || !matchesQueue(expectedQueue)) return false
+    val order = sort.indices(expectedQueue, rating)
+    val current = expectedQueue.indices.toMutableList()
+    shuffleModeEnabled = false
+    // Move occurrences in place so the playing item, position and buffered audio survive sorting.
+    order.forEachIndexed { target, original ->
+        val from = current.indexOf(original)
+        if (from != target) {
+            moveMediaItem(from, target)
+            current.add(target, current.removeAt(from))
+        }
+    }
     return true
 }
 

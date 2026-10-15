@@ -96,6 +96,53 @@ class PlaylistEditingTest {
         Security.removeProvider(provider.name)
     }
 
+    @Test fun playlistSortsLoadedPageLocallyRestoresOrderAndKeepsPlaybackIndicesAligned() {
+        startModel()
+        val songs = listOf(
+            Track(job.id, "c.mp3", title = "Charlie", rating = 5, playlistId = entry.id),
+            Track(job.id, "a.mp3", title = "Alpha", rating = 1, playlistId = entry.id),
+            Track(job.id, "b.mp3", title = "Bravo", rating = 3, playlistId = entry.id))
+        showSongs(songs)
+        compose.runOnIdle { state.value = model.library.copy(ratings = mapOf(songs[0].key to 0)) }
+        var played: List<Track> = emptyList()
+        var selected = -1
+        compose.setContent {
+            MusicTheme {
+                LibraryContent(model.library, PlaybackState(connected = true), onPlay = {
+                    played = model.library.orderedTracks
+                    selected = it
+                }, onPage = model::page, onSort = model::sortLibrary, onReorder = model::reorder) { _, _ -> }
+            }
+        }
+        fun choose(label: String) {
+            compose.onNodeWithContentDescription("Sort tracks").performClick()
+            compose.onNodeWithText(label).performClick()
+        }
+        choose("Name (A–Z)")
+        compose.onNodeWithText("Sorting loaded tracks on this page only").assertIsDisplayed()
+        compose.onNodeWithContentDescription("Drag to reorder Alpha").assertIsNotEnabled()
+        compose.onNodeWithText("Bravo").performClick()
+        compose.runOnIdle {
+            assertEquals(listOf(songs[1], songs[2], songs[0]), played)
+            assertEquals(1, selected)
+            assertEquals(3, model.library.page)
+            assertEquals(songs, model.library.tracks.files)
+            model.reorder(songs[0], songs[1], true)
+        }
+        choose("Rating (highest first)")
+        compose.onNodeWithText("Alpha").performClick()
+        compose.runOnIdle {
+            assertEquals(listOf(songs[2], songs[1], songs[0]), played)
+            assertEquals(1, selected)
+        }
+        choose("Order number")
+        compose.onNodeWithContentDescription("Drag to reorder Alpha").assertIsEnabled()
+        compose.runOnIdle {
+            assertEquals(songs, model.library.orderedTracks)
+            assertTrue(requests.isEmpty())
+        }
+    }
+
     @Test fun menuAllowsPersonalLocationEditsButNotFoldersSharedUsersOrActiveJobs() {
         startModel()
         compose.runOnIdle { model.viewModelScope.cancel() }
