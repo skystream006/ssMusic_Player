@@ -405,7 +405,7 @@ fun LibraryContent(state: LibraryState, playback: PlaybackState, onPlay: (Int) -
       }
     }
     Column(Modifier.fillMaxSize()) {
-        Row(Modifier.fillMaxWidth().padding(horizontal = 24.dp, vertical = 8.dp),
+        Row(Modifier.fillMaxWidth().padding(horizontal = 24.dp, vertical = if (onSort == null) 8.dp else 0.dp),
             verticalAlignment = Alignment.CenterVertically) {
             Text(if (state.search.isEmpty()) "TRACKS" else "SEARCH RESULTS", modifier = Modifier.weight(1f),
                 style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)

@@ -406,7 +406,7 @@ class AccountRefreshTest {
                 assertEquals(4, model.library.rating(second))
                 model.page(2)
             }
-            waitFor { model.library.page == 2 && !model.library.loading }
+            waitFor { model.library.page == 2 && !model.library.loading && started.get() == 1 }
             assertEquals(4, model.library.rating(second))
             assertEquals(1, started.get())
         } finally { release.countDown() }

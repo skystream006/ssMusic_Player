@@ -222,7 +222,7 @@ fun NowPlayingScreen(model: MusicViewModel, state: PlaybackState, onBack: () -> 
         QueueContent(state, model.library, modifier, onSelect = model.playback::select,
             onMove = { from, to -> model.playback.move(from, to, state.queue) },
             onRemove = { model.playback.remove(it, state.queue) },
-            onSort = { model.playback.sort(it, model.library, state.queue) },
+            onSort = if (landscape) null else ({ model.playback.sort(it, model.library, state.queue) }),
             onRating = { ratingTrack = it },
             artwork = { rememberTrackArtwork(it, model.api, account) }) { queued, index ->
             TrackMenu(model, queued, index, onRemoveFromQueue = { model.playback.remove(index, state.queue) }, download = download)
@@ -293,8 +293,14 @@ fun NowPlayingScreen(model: MusicViewModel, state: PlaybackState, onBack: () -> 
                     }
                 }
                 if (landscape) Column(Modifier.weight(0.35f).fillMaxHeight().testTag("now-playing-queue-pane")) {
-                    Text("Queue", Modifier.fillMaxWidth().heightIn(min = 48.dp).padding(horizontal = 16.dp, vertical = 12.dp)
-                        .semantics { heading() }, style = MaterialTheme.typography.titleMedium)
+                    Row(Modifier.fillMaxWidth().heightIn(min = 48.dp).padding(horizontal = 16.dp),
+                        verticalAlignment = Alignment.CenterVertically) {
+                        Text("Queue", Modifier.weight(1f).padding(vertical = 12.dp).semantics { heading() },
+                            style = MaterialTheme.typography.titleMedium)
+                        TrackSortMenu("Sort queue", enabled = state.connected && state.queue.size > 1) {
+                            model.playback.sort(it, model.library, state.queue)
+                        }
+                    }
                     HorizontalDivider()
                     if (state.queue.isEmpty()) Text("Your queue is empty.", Modifier.padding(16.dp))
                     else queue(Modifier.weight(1f))
