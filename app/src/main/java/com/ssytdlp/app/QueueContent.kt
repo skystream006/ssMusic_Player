@@ -25,37 +25,45 @@ import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
 import com.ssytdlp.app.core.Track
+import com.ssytdlp.app.core.TrackSort
 import kotlin.math.roundToInt
 
 @Composable
 internal fun QueueContent(state: PlaybackState, library: LibraryState, modifier: Modifier = Modifier,
     onSelect: (Int) -> Unit, onMove: (Int, Int) -> Unit, onRemove: (Int) -> Unit,
     onRating: (Track) -> Unit = {}, artwork: @Composable (Track) -> ImageBitmap? = { null },
+    onSort: ((TrackSort) -> Unit)? = null,
     trackActions: @Composable (Track, Int) -> Unit = { _, _ -> }) {
     val listState = rememberLazyListState()
-    // Indices identify occurrences, not songs: a queue may contain the same song more than once.
-    // A new queue snapshot cancels in-flight gestures rather than applying stale indices.
-    key(state.queue) {
-        val keys = remember(state.queue) { state.queue.indices.map(Int::toString) }
-        val reorder = rememberSongReorderState(listState, keys, state.connected) { source, target, after ->
-            val from = source.toInt()
-            val targetIndex = target.toInt()
-            val to = targetIndex + (if (after) 1 else 0) - (if (from < targetIndex) 1 else 0)
-            onMove(from, to)
+    Column(modifier) {
+        if (onSort != null) Row(Modifier.fillMaxWidth().padding(horizontal = 16.dp),
+            horizontalArrangement = Arrangement.End) {
+            TrackSortMenu("Sort queue", enabled = state.connected && state.queue.size > 1, onSort = onSort)
         }
-        LazyColumn(modifier.testTag("queue-tracks"), state = listState) {
-            items(reorder.keys, key = { it }) { key ->
-                val index = key.toInt()
-                val track = state.queue[index]
-                Box(Modifier.songReorderItem(reorder, key).testTag("queue-row-$index")
-                    .background(if (reorder.isDragging(key)) MaterialTheme.colorScheme.surface else Color.Transparent)) {
-                    QueueSwipeToRemove(state.connected, { onRemove(index) }) {
-                        TrackRow(track.copy(rating = library.rating(track)), active = index == state.index,
-                            enabled = state.connected, transcription = library.transcription(track),
-                            artwork = { artwork(track.copy(artworkUrl = library.artworkUrl(track))) },
-                            dragHandle = { SongDragHandle(reorder, key, track.displayTitle, enabled = state.connected) },
-                            onRatingClick = { onRating(track) }, onClick = { onSelect(index) }) {
-                            trackActions(track, index)
+        // Indices identify occurrences, not songs: a queue may contain the same song more than once.
+        // A new queue snapshot cancels in-flight gestures rather than applying stale indices.
+        key(state.queue) {
+            val keys = remember(state.queue) { state.queue.indices.map(Int::toString) }
+            val reorder = rememberSongReorderState(listState, keys, state.connected) { source, target, after ->
+                val from = source.toInt()
+                val targetIndex = target.toInt()
+                val to = targetIndex + (if (after) 1 else 0) - (if (from < targetIndex) 1 else 0)
+                onMove(from, to)
+            }
+            LazyColumn(Modifier.weight(1f).testTag("queue-tracks"), state = listState) {
+                items(reorder.keys, key = { it }) { key ->
+                    val index = key.toInt()
+                    val track = state.queue[index]
+                    Box(Modifier.songReorderItem(reorder, key).testTag("queue-row-$index")
+                        .background(if (reorder.isDragging(key)) MaterialTheme.colorScheme.surface else Color.Transparent)) {
+                        QueueSwipeToRemove(state.connected, { onRemove(index) }) {
+                            TrackRow(track.copy(rating = library.rating(track)), active = index == state.index,
+                                enabled = state.connected, transcription = library.transcription(track),
+                                artwork = { artwork(track.copy(artworkUrl = library.artworkUrl(track))) },
+                                dragHandle = { SongDragHandle(reorder, key, track.displayTitle, enabled = state.connected) },
+                                onRatingClick = { onRating(track) }, onClick = { onSelect(index) }) {
+                                trackActions(track, index)
+                            }
                         }
                     }
                 }

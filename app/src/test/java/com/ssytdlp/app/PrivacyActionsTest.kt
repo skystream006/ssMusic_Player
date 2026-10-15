@@ -92,7 +92,7 @@ class PrivacyActionsTest {
     @Test fun songToggleEncodesNestedFilenameAndRefreshesQueuedOriginalAndNoVocalsAcrossPages() {
         val savedJob = AtomicReference(job)
         val queued = track.copy(noVocalsVersion = companion)
-        val otherPage = TrackPage(files = listOf(Track("other", "other.mp3")), page = 2)
+        val otherPage = TrackPage(files = List(51) { Track("other", "other$it.mp3") }, total = 51)
         val model = startModel(files = otherPage) { request ->
             when (request.url.encodedPath) {
                 songPrivacyPath -> 200 to ApiJson.encodeToString(savedJob.get())
@@ -106,6 +106,7 @@ class PrivacyActionsTest {
         }
         compose.runOnIdle {
             state(model).value = model.library.copy(selectedId = entry.id, search = "other")
+            model.page(2)
         }
         compose.setContent { MusicTheme { TrackMenu(model, queued, 0) { _, _ -> } } }
 
@@ -131,7 +132,8 @@ class PrivacyActionsTest {
             assertEquals(updated, model.library.library.jobs.single())
             assertEquals(FilePrivacy(isPrivate, false), model.songPrivacy(queued.copy(isPrivate = !isPrivate)))
             assertEquals(FilePrivacy(isPrivate, isPrivate), model.songPrivacy(companion.copy(isPrivate = !isPrivate)))
-            assertEquals(otherPage, model.library.tracks)
+            assertEquals(otherPage.files, model.library.tracks.files)
+            assertEquals(2, model.library.totalPages)
 
             openMenu("Options for Song")
             compose.onNodeWithText(if (isPrivate) "Make song public" else "Make song private").assertIsEnabled()
@@ -146,7 +148,7 @@ class PrivacyActionsTest {
         val explicit = track.copy(name = "explicit.mp3")
         val savedJob = AtomicReference(job.copy(privateFiles = listOf(explicit.name)))
         val savedPlaylist = AtomicReference(playlist)
-        val otherPage = TrackPage(files = listOf(Track("other", "other.mp3")), page = 2)
+        val otherPage = TrackPage(files = List(51) { Track("other", "other$it.mp3") }, total = 51)
         val model = startModel(library(savedJob.get()), otherPage) { request ->
             when (request.url.encodedPath) {
                 playlistPrivacyPath -> 200 to ApiJson.encodeToString(library(savedJob.get(), savedPlaylist.get()))
@@ -157,6 +159,7 @@ class PrivacyActionsTest {
                 else -> null
             }
         }
+        compose.runOnIdle { model.page(2) }
         compose.setContent {
             MusicTheme {
                 NowPlayingScreen(model, PlaybackState(track = track, queue = listOf(track, companion, explicit))) { _, _ -> }
@@ -182,7 +185,8 @@ class PrivacyActionsTest {
             assertEquals(FilePrivacy(isPrivate, isPrivate), model.songPrivacy(track.copy(isPrivate = !isPrivate)))
             assertEquals(FilePrivacy(isPrivate, isPrivate), model.songPrivacy(companion.copy(isPrivate = !isPrivate)))
             assertEquals(FilePrivacy(true, isPrivate), model.songPrivacy(explicit))
-            assertEquals(otherPage, model.library.tracks)
+            assertEquals(otherPage.files, model.library.tracks.files)
+            assertEquals(2, model.library.currentPage)
             assertEquals(if (isPrivate) "Playlist is private. Only the owner can access it."
                 else "Playlist is no longer private.", model.notice)
             openMenu("More song actions")
@@ -324,7 +328,8 @@ class PrivacyActionsTest {
         page.set(TrackPage(files = listOf(Track("other", "other.mp3")), page = 2))
         perform(model) { model.refreshTracks() }
         assertEquals("/api/library/tracks", drainRequests().single().url.encodedPath)
-        assertEquals(page.get(), model.library.tracks)
+        assertEquals(page.get().files, model.library.tracks.files)
+        assertEquals(1, model.library.currentPage)
         assertEquals(FilePrivacy(false, false), model.songPrivacy(restored))
         assertEquals(FilePrivacy(false, false), model.songPrivacy(staleCompanion))
 
@@ -343,7 +348,7 @@ class PrivacyActionsTest {
         assertEquals(savedJob.get(), model.library.privacyJobs[job.id])
         assertEquals(FilePrivacy(true, false), model.songPrivacy(track))
         assertEquals(FilePrivacy(true, true), model.songPrivacy(companion))
-        assertEquals(page.get(), model.library.tracks)
+        assertEquals(page.get().files, model.library.tracks.files)
         assertNull(model.notice)
     }
 
@@ -464,7 +469,8 @@ class PrivacyActionsTest {
             model = MusicViewModel(application, connectPlayback = false)
             models.put("privacy", model)
         }
-        waitFor { !model.library.loading && model.library.tracks == files && model.health != null }
+        waitFor { !model.library.loading && model.library.allPagesLoaded &&
+            model.library.tracks.files == files.files && model.health != null }
         assertNull(model.notice)
         drainRequests()
         return model

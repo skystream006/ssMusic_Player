@@ -181,7 +181,7 @@ it does not prove an installed app's identity. Authorize only sign-ins you start
 
 | Area | Implemented |
 | --- | --- |
-| Library | All Music, server-side search and 50-track pages, folder navigation, playlist counts, linked tracks, cached 192px AVIF audio/video thumbnails in Library and Queue (including Android 8+, with legacy JPEG/PNG/WebP support) |
+| Library | All Music, server-side search, local 50-track pages with name/rating sorting across the complete selection, folder navigation, playlist counts, linked tracks, cached 192px AVIF audio/video thumbnails in Library and Queue (including Android 8+, with legacy JPEG/PNG/WebP support) |
 | Organization | Create/rename/remove/move folders, move playlists, add/move/remove song memberships, drag to reorder songs within an unfiltered playlist page |
 | Playback | Authenticated audio/video streams, persistent mini-player, full player, seek, next/previous, queue editing, shuffle, repeat, instrumental companions |
 | Lyrics and tags | Album artwork, expandable full-screen SYLT/USLT lyrics, timestamp-highlighted seekable SYLT lyrics, plain USLT lyrics, editing both lyric formats and MP3 tags/ratings, transcription requests and locking |
@@ -189,6 +189,11 @@ it does not prove an installed app's identity. Authorize only sign-ins you start
 | Import | Android document picker for media files or iTunes XML + ZIP; server-local XML + ZIP imports; server upload limits enforced while streaming |
 | Backup | Android/iTunes exports, progress, download latest ZIP, daily/weekly UTC schedules |
 | Settings | Updates at the top, Blue Wave appearance, edge-lighting toggle, optional server-synced theme and light/dark mode, account expiry, server media count, collapsible device/debugging sections, browser account/admin access |
+
+Library loading and refresh retrieve the complete selected playlist, folder, or
+search result before displaying local pages. Name and rating sorts apply before
+pagination; changing the sort or page does not request the server. **Order number**
+restores the saved order.
 
 Drag the bottom mini-player's progress slider to seek without leaving Library.
 Artwork, song information, and playback controls stay on one row even on narrow
