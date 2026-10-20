@@ -27,6 +27,7 @@ class SessionStore(context: Context) {
     val account = mutableAccount.asStateFlow()
     val playback = PlaybackStore(context).apply { setAccount(mutableAccount.value) }
     internal val artworkCache = MetadataArtworkCache().apply { setAccount(mutableAccount.value) }
+    internal val audioCache = AudioCache(context).apply { setAccount(mutableAccount.value) }
 
     var pending: PendingLogin?
         @Synchronized get() = read("pending")?.let { runCatching { ApiJson.decodeFromString<PendingLogin>(it) }.getOrNull() }
@@ -37,6 +38,7 @@ class SessionStore(context: Context) {
         pending = null
         playback.setAccount(account)
         artworkCache.setAccount(account)
+        audioCache.setAccount(account)
         mutableAccount.value = account
     }
 
@@ -56,6 +58,7 @@ class SessionStore(context: Context) {
         pending = null
         playback.setAccount(null)
         artworkCache.setAccount(null)
+        audioCache.setAccount(null)
         mutableAccount.value = null
     }
 

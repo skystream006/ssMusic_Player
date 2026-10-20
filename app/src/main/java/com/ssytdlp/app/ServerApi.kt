@@ -92,6 +92,11 @@ class ServerApi(
         currentAccount()?.origin ?: throw ApiException(401, "Sign in with your passkey."), path
     )
 
+    internal fun playbackCalls(owner: Account): Call.Factory = Call.Factory { request ->
+        authenticatedClient.newCall(request.newBuilder()
+            .tag(RequestOwner::class.java, RequestOwner(owner)).build())
+    }
+
     suspend fun request(path: String, method: String = "GET", body: JsonElement? = null): JsonElement {
         val owner = currentAccount() ?: throw ApiException(401, "Sign in with your passkey.")
         val request = Request.Builder().url(ServerResource.resolve(owner.origin, path)).tag(RequestOwner::class.java, RequestOwner(owner)).method(method,
