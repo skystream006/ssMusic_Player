@@ -1,6 +1,7 @@
 package com.ssytdlp.app
 
 internal enum class OfflineCacheSize(val bytes: Long, val label: String) {
+    MIB_32(32L * 1024 * 1024, "32 MiB"),
     MIB_64(64L * 1024 * 1024, "64 MiB"),
     MIB_128(128L * 1024 * 1024, "128 MiB"),
     MIB_256(256L * 1024 * 1024, "256 MiB"),
@@ -9,7 +10,7 @@ internal enum class OfflineCacheSize(val bytes: Long, val label: String) {
     GIB_2(2L * 1024 * 1024 * 1024, "2 GiB");
 
     companion object {
-        val DEFAULT = MIB_256
+        val DEFAULT = MIB_32
         fun fromPreference(bytes: Long?): OfflineCacheSize =
             entries.firstOrNull { it.bytes == bytes } ?: DEFAULT
     }
