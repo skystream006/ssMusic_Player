@@ -327,7 +327,7 @@ The current track is also cached on this device, with a background download fill
 its remaining bytes once playback starts (not the rest of the queue). Reopening
 reuses those bytes, including seeks; interrupted downloads fetch only missing
 ranges. Settings → Offline cache size (above Appearance) sets this device's
-persistent audio cache limit: 64, 128, 256 (default), or 512 MiB, or 1 or 2 GiB.
+persistent audio cache limit: 32 (default), 64, 128, 256, or 512 MiB, or 1 or 2 GiB.
 The choice persists across restarts and takes effect without restarting playback;
 reducing it immediately evicts least recently used audio. It is isolated by server
 and account and cleared on sign-out,

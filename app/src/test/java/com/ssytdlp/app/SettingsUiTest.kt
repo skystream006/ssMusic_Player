@@ -79,15 +79,15 @@ class SettingsUiTest {
                 MusicTheme { OfflineCacheSetting(size.value) { size.value = it } }
             }
         }
-        compose.onNodeWithText("256 MiB").assertIsDisplayed()
+        compose.onNodeWithText("32 MiB").assertIsDisplayed()
         compose.onNodeWithText("Offline cache size").performClick()
         restoration.emulateSavedInstanceStateRestore()
         compose.onNode(isDialog()).assertIsDisplayed()
         compose.onNodeWithText("Stored on this device.", substring = true).assertExists()
-        cacheSizeOption(OfflineCacheSize.DEFAULT).assertIsSelected()
+        compose.onNodeWithText("32 MiB (default)").assertIsSelected()
         compose.onNodeWithText("Close").performClick()
         compose.runOnIdle { assertEquals(OfflineCacheSize.DEFAULT, size.value) }
-        assertEquals(listOf("64 MiB", "128 MiB", "256 MiB", "512 MiB", "1 GiB", "2 GiB"),
+        assertEquals(listOf("32 MiB", "64 MiB", "128 MiB", "256 MiB", "512 MiB", "1 GiB", "2 GiB"),
             OfflineCacheSize.entries.map { it.label })
         OfflineCacheSize.entries.forEach { option ->
             compose.onNodeWithText("Offline cache size").performClick()
@@ -110,13 +110,17 @@ class SettingsUiTest {
         compose.onNode(hasText(size.label + if (size == OfflineCacheSize.DEFAULT) " (default)" else "") and
             hasAnyAncestor(isDialog()))
 
-    @Test fun offlineCachePreferencePersistsAndInvalidValuesFallBackTo256MiB() {
+    @Test fun offlineCachePreferencePersistsAndInvalidValuesFallBackTo32MiB() {
+        assertEquals(OfflineCacheSize.MIB_32, OfflineCacheSize.DEFAULT)
+        assertEquals(32L * 1024 * 1024, OfflineCacheSize.DEFAULT.bytes)
         val context = ApplicationProvider.getApplicationContext<Application>()
         val preferences = context.getSharedPreferences("settings", Context.MODE_PRIVATE)
         preferences.edit().remove("offline_cache_bytes").commit()
         try {
             withSettingsModel { model ->
                 assertEquals(OfflineCacheSize.DEFAULT, model.sessions.offlineCacheSize.value)
+                assertEquals(OfflineCacheSize.DEFAULT.bytes,
+                    ReflectionHelpers.getField<Long>(model.sessions.audioCache, "maxBytes"))
                 assertFalse(preferences.contains("offline_cache_bytes"))
                 val theme = model.preferences
                 OfflineCacheSize.entries.forEach { option ->
@@ -159,7 +163,7 @@ class SettingsUiTest {
                 val cache = compose.onNodeWithText("Offline cache size").assertIsDisplayed().getUnclippedBoundsInRoot()
                 val appearance = compose.onNodeWithText("Appearance").assertIsDisplayed().getUnclippedBoundsInRoot()
                 assertTrue(cache.bottom < appearance.top)
-                compose.onNodeWithText("256 MiB").assertIsDisplayed()
+                compose.onNodeWithText("32 MiB").assertIsDisplayed()
                 compose.onNodeWithText("Offline cache size").performClick()
                 cacheSizeOption(OfflineCacheSize.GIB_1).performScrollTo().performClick()
                 compose.onNodeWithText("1 GiB").assertIsDisplayed()
