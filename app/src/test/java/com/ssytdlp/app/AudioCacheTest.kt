@@ -21,6 +21,7 @@ import java.io.File
 import java.io.IOException
 import java.security.MessageDigest
 import java.time.Instant
+import java.util.concurrent.CountDownLatch
 import java.util.concurrent.TimeUnit
 import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.withTimeout
@@ -164,6 +165,119 @@ class AudioCacheTest {
         assertArrayEquals(bytes, read(handle, uri("/api/stream/first")))
         assertEquals(3, server.requestCount)
     }
+
+    @Test fun `shrinking immediately evicts least recently used audio without revoking leases`() {
+        cache = AudioCache(context, maxBytes = 12288, fragmentBytes = 1024).apply { setAccount(account) }
+        val handle = lease()
+        val first = uri("/api/stream/first")
+        val second = uri("/api/stream/second")
+        val third = uri("/api/stream/third")
+        fill(handle, first)
+        fill(handle, second)
+        fill(handle, third)
+        Thread.sleep(10) // Make the touch newer than every committed span, even on coarse clocks.
+        assertArrayEquals(bytes, read(handle, first))
+        cache.setMaxBytes(8192)
+        assertEquals(8192L, storedBytes())
+        assertArrayEquals(bytes, read(handle, first))
+        assertArrayEquals(bytes, read(lease(), third))
+        assertEquals(3, server.requestCount)
+        assertArrayEquals(bytes, read(handle, second))
+        assertEquals(4, server.requestCount)
+    }
+
+    @Test fun `growth retains existing audio and enlarged limit survives lease recreation`() {
+        cache = AudioCache(context, maxBytes = 4096, fragmentBytes = 1024).apply { setAccount(account) }
+        val handle = lease()
+        val second = uri("/api/stream/second")
+        val third = uri("/api/stream/third")
+        fill(handle)
+        cache.setMaxBytes(12288)
+        fill(handle, second)
+        handle.close()
+        val recreated = lease()
+        fill(recreated, third)
+        assertEquals(12288L, storedBytes())
+        listOf(uri(), second, third).forEach { assertArrayEquals(bytes, read(recreated, it)) }
+        assertEquals(3, server.requestCount)
+    }
+
+    @Test fun `shrinking preserves an already open reader even when its span is evicted`() {
+        cache = AudioCache(context, maxBytes = 8192, fragmentBytes = 4096).apply { setAccount(account) }
+        val handle = lease()
+        fill(handle)
+        val source = handle.factory.createDataSource()
+        try {
+            source.open(DataSpec(uri()))
+            val output = ByteArrayOutputStream()
+            val buffer = ByteArray(128)
+            var count = source.read(buffer, 0, buffer.size)
+            output.write(buffer, 0, count)
+            Thread.sleep(10)
+            val second = uri("/api/stream/second")
+            fill(handle, second)
+            cache.setMaxBytes(4096)
+            assertEquals(4096L, storedBytes())
+            while (true) {
+                count = source.read(buffer, 0, buffer.size)
+                if (count == C.RESULT_END_OF_INPUT) break
+                output.write(buffer, 0, count)
+            }
+            assertArrayEquals(bytes, output.toByteArray())
+            assertArrayEquals(bytes, read(handle, second))
+            assertEquals(2, server.requestCount)
+            assertArrayEquals(bytes, read(lease()))
+            assertEquals(3, server.requestCount)
+        } finally {
+            source.close()
+        }
+    }
+
+    @Test fun `in flight writer commits under resized limit and remains usable`() = runBlocking {
+        cache = AudioCache(context, maxBytes = 8192, fragmentBytes = 1024).apply { setAccount(account) }
+        val handle = lease()
+        fill(handle)
+        val requested = CountDownLatch(1)
+        val proceed = CountDownLatch(1)
+        server.dispatcher = object : Dispatcher() {
+            override fun dispatch(request: RecordedRequest): MockResponse {
+                requested.countDown()
+                check(proceed.await(5, TimeUnit.SECONDS))
+                return response(request)
+            }
+        }
+        val second = uri("/api/stream/second")
+        val download = requireNotNull(handle.cacheCurrent(second))
+        try {
+            assertTrue(requested.await(5, TimeUnit.SECONDS))
+            cache.setMaxBytes(2048)
+            assertTrue(storedBytes() <= 2048)
+        } finally {
+            proceed.countDown()
+        }
+        withTimeout(5_000) { download.join() }
+        assertEquals(2048L, storedBytes())
+        assertArrayEquals(bytes.copyOfRange(2048, 4096), read(handle, second, position = 2048))
+        assertEquals(2, server.requestCount)
+        cache.setMaxBytes(8192)
+        fill(handle, uri("/api/stream/third"))
+        assertArrayEquals(bytes, read(handle, uri("/api/stream/third")))
+        assertEquals(3, server.requestCount)
+    }
+
+    @Test fun `invalid runtime limits are rejected without changing the cache`() {
+        cache = AudioCache(context, maxBytes = 4096).apply { setAccount(account) }
+        val handle = lease()
+        fill(handle)
+        listOf(0L, -1L, Long.MIN_VALUE).forEach { invalid ->
+            assertThrows(IllegalArgumentException::class.java) { cache.setMaxBytes(invalid) }
+        }
+        assertEquals(4096L, storedBytes())
+        assertArrayEquals(bytes, read(handle))
+        assertEquals(1, server.requestCount)
+    }
+
+    private fun storedBytes() = root.walkTopDown().filter { it.extension == "exo" }.sumOf { it.length() }
 
     @Test fun `account user origin and logout changes revoke old factories and remove old bytes`() {
         val first = lease()

@@ -20,6 +20,10 @@ import kotlinx.serialization.encodeToString
 
 class SessionStore(context: Context) {
     private val preferences = context.getSharedPreferences("private_session", Context.MODE_PRIVATE)
+    private val settings = context.getSharedPreferences("settings", Context.MODE_PRIVATE)
+    private val mutableOfflineCacheSize = MutableStateFlow(OfflineCacheSize.fromPreference(
+        runCatching { settings.getLong("offline_cache_bytes", OfflineCacheSize.DEFAULT.bytes) }.getOrNull()))
+    internal val offlineCacheSize = mutableOfflineCacheSize.asStateFlow()
     private val keyStore = KeyStore.getInstance("AndroidKeyStore").apply { load(null) }
     private val mutableAccount = MutableStateFlow(read("account")?.let {
         runCatching { ApiJson.decodeFromString<Account>(it) }.getOrNull()
@@ -27,8 +31,14 @@ class SessionStore(context: Context) {
     val account = mutableAccount.asStateFlow()
     val playback = PlaybackStore(context).apply { setAccount(mutableAccount.value) }
     internal val artworkCache = MetadataArtworkCache().apply { setAccount(mutableAccount.value) }
-    internal val audioCache = AudioCache(context, onSessionExpired = { clear(it) })
+    internal val audioCache = AudioCache(context, maxBytes = offlineCacheSize.value.bytes, onSessionExpired = { clear(it) })
         .apply { setAccount(mutableAccount.value) }
+
+    @Synchronized internal fun chooseOfflineCacheSize(size: OfflineCacheSize) {
+        audioCache.setMaxBytes(size.bytes)
+        settings.edit().putLong("offline_cache_bytes", size.bytes).apply()
+        mutableOfflineCacheSize.value = size
+    }
 
     var pending: PendingLogin?
         @Synchronized get() = read("pending")?.let { runCatching { ApiJson.decodeFromString<PendingLogin>(it) }.getOrNull() }

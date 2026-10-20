@@ -326,8 +326,11 @@ the saved state; a removed playlist falls back to All Music.
 The current track is also cached on this device, with a background download filling
 its remaining bytes once playback starts (not the rest of the queue). Reopening
 reuses those bytes, including seeks; interrupted downloads fetch only missing
-ranges. The persistent audio cache is limited to 256 MiB and evicts the least
-recently used data. It is isolated by server and account and cleared on sign-out,
+ranges. Settings → Offline cache size (above Appearance) sets this device's
+persistent audio cache limit: 64, 128, 256 (default), or 512 MiB, or 1 or 2 GiB.
+The choice persists across restarts and takes effect without restarting playback;
+reducing it immediately evicts least recently used audio. It is isolated by server
+and account and cleared on sign-out,
 session expiry, or account/server changes. Cache failures fall back to streaming.
 Successful file replacements and metadata/lyrics edits invalidate the affected
 audio, even when its stream URL stays the same.

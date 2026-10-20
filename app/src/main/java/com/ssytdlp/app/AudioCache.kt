@@ -7,8 +7,11 @@ import androidx.media3.database.StandaloneDatabaseProvider
 import androidx.media3.datasource.DataSource
 import androidx.media3.datasource.DataSpec
 import androidx.media3.datasource.TransferListener
+import androidx.media3.datasource.cache.Cache
 import androidx.media3.datasource.cache.CacheDataSink
 import androidx.media3.datasource.cache.CacheDataSource
+import androidx.media3.datasource.cache.CacheEvictor
+import androidx.media3.datasource.cache.CacheSpan
 import androidx.media3.datasource.cache.CacheWriter
 import androidx.media3.datasource.cache.LeastRecentlyUsedCacheEvictor
 import androidx.media3.datasource.cache.SimpleCache
@@ -31,11 +34,12 @@ import okhttp3.Call
 @androidx.annotation.OptIn(UnstableApi::class)
 internal class AudioCache(
     context: Context,
-    private val maxBytes: Long = 256L * 1024 * 1024,
+    maxBytes: Long = OfflineCacheSize.DEFAULT.bytes,
     private val fragmentBytes: Long = 2L * 1024 * 1024,
     private val now: () -> Instant = Instant::now,
     private val onSessionExpired: (String) -> Unit = {}
 ) {
+    private var maxBytes = maxBytes.also { require(it > 0) }
     private val directory = File(context.noBackupFilesDir, "audio")
     private val database = StandaloneDatabaseProvider(context)
     private val revisions = context.getSharedPreferences("audio_cache_revisions", Context.MODE_PRIVATE)
@@ -44,8 +48,36 @@ internal class AudioCache(
     private val handles = mutableSetOf<Handle>()
     private var account: Account? = null
 
-    internal class Entry(val directory: File, val cache: SimpleCache) {
+    internal class Entry(val directory: File, val cache: SimpleCache, val evictor: ResizableEvictor) {
         var discard = false
+    }
+
+    @Synchronized fun setMaxBytes(bytes: Long) {
+        require(bytes > 0)
+        if (maxBytes == bytes) return
+        maxBytes = bytes
+        entries.values.forEach { it.evictor.resize(it.cache, bytes) }
+    }
+
+    /** Callbacks only use the SimpleCache monitor, never the enclosing AudioCache monitor. */
+    internal class ResizableEvictor(maxBytes: Long) : CacheEvictor {
+        private var delegate = LeastRecentlyUsedCacheEvictor(maxBytes)
+
+        fun resize(cache: Cache, maxBytes: Long) = synchronized(cache) {
+            val spans = cache.keys.flatMap { cache.getCachedSpans(it) }.sortedBy { it.lastTouchTimestamp }
+            // Install before replay: eviction re-enters onSpanRemoved on this wrapper.
+            delegate = LeastRecentlyUsedCacheEvictor(maxBytes)
+            spans.forEach { delegate.onSpanAdded(cache, it) }
+        }
+
+        override fun requiresCacheSpanTouches() = true
+        override fun onCacheInitialized() = delegate.onCacheInitialized()
+        override fun onStartFile(cache: Cache, key: String, position: Long, length: Long) =
+            delegate.onStartFile(cache, key, position, length)
+        override fun onSpanAdded(cache: Cache, span: CacheSpan) = delegate.onSpanAdded(cache, span)
+        override fun onSpanRemoved(cache: Cache, span: CacheSpan) = delegate.onSpanRemoved(cache, span)
+        override fun onSpanTouched(cache: Cache, oldSpan: CacheSpan, newSpan: CacheSpan) =
+            delegate.onSpanTouched(cache, oldSpan, newSpan)
     }
 
     @Synchronized fun setAccount(next: Account?) {
@@ -81,10 +113,11 @@ internal class AudioCache(
         } == true
         val key = owner.owner()
         val entry = if (!valid || entries[key]?.discard == true) null else entries[key] ?: runCatching {
-            val cache = SimpleCache(File(directory, key), LeastRecentlyUsedCacheEvictor(maxBytes), database)
+            val evictor = ResizableEvictor(maxBytes)
+            val cache = SimpleCache(File(directory, key), evictor, database)
             try {
                 cache.checkInitialization()
-                Entry(File(directory, key), cache).also { entries[key] = it }
+                Entry(File(directory, key), cache, evictor).also { entries[key] = it }
             } catch (error: Exception) {
                 cache.release()
                 throw error
