@@ -934,6 +934,7 @@ class MusicViewModel @JvmOverloads constructor(application: Application, private
     }
 
     private suspend fun patchMetadata(track: Track, body: JsonObject): SongMetadata {
+        val account = requireNotNull(sessions.account.value)
         val update = beginMetadataUpdate(track)
         var updated: SongMetadata? = null
         var reload = false
@@ -941,6 +942,7 @@ class MusicViewModel @JvmOverloads constructor(application: Application, private
             val result = convertMetadata(api.request(
                 "/api/jobs/${encode(track.jobId)}/files/${encode(track.name)}/metadata", "PATCH", body))
             require(currentMetadataOwner == update.selection.owner) { "Account changed. Refresh before retrying." }
+            sessions.audioCache.invalidate(account, track.streamUrl)
             updated = result
             library = library.withSongMetadata(track, result)
             commitSongChange(track)
@@ -982,6 +984,8 @@ class MusicViewModel @JvmOverloads constructor(application: Application, private
                 jobId = track.jobId, transcription = null, transcriptionLocked = song.transcriptionLocked)
             require(sessions.account.value == account) { "Account changed. Refresh before retrying." }
             require(file.name == track.name) { "The server returned a different song. Refresh before retrying." }
+            sessions.audioCache.invalidate(requireNotNull(account), track.streamUrl)
+            if (file.streamUrl != track.streamUrl) sessions.audioCache.invalidate(account, file.streamUrl)
             transcriptionGeneration++
             trackRequest?.cancel()
             library = library.withReplacedFile(file)

@@ -10,7 +10,7 @@ import androidx.media3.common.MediaItem
 import androidx.media3.common.MediaMetadata
 import androidx.media3.common.Player
 import androidx.media3.common.util.UnstableApi
-import androidx.media3.datasource.okhttp.OkHttpDataSource
+import androidx.media3.datasource.DataSource
 import androidx.media3.exoplayer.ExoPlayer
 import androidx.media3.exoplayer.DefaultRenderersFactory
 import androidx.media3.exoplayer.audio.AudioSink
@@ -42,6 +42,7 @@ internal const val PLAYBACK_CHECKPOINT_INTERVAL_MS = 30_000L
 class PlaybackService : MediaSessionService() {
     private var session: MediaSession? = null
     private var persistence: PlaybackPersistence? = null
+    private var audioCache: AudioCache.Handle? = null
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
 
     override fun onCreate() {
@@ -52,7 +53,11 @@ class PlaybackService : MediaSessionService() {
             }
         )
         val app = application as MusicApplication
-        val source = OkHttpDataSource.Factory(app.api.authenticatedClient)
+        val account = app.sessions.account.value
+        audioCache = account?.let { app.sessions.audioCache.acquire(it, app.api.playbackCalls(it)) }
+        val source = audioCache?.factory ?: DataSource.Factory {
+            throw IllegalStateException("Sign in before playing music.")
+        }
         val renderers = object : DefaultRenderersFactory(this) {
             override fun buildAudioSink(context: Context, enableFloatOutput: Boolean,
                 enableAudioTrackPlaybackParams: Boolean): AudioSink =
@@ -68,7 +73,19 @@ class PlaybackService : MediaSessionService() {
             .setHandleAudioBecomingNoisy(true)
             .setWakeMode(C.WAKE_MODE_NETWORK)
             .build()
-        val account = app.sessions.account.value
+        player.addListener(object : Player.Listener {
+            override fun onMediaItemTransition(mediaItem: MediaItem?, reason: Int) {
+                audioCache?.cacheCurrent(null)
+            }
+            override fun onIsPlayingChanged(isPlaying: Boolean) {
+                if (isPlaying) audioCache?.cacheCurrent(player.currentMediaItem?.localConfiguration?.uri, retry = true)
+            }
+            override fun onEvents(player: Player, events: Player.Events) {
+                if (player.playWhenReady && player.playbackState != Player.STATE_IDLE) {
+                    audioCache?.cacheCurrent(player.currentMediaItem?.localConfiguration?.uri)
+                }
+            }
+        })
         if (account != null) {
             persistence = PlaybackPersistence(player, app.sessions.playback, account) { it.toMediaItem(app.api) }
             val playing = MutableStateFlow(player.isPlaying)
@@ -105,9 +122,11 @@ class PlaybackService : MediaSessionService() {
                     } catch (error: Exception) { Futures.immediateFailedFuture(error) }
                 }
             }).build()
-        val owner = account?.let { it.origin to it.user.id }
+        val owner = account?.let { Triple(it.origin, it.user.id, it.session.token) }
         scope.launch {
-            app.sessions.account.map { it?.let { account -> account.origin to account.user.id } }.distinctUntilChanged().collect { identity ->
+            app.sessions.account.map {
+                it?.let { account -> Triple(account.origin, account.user.id, account.session.token) }
+            }.distinctUntilChanged().collect { identity ->
                 if (identity == null || identity != owner) {
                     player.stop()
                     player.clearMediaItems()
@@ -130,6 +149,8 @@ class PlaybackService : MediaSessionService() {
         persistence?.close()
         persistence = null
         session?.run { player.release(); release() }
+        audioCache?.close()
+        audioCache = null
         (application as MusicApplication).audioLevels.clear()
         session = null
         super.onDestroy()

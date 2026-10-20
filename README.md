@@ -323,6 +323,17 @@ changes, leaving the foreground, and service shutdown. Reopening while backgroun
 not interrupt it. Sign-out, session expiry, or switching accounts/servers clears
 the saved state; a removed playlist falls back to All Music.
 
+The current track is also cached on this device, with a background download filling
+its remaining bytes once playback starts (not the rest of the queue). Reopening
+reuses those bytes, including seeks; interrupted downloads fetch only missing
+ranges. The persistent audio cache is limited to 256 MiB and evicts the least
+recently used data. It is isolated by server and account and cleared on sign-out,
+session expiry, or account/server changes. Cache failures fall back to streaming.
+Successful file replacements and metadata/lyrics edits invalidate the affected
+audio, even when its stream URL stays the same.
+This is best-effort reuse, not an offline library: evicted data, incomplete tracks,
+and tracks larger than the cache can still need the server.
+
 When no app activity is resumed (including screen lock), library, job, health,
 settings, and update checks stop. Non-playback reads are canceled and deferred
 until the app resumes; new mutations wait for the foreground. In-flight mutations
@@ -396,7 +407,7 @@ uses the web client's saved colors and light/dark preference. Advanced server
 administration and passkey enrollment use the existing browser settings UI;
 they may require a separate browser passkey login.
 
-There is no offline library/cache, whole-device audio scan, casting, Android Auto
+There is no managed offline library, whole-device audio scan, casting, Android Auto
 library browser, automatic playback after process death, or automatic background
 upload/download retry. Saved files and export ZIPs go to the document location
 the user chooses, not an app-managed offline library. Media uses device-supported
