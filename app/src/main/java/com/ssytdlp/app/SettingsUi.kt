@@ -49,6 +49,7 @@ fun SettingsScreen(model: MusicViewModel, download: (String, String) -> Unit, on
     val context = LocalContext.current
     val lifecycle = LocalLifecycleOwner.current.lifecycle
     val currentAccount by model.sessions.account.collectAsStateWithLifecycle()
+    val offlineCacheSize by model.sessions.offlineCacheSize.collectAsStateWithLifecycle()
     val account = currentAccount ?: return
     val showJobsAndBackup = !account.user.isShared
     var logout by remember { mutableStateOf(false) }
@@ -74,6 +75,7 @@ fun SettingsScreen(model: MusicViewModel, download: (String, String) -> Unit, on
                 style = MaterialTheme.typography.bodySmall, textAlign = TextAlign.End)
         }
         HorizontalDivider()
+        OfflineCacheSetting(offlineCacheSize, model.sessions::chooseOfflineCacheSize)
         CollapsibleSettingsSection("Appearance", defaultExpanded = false) {
             SingleChoiceSegmentedButtonRow(Modifier.fillMaxWidth()) {
                 listOf("Blue Wave", "Server theme").forEachIndexed { index, label ->
@@ -157,6 +159,42 @@ fun SettingsScreen(model: MusicViewModel, download: (String, String) -> Unit, on
     })
     if (logout) ConfirmDialog("Sign out?", "Playback will stop and this device's server session will be revoked.", { logout = false }) { logout = false; model.logout() }
     if (schedule && showJobsAndBackup) BackupScheduleDialog(model) { schedule = false }
+}
+
+@Composable
+internal fun OfflineCacheSetting(size: OfflineCacheSize, onSizeChange: (OfflineCacheSize) -> Unit) {
+    var showPicker by rememberSaveable { mutableStateOf(false) }
+    ListItem(
+        headlineContent = { Text("Offline cache size") },
+        supportingContent = { Text(size.label) },
+        trailingContent = { Icon(Icons.AutoMirrored.Rounded.KeyboardArrowRight, null) },
+        modifier = Modifier.clickable(role = Role.Button, onClickLabel = "Choose offline cache size") {
+            showPicker = true
+        }
+    )
+    if (showPicker) {
+        AlertDialog(onDismissRequest = { showPicker = false }, title = { Text("Offline cache size") }, text = {
+            Column(Modifier.verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                Text("Stored on this device. Reducing the size evicts least recently used audio. " +
+                    "Caching is best effort, not guaranteed offline playback.",
+                    style = MaterialTheme.typography.bodySmall)
+                Column(Modifier.selectableGroup()) {
+                    OfflineCacheSize.entries.forEach { option ->
+                        Row(Modifier.fillMaxWidth().heightIn(min = 48.dp)
+                            .selectable(size == option, role = Role.RadioButton, onClick = {
+                                onSizeChange(option)
+                                showPicker = false
+                            }).padding(horizontal = 12.dp, vertical = 8.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                            RadioButton(size == option, onClick = null)
+                            Text(option.label + if (option == OfflineCacheSize.DEFAULT) " (default)" else "")
+                        }
+                    }
+                }
+            }
+        }, confirmButton = { TextButton(onClick = { showPicker = false }) { Text("Close") } })
+    }
 }
 
 @Composable

@@ -20,6 +20,7 @@ import androidx.compose.ui.test.junit4.StateRestorationTester
 import androidx.compose.ui.test.junit4.createAndroidComposeRule
 import androidx.compose.ui.unit.Density
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.height
 import androidx.compose.ui.unit.width
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleOwner
@@ -66,6 +67,110 @@ class SettingsUiTest {
 
     @Before fun setup() {
         compose.runOnUiThread { owner.lifecycle.currentState = Lifecycle.State.RESUMED }
+    }
+
+    @Test
+    @Config(qualifiers = "w320dp-h480dp")
+    fun offlineCachePickerIsSingleChoiceScrollableAndRestorableWithLargeText() {
+        val size = mutableStateOf(OfflineCacheSize.DEFAULT)
+        val restoration = StateRestorationTester(compose)
+        restoration.setContent {
+            CompositionLocalProvider(LocalDensity provides Density(LocalDensity.current.density, 1.5f)) {
+                MusicTheme { OfflineCacheSetting(size.value) { size.value = it } }
+            }
+        }
+        compose.onNodeWithText("256 MiB").assertIsDisplayed()
+        compose.onNodeWithText("Offline cache size").performClick()
+        restoration.emulateSavedInstanceStateRestore()
+        compose.onNode(isDialog()).assertIsDisplayed()
+        compose.onNodeWithText("Stored on this device.", substring = true).assertExists()
+        cacheSizeOption(OfflineCacheSize.DEFAULT).assertIsSelected()
+        compose.onNodeWithText("Close").performClick()
+        compose.runOnIdle { assertEquals(OfflineCacheSize.DEFAULT, size.value) }
+        assertEquals(listOf("64 MiB", "128 MiB", "256 MiB", "512 MiB", "1 GiB", "2 GiB"),
+            OfflineCacheSize.entries.map { it.label })
+        OfflineCacheSize.entries.forEach { option ->
+            compose.onNodeWithText("Offline cache size").performClick()
+            cacheSizeOption(size.value).assertIsSelected()
+            OfflineCacheSize.entries.filter { it != size.value }.forEach {
+                cacheSizeOption(it).assertIsNotSelected()
+            }
+            val row = cacheSizeOption(option).performScrollTo().assertIsDisplayed()
+            val bounds = row.getUnclippedBoundsInRoot()
+            assertTrue(bounds.left >= 0.dp && bounds.right <= 320.dp)
+            assertTrue(bounds.height >= 48.dp)
+            row.performClick()
+            compose.onNode(isDialog()).assertDoesNotExist()
+            compose.onNodeWithText(option.label).assertIsDisplayed()
+            compose.runOnIdle { assertEquals(option, size.value) }
+        }
+    }
+
+    private fun cacheSizeOption(size: OfflineCacheSize) =
+        compose.onNode(hasText(size.label + if (size == OfflineCacheSize.DEFAULT) " (default)" else "") and
+            hasAnyAncestor(isDialog()))
+
+    @Test fun offlineCachePreferencePersistsAndInvalidValuesFallBackTo256MiB() {
+        val context = ApplicationProvider.getApplicationContext<Application>()
+        val preferences = context.getSharedPreferences("settings", Context.MODE_PRIVATE)
+        preferences.edit().remove("offline_cache_bytes").commit()
+        try {
+            withSettingsModel { model ->
+                assertEquals(OfflineCacheSize.DEFAULT, model.sessions.offlineCacheSize.value)
+                assertFalse(preferences.contains("offline_cache_bytes"))
+                val theme = model.preferences
+                OfflineCacheSize.entries.forEach { option ->
+                    model.sessions.chooseOfflineCacheSize(option)
+                    assertEquals(option.bytes, preferences.getLong("offline_cache_bytes", -1))
+                    assertEquals(option, model.sessions.offlineCacheSize.value)
+                    assertEquals(option.bytes, ReflectionHelpers.getField<Long>(model.sessions.audioCache, "maxBytes"))
+                    val restored = SessionStore(context)
+                    assertEquals(option, restored.offlineCacheSize.value)
+                    assertEquals(option.bytes, ReflectionHelpers.getField<Long>(restored.audioCache, "maxBytes"))
+                }
+                assertEquals(theme, model.preferences)
+                model.sessions.clear()
+                assertEquals(OfflineCacheSize.GIB_2, SessionStore(context).offlineCacheSize.value)
+                listOf(0L, -1L, 123L, Long.MAX_VALUE).forEach { invalid ->
+                    preferences.edit().putLong("offline_cache_bytes", invalid).commit()
+                    val restored = SessionStore(context)
+                    assertEquals(OfflineCacheSize.DEFAULT, restored.offlineCacheSize.value)
+                    assertEquals(OfflineCacheSize.DEFAULT.bytes,
+                        ReflectionHelpers.getField<Long>(restored.audioCache, "maxBytes"))
+                }
+                preferences.edit().putString("offline_cache_bytes", "invalid").commit()
+                assertEquals(OfflineCacheSize.DEFAULT, SessionStore(context).offlineCacheSize.value)
+            }
+        } finally {
+            preferences.edit().remove("offline_cache_bytes").commit()
+        }
+    }
+
+    @Test
+    @Config(qualifiers = "w800dp-h1600dp")
+    fun offlineCacheSettingAppearsImmediatelyAboveAppearanceAndSavesSelection() {
+        val preferences = ApplicationProvider.getApplicationContext<Application>()
+            .getSharedPreferences("settings", Context.MODE_PRIVATE)
+        preferences.edit().remove("offline_cache_bytes").commit()
+        try {
+            withSettingsModel(role = "shared") { model ->
+                showSettings(model)
+                compose.runOnUiThread { owner.lifecycle.currentState = Lifecycle.State.STARTED }
+                val cache = compose.onNodeWithText("Offline cache size").assertIsDisplayed().getUnclippedBoundsInRoot()
+                val appearance = compose.onNodeWithText("Appearance").assertIsDisplayed().getUnclippedBoundsInRoot()
+                assertTrue(cache.bottom < appearance.top)
+                compose.onNodeWithText("256 MiB").assertIsDisplayed()
+                compose.onNodeWithText("Offline cache size").performClick()
+                cacheSizeOption(OfflineCacheSize.GIB_1).performScrollTo().performClick()
+                compose.onNodeWithText("1 GiB").assertIsDisplayed()
+                assertEquals(OfflineCacheSize.GIB_1, model.sessions.offlineCacheSize.value)
+                assertEquals(OfflineCacheSize.GIB_1.bytes, preferences.getLong("offline_cache_bytes", -1))
+                assertEquals(OfflineCacheSize.GIB_1.bytes,
+                    ReflectionHelpers.getField<Long>(model.sessions.audioCache, "maxBytes"))
+            }
+        } finally {
+            preferences.edit().remove("offline_cache_bytes").commit()
+        }
     }
 
     @Test fun skinCatalogKeepsOriginalChoicesAndAddsTenDistinctIllustrations() {
@@ -397,7 +502,7 @@ class SettingsUiTest {
             val inLeft = hasAnyAncestor(hasTestTag("settings-left-pane"))
             val inRight = hasAnyAncestor(hasTestTag("settings-right-pane"))
             listOf("Settings", "App updates", "Preview", "https://music.example.com",
-                "Session expires 2099-01-01", "Appearance").forEach {
+                "Session expires 2099-01-01", "Offline cache size", "Appearance").forEach {
                 compose.onNode(hasText(it) and inLeft).assertExists()
             }
             assertCompactInformation("settings-left-pane")
