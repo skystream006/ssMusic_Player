@@ -20,6 +20,7 @@ import java.io.ByteArrayOutputStream
 import java.io.File
 import java.io.IOException
 import java.security.MessageDigest
+import java.time.Instant
 import java.util.concurrent.TimeUnit
 import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.withTimeout
@@ -325,15 +326,72 @@ class AudioCacheTest {
         val handle = lease()
         val oldFill = requireNotNull(handle.cacheCurrent(uri()))
         assertNotNull(server.takeRequest(5, TimeUnit.SECONDS))
-        cache.invalidate(account, uri().toString())
-        withTimeout(5_000) { oldFill.join() }
         val changed = bytes.reversedArray()
         server.dispatcher = object : Dispatcher() {
             override fun dispatch(request: RecordedRequest) =
                 MockResponse().setBody(Buffer().write(changed))
         }
-        withTimeout(5_000) { requireNotNull(handle.cacheCurrent(uri())).join() }
+        val replacements = cache.invalidate(account, uri().toString())
+        assertEquals(1, replacements.size)
+        withTimeout(5_000) {
+            oldFill.join()
+            replacements.forEach { it.join() }
+        }
         assertArrayEquals(changed, read(handle))
         assertEquals(2, server.requestCount)
+    }
+
+    @Test fun `editing the selected cached track immediately fills its new revision without a player event`() = runBlocking {
+        val handle = lease()
+        withTimeout(5_000) { requireNotNull(handle.cacheCurrent(uri())).join() }
+        val changed = bytes.reversedArray()
+        server.dispatcher = object : Dispatcher() {
+            override fun dispatch(request: RecordedRequest) =
+                MockResponse().setBody(Buffer().write(changed))
+        }
+        val replacements = cache.invalidate(account, uri().toString())
+        assertEquals(1, replacements.size)
+        withTimeout(5_000) { replacements.forEach { it.join() } }
+        assertArrayEquals(changed, read(handle))
+        assertEquals(2, server.requestCount)
+        handle.close()
+        cache = AudioCache(context).apply { setAccount(account) }
+        assertArrayEquals(changed, read(lease()))
+        assertEquals(2, server.requestCount)
+    }
+
+    @Test fun `expiry before cached open clears the expected session outside the cache monitor`() {
+        verifyCachedExpiry(alreadyOpen = false)
+    }
+
+    @Test fun `expiry during cached playback rejects reads and clears audio without HTTP`() {
+        verifyCachedExpiry(alreadyOpen = true)
+    }
+
+    private fun verifyCachedExpiry(alreadyOpen: Boolean) {
+        var time = Instant.parse("2099-12-31T23:59:59Z")
+        val cleared = mutableListOf<String>()
+        cache = AudioCache(context, now = { time }, onSessionExpired = { token ->
+            assertFalse("Session cleanup must not hold the cache monitor", Thread.holdsLock(cache))
+            cleared.add(token)
+            if (token == account.session.token) cache.setAccount(null)
+        }).apply { setAccount(account) }
+        val handle = lease()
+        fill(handle)
+        val source = handle.factory.createDataSource()
+        try {
+            if (alreadyOpen) source.open(DataSpec(uri()))
+            time = Instant.parse(account.session.expiresAt)
+            assertThrows(IOException::class.java) {
+                if (alreadyOpen) source.read(ByteArray(64), 0, 64)
+                else source.open(DataSpec(uri()))
+            }
+        } finally {
+            source.close()
+        }
+        assertEquals(listOf(account.session.token), cleared)
+        assertEquals(1, server.requestCount)
+        assertTrue(root.listFiles().isNullOrEmpty())
+        assertThrows(IOException::class.java) { read(handle) }
     }
 }

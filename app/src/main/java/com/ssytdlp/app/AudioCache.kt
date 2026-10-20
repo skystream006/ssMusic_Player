@@ -18,6 +18,7 @@ import com.ssytdlp.app.core.ServerResource
 import java.io.File
 import java.io.IOException
 import java.security.MessageDigest
+import java.time.Instant
 import java.util.UUID
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -31,7 +32,9 @@ import okhttp3.Call
 internal class AudioCache(
     context: Context,
     private val maxBytes: Long = 256L * 1024 * 1024,
-    private val fragmentBytes: Long = 2L * 1024 * 1024
+    private val fragmentBytes: Long = 2L * 1024 * 1024,
+    private val now: () -> Instant = Instant::now,
+    private val onSessionExpired: (String) -> Unit = {}
 ) {
     private val directory = File(context.noBackupFilesDir, "audio")
     private val database = StandaloneDatabaseProvider(context)
@@ -64,12 +67,12 @@ internal class AudioCache(
         }
     }
 
-    @Synchronized fun invalidate(owner: Account, path: String?) {
-        if (path == null || account?.owner() != owner.owner() || account?.session?.token != owner.session.token) return
+    @Synchronized fun invalidate(owner: Account, path: String?): List<Job> {
+        if (path == null || account?.owner() != owner.owner() || account?.session?.token != owner.session.token) return emptyList()
         val uri = Uri.parse(ServerResource.resolve(owner.origin, path))
         // A new key also isolates a writer that was already in flight when the file changed.
         revisions.edit().putString(digest(uri.toString()), UUID.randomUUID().toString()).commit()
-        handles.forEach { it.invalidate(uri) }
+        return handles.mapNotNull { it.invalidate(uri) }
     }
 
     @Synchronized fun acquire(owner: Account, upstream: Call.Factory): Handle {
@@ -101,8 +104,10 @@ internal class AudioCache(
         private var writer: CacheWriter? = null
         private var fillFailed = false
 
-        internal fun invalidate(uri: Uri) {
-            if (current == uri) cacheCurrent(null)
+        internal fun invalidate(uri: Uri): Job? {
+            if (current != uri) return null
+            cacheCurrent(null)
+            return cacheCurrent(uri)
         }
 
         val factory = DataSource.Factory {
@@ -111,15 +116,16 @@ internal class AudioCache(
                 private val listeners = mutableListOf<TransferListener>()
                 override fun addTransferListener(listener: TransferListener) { listeners.add(listener) }
                 override fun open(dataSpec: DataSpec): Long {
+                    checkSession()
                     val opened = synchronized(this@AudioCache) { reader().also { reader = it } }
                     listeners.forEach(opened.source::addTransferListener)
                     return opened.source.open(dataSpec.buildUpon()
                         .setFlags(dataSpec.flags or DataSpec.FLAG_ALLOW_CACHE_FRAGMENTATION).build())
-                        .also { checkActive() }
+                        .also { checkSession() }
                 }
                 override fun read(buffer: ByteArray, offset: Int, length: Int): Int {
-                    checkActive()
-                    return requireNotNull(reader).source.read(buffer, offset, length).also { checkActive() }
+                    checkSession()
+                    return requireNotNull(reader).source.read(buffer, offset, length).also { checkSession() }
                 }
                 override fun getUri(): Uri? = reader?.source?.uri
                 override fun getResponseHeaders(): Map<String, List<String>> = reader?.source?.responseHeaders.orEmpty()
@@ -169,6 +175,21 @@ internal class AudioCache(
             if (!active) throw IOException("The playback account changed or the player closed.")
         }
 
+        private fun checkSession() {
+            val expiredToken = synchronized(this@AudioCache) {
+                checkActive()
+                account?.takeUnless {
+                    runCatching { Instant.parse(it.session.expiresAt).isAfter(now()) }.getOrDefault(false)
+                }?.session?.token
+            }
+            if (expiredToken != null) {
+                // SessionStore takes its own monitor before updating this cache; never call it
+                // while holding the cache monitor, including on cached-only reads.
+                onSessionExpired(expiredToken)
+                throw IOException("The playback session expired.")
+            }
+        }
+
         override fun close() = synchronized(this@AudioCache) {
             active = false
             writer?.cancel()
@@ -193,6 +214,7 @@ internal class AudioCache(
             private var cancelled = false
             private var fillingThread: Thread? = null
             private val remote = OkHttpDataSource.Factory(Call.Factory { request ->
+                checkSession()
                 synchronized(this@AudioCache) {
                     checkActive()
                     if (cancelled) throw IOException("Audio download cancelled.")
@@ -226,6 +248,7 @@ internal class AudioCache(
             }
 
             fun fill(writer: CacheWriter) {
+                checkSession()
                 synchronized(this@AudioCache) {
                     if (cancelled) return
                     fillingThread = Thread.currentThread()
