@@ -267,9 +267,11 @@ fun NowPlayingScreen(model: MusicViewModel, state: PlaybackState, onBack: () -> 
                         }
                         val rating: @Composable () -> Unit = {
                             val track = state.track
-                            val canRate = model.canRate(track, metadata, account?.user)
-                            PlayerRating(model.library.rating(track), enabled = canRate && !model.songBusy(track)) {
-                                model.saveRating(track, it)
+                            if (track.mediaType != "video") {
+                                val canRate = model.canRate(track, metadata, account?.user)
+                                PlayerRating(model.library.rating(track), enabled = canRate && !model.songBusy(track)) {
+                                    model.saveRating(track, it)
+                                }
                             }
                         }
                         when (visibleTab) {
@@ -878,7 +880,7 @@ fun TrackMenu(model: MusicViewModel, track: Track, index: Int, onRemoveFromQueue
                 DropdownMenuItem(text = { Text("Add to playlist") }, enabled = !model.songBusy(track), leadingIcon = { Icon(Icons.Rounded.LibraryAdd, null) }, onClick = { open = false; transfer = "link" })
                 if (!inQueue) DropdownMenuItem(text = { Text("Move to playlist") }, enabled = !model.songBusy(track), leadingIcon = { Icon(Icons.AutoMirrored.Rounded.DriveFileMove, null) }, onClick = { open = false; transfer = "move" })
             }
-            if (canModify && track.name.endsWith(".mp3", true)) {
+            if (canModify && track.mediaType != "video" && track.name.endsWith(".mp3", true)) {
                 DropdownMenuItem(text = { Text("Edit song / rating") }, enabled = !model.songBusy(track), leadingIcon = { Icon(Icons.Rounded.Edit, null) }, onClick = { open = false; edit = true })
                 TranscribeMenuItem(model.library.transcriptionLocked(track), model.transcriptionAvailable, model.songBusy(track)) {
                     open = false; transcribe = true

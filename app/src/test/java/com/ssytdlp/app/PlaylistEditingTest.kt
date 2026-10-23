@@ -96,6 +96,180 @@ class PlaylistEditingTest {
         Security.removeProvider(provider.name)
     }
 
+    @Config(qualifiers = "w320dp-h800dp")
+    @Test fun newPlaylistButtonCreatesAnEmptyPlaylistAndSelectsIt() {
+        startModel()
+        var dismissed = false
+        compose.setContent { MusicTheme { LibraryBrowser(model) { dismissed = true } } }
+        val folder = compose.onNodeWithContentDescription("Create folder").getUnclippedBoundsInRoot()
+        val add = compose.onNodeWithContentDescription("New playlist").getUnclippedBoundsInRoot()
+        assertEquals(folder.top, add.top)
+        assertTrue(add.left >= folder.right)
+        compose.onNodeWithContentDescription("New playlist").performClick()
+        compose.onNodeWithText("Create").assertIsNotEnabled()
+        compose.onNodeWithText("Playlist name").performTextInput("  New collection  ")
+        compose.onNodeWithText("Create").performClick()
+        waitFor { !model.busy && !model.library.loading }
+        compose.waitForIdle()
+        assertTrue(dismissed)
+        assertEquals("created-playlist", model.library.selectedId)
+        assertEquals("", model.library.search)
+        assertEquals(1, model.library.page)
+        assertTrue(model.library.tracks.files.isEmpty())
+        val created = model.library.library.playlists.single { it.id == "created-playlist" }
+        assertEquals("New collection", created.playlistTitle)
+        assertEquals(0, created.songCount)
+        assertNull(model.library.library.entries.single { it.id == created.id }.parentId)
+        compose.onNodeWithText("New collection").assertIsDisplayed()
+        compose.onNodeWithText("Playlist name").assertDoesNotExist()
+        val post = requests.single { it.method == "POST" }
+        assertEquals("/api/library/playlists", post.url.encodedPath)
+        assertEquals(json("playlistTitle" to "New collection"), body(post))
+    }
+
+    @Config(qualifiers = "w320dp-h800dp")
+    @Test fun newPlaylistFromAFolderReturnsToTheLibraryRoot() {
+        startModel()
+        lateinit var browsing: LibraryBrowsingState
+        compose.setContent { MusicTheme {
+            browsing = rememberLibraryBrowsingState(model.library)
+            LibraryBrowser(model, browsing) {}
+        } }
+        compose.onNodeWithText("Collection").performClick()
+        assertEquals("parent", browsing.parent)
+        compose.onNodeWithContentDescription("New playlist").performClick()
+        compose.onNodeWithText("Playlist name").performTextInput("New collection")
+        compose.onNodeWithText("Create").performClick()
+        waitFor { !model.busy && !model.library.loading }
+        compose.waitForIdle()
+        assertNull(browsing.parent)
+        compose.onNodeWithText("New collection").assertIsDisplayed()
+        assertEquals("created-playlist", model.library.selectedId)
+        assertEquals(1, requests.count { it.method == "POST" })
+    }
+
+    @Config(qualifiers = "w320dp-h800dp")
+    @Test fun newPlaylistNameIsRequiredLimitedAndCanBeCancelled() {
+        startModel()
+        compose.setContent { MusicTheme { LibraryBrowser(model) {} } }
+        compose.onNodeWithContentDescription("New playlist").performClick()
+        compose.onNodeWithText("Playlist name").performTextInput("   ")
+        compose.onNodeWithText("Create").assertIsNotEnabled()
+        compose.onNodeWithText("Playlist name").performTextReplacement("x".repeat(201))
+        compose.onNodeWithText("Playlist name").assertTextContains("x".repeat(200))
+        compose.onNodeWithText("Create").assertIsEnabled()
+        compose.onNodeWithText("Cancel").performClick()
+        compose.onNodeWithText("Playlist name").assertDoesNotExist()
+        assertTrue(requests.isEmpty())
+    }
+
+    @Test fun playlistCreationRejectsInvalidTitlesBeforeRequesting() {
+        startModel()
+        for (title in listOf("", "   ", "x".repeat(201), "Invalid\nname", "Invalid\u007fname")) {
+            compose.runOnUiThread { model.createPlaylist(title) }
+            waitFor { !model.busy }
+            assertEquals("Playlist title must be between 1 and 200 characters without control characters.",
+                model.playlistCreationResult?.error)
+        }
+        assertTrue(requests.isEmpty())
+    }
+
+    @Config(qualifiers = "w320dp-h800dp")
+    @Test fun failedPlaylistCreationKeepsTheNameAndAllowsRetry() {
+        val attempts = AtomicInteger()
+        startModel { request ->
+            if (request.url.encodedPath == "/api/library/playlists" && attempts.incrementAndGet() == 1)
+                400 to """{"error":"Choose another playlist name."}"""
+            else null
+        }
+        val showing = mutableStateOf(true)
+        val restoration = StateRestorationTester(compose)
+        restoration.setContent { MusicTheme {
+            if (showing.value) NewPlaylistDialog(model, { showing.value = false }) { showing.value = false }
+        } }
+        compose.onNodeWithText("Playlist name").performTextInput("New collection")
+        compose.onNodeWithText("Create").performClick()
+        waitFor { !model.busy }
+        compose.onNodeWithText("Choose another playlist name.").assertIsDisplayed()
+        compose.onNodeWithText("Playlist name").assertTextContains("New collection")
+        restoration.emulateSavedInstanceStateRestore()
+        compose.onNodeWithText("Choose another playlist name.").assertIsDisplayed()
+        compose.onNodeWithText("Playlist name").assertTextContains("New collection")
+        compose.onNodeWithText("Create").assertIsEnabled().performClick()
+        waitFor { !model.busy && !model.library.loading }
+        compose.onNodeWithText("Playlist name").assertDoesNotExist()
+        assertEquals(2, attempts.get())
+        assertEquals("created-playlist", model.library.selectedId)
+    }
+
+    @Config(qualifiers = "w320dp-h800dp")
+    @Test fun playlistCreationDisablesTheFormAndSurvivesRecreationWithoutDuplicates() {
+        val started = AtomicBoolean(false)
+        val release = CountDownLatch(1)
+        startModel { request ->
+            if (request.url.encodedPath == "/api/library/playlists") {
+                started.set(true)
+                check(release.await(10, TimeUnit.SECONDS))
+            }
+            null
+        }
+        val showing = mutableStateOf(true)
+        val restoration = StateRestorationTester(compose)
+        restoration.setContent { MusicTheme {
+            if (showing.value) NewPlaylistDialog(model, { showing.value = false }) { showing.value = false }
+        } }
+        compose.onNodeWithText("Playlist name").performTextInput("New collection")
+        try {
+            compose.onNodeWithText("Create").performClick()
+            waitFor { started.get() }
+            compose.onNodeWithText("Create").assertIsNotEnabled()
+            compose.onNodeWithText("Cancel").assertIsNotEnabled()
+            compose.onNodeWithText("Playlist name").assertIsNotEnabled()
+            compose.runOnUiThread { model.createPlaylist("Duplicate") }
+            restoration.emulateSavedInstanceStateRestore()
+            compose.onNodeWithText("Create").assertIsNotEnabled()
+        } finally { release.countDown() }
+        waitFor { !model.busy && !model.library.loading }
+        compose.onNodeWithText("Playlist name").assertDoesNotExist()
+        assertEquals(1, requests.count { it.method == "POST" })
+        assertEquals("New collection", model.library.library.playlists.single { it.id == "created-playlist" }.playlistTitle)
+    }
+
+    @Config(qualifiers = "w320dp-h800dp")
+    @Test fun successfulPlaylistCreationClosesTheFormEvenWhenRefreshFails() {
+        val failRefresh = AtomicBoolean(false)
+        startModel { request ->
+            when (request.url.encodedPath) {
+                "/api/library/playlists" -> { failRefresh.set(true); null }
+                "/api/library" -> if (failRefresh.get()) 503 to """{"error":"Library unavailable"}""" else null
+                else -> null
+            }
+        }
+        compose.setContent { MusicTheme { LibraryBrowser(model) {} } }
+        compose.onNodeWithContentDescription("New playlist").performClick()
+        compose.onNodeWithText("Playlist name").performTextInput("New collection")
+        compose.onNodeWithText("Create").performClick()
+        waitFor { !model.busy }
+        compose.onNodeWithText("Playlist name").assertDoesNotExist()
+        assertTrue(model.notice!!.contains("Playlist created, but the library could not be refreshed."))
+        assertEquals(1, requests.count { it.method == "POST" })
+        failRefresh.set(false)
+        compose.runOnUiThread { model.refresh() }
+        waitFor { !model.busy && !model.library.loading }
+        compose.onNodeWithText("New collection").assertIsDisplayed()
+        assertEquals(1, requests.count { it.method == "POST" })
+    }
+
+    @Test fun sharedAccountsCannotCreatePlaylists() {
+        startModel(user = User("shared-listener", role = "shared"))
+        compose.setContent { MusicTheme { LibraryBrowser(model) {} } }
+        compose.onNodeWithContentDescription("New playlist").assertDoesNotExist()
+        compose.runOnUiThread { model.createPlaylist("Not allowed") }
+        waitFor { !model.busy }
+        assertEquals("This library is read-only.", model.playlistCreationResult?.error)
+        assertTrue(requests.isEmpty())
+    }
+
     @Test fun playlistSortsAcrossAllPagesLocallyAndKeepsPlaybackIndicesAligned() {
         val songs = (0 until 103).map {
             Track(job.id, "$it.mp3", title = "Song ${(102 - it).toString().padStart(3, '0')}",
@@ -1004,7 +1178,8 @@ class PlaylistEditingTest {
             model = MusicViewModel(application, connectPlayback = false)
             models.put("editing", model)
         }
-        waitFor { model.health != null && !model.busy && !model.library.loading }
+        waitFor { (user.isShared || model.health != null) && model.library.library.entries.isNotEmpty() &&
+            !model.busy && !model.library.loading }
         assertNull(model.notice)
         requests.clear()
     }
@@ -1021,6 +1196,17 @@ class PlaylistEditingTest {
         }
         val body = body(request)
         return when (path) {
+            "/api/library/playlists" -> {
+                val title = body.getValue("playlistTitle").jsonPrimitive.content
+                val created = Job("created-playlist", playlistTitle = title, source = "manual",
+                    status = "completed", initiatedBy = user)
+                catalog.set(current.copy(version = current.version + 1,
+                    entries = current.entries + LibraryEntry(created.id, "playlist", title),
+                    playlists = current.playlists + LibraryPlaylist(created.id, title, jobId = created.id,
+                        initiatedBy = user, status = "completed"),
+                    jobs = current.jobs + created))
+                201 to buildJsonObject { put("job", ApiJson.encodeToJsonElement(created)) }.toString()
+            }
             titlePath -> {
                 val title = body.getValue("playlistTitle").jsonPrimitive.content
                 val updated = current.jobs.single().copy(playlistTitle = title)

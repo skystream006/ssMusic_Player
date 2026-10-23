@@ -471,13 +471,18 @@ private fun LibraryBrowserPane(model: MusicViewModel, modifier: Modifier = Modif
     browsing: LibraryBrowsingState, onSelect: () -> Unit = {}) {
     val library = model.library.library
     val parent = browsing.parent
+    val account by model.sessions.account.collectAsStateWithLifecycle()
     var create by remember { mutableStateOf(false) }
+    var createPlaylist by rememberSaveable(account?.origin, account?.user?.id, account?.session?.token) { mutableStateOf(false) }
+    val canCreatePlaylist = account?.user?.let { !it.isShared && it.id.isNotBlank() } == true
     LazyColumn(modifier, state = browsing.browser) {
         item {
         Row(Modifier.fillMaxWidth().padding(horizontal = 16.dp), verticalAlignment = Alignment.CenterVertically) {
             if (parent != null) ToolButton(Icons.AutoMirrored.Rounded.ArrowBack, "Parent folder") { browsing.parent = library.entries.find { it.id == parent }?.parentId }
             Text(library.entries.find { it.id == parent }?.name ?: "Library", style = MaterialTheme.typography.titleLarge, modifier = Modifier.weight(1f), maxLines = 2)
             ToolButton(Icons.Rounded.CreateNewFolder, "Create folder") { create = true }
+            if (canCreatePlaylist) ToolButton(Icons.AutoMirrored.Rounded.PlaylistAdd, "New playlist",
+                enabled = !model.busy) { model.clearPlaylistCreationResult(); createPlaylist = true }
         }
         }
         item {
@@ -501,6 +506,36 @@ private fun LibraryBrowserPane(model: MusicViewModel, modifier: Modifier = Modif
         model.createFolder(name, parent)
         create = false
     }
+    if (createPlaylist && canCreatePlaylist) NewPlaylistDialog(model, dismiss = { createPlaylist = false }) {
+        createPlaylist = false
+        browsing.parent = null
+        onSelect()
+    }
+}
+
+@Composable
+internal fun NewPlaylistDialog(model: MusicViewModel, dismiss: () -> Unit, onCreated: () -> Unit) {
+    var name by rememberSaveable { mutableStateOf("") }
+    val result = model.playlistCreationResult
+    val error = result?.error
+    val currentOnCreated by rememberUpdatedState(onCreated)
+    LaunchedEffect(result) {
+        if (result != null && result.error == null) currentOnCreated()
+    }
+    val validName = isValidPlaylistTitle(name)
+    AlertDialog(onDismissRequest = { if (!model.busy) dismiss() }, title = { Text("New playlist") }, text = {
+        Column(Modifier.verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+            OutlinedTextField(name, { name = it.take(200) }, label = { Text("Playlist name") },
+                modifier = Modifier.fillMaxWidth(), singleLine = true, enabled = !model.busy,
+                isError = error != null || name.isNotEmpty() && !validName)
+            Text("Create an empty playlist in the library. No URL is required.")
+            error?.let { Text(it, color = MaterialTheme.colorScheme.error) }
+            if (model.busy) LinearProgressIndicator(Modifier.fillMaxWidth())
+        }
+    }, confirmButton = {
+        TextButton(onClick = { model.createPlaylist(name) },
+            enabled = validName && !model.busy) { Text("Create") }
+    }, dismissButton = { TextButton(onClick = dismiss, enabled = !model.busy) { Text("Cancel") } })
 }
 
 @Composable
@@ -567,7 +602,7 @@ fun TrackRow(track: Track, active: Boolean = false, enabled: Boolean = true, tra
                 Text(track.displayArtist, maxLines = 1, overflow = TextOverflow.Ellipsis, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
             }
             TranscriptionStatus(transcription, iconOnly = true)
-            Row(Modifier.clickable(role = Role.Button, onClickLabel = "Rate song", onClick = onRatingClick)
+            if (track.mediaType != "video") Row(Modifier.clickable(role = Role.Button, onClickLabel = "Rate song", onClick = onRatingClick)
                 .sizeIn(minWidth = 48.dp, minHeight = 48.dp).padding(horizontal = 4.dp).clearAndSetSemantics {
                 contentDescription = "Rating: ${track.rating} out of 5"
             }, verticalAlignment = Alignment.CenterVertically,

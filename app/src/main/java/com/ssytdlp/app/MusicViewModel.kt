@@ -151,6 +151,7 @@ internal fun Track.withReplacedFile(file: Track): Track = when {
 }
 
 internal data class PlaylistSaveResult(val id: String, val error: String? = null)
+internal data class PlaylistCreationResult(val error: String? = null)
 internal data class PlaylistEditTarget(val id: String, val account: Account)
 private data class MetadataSelection(val owner: MetadataOwner, val identity: MetadataIdentity)
 private data class MetadataUpdate(val selection: MetadataSelection, val canEdit: Boolean?)
@@ -204,6 +205,8 @@ class MusicViewModel @JvmOverloads constructor(application: Application, private
         private set
     internal var playlistSaveResult by mutableStateOf<PlaylistSaveResult?>(null)
         private set
+    internal var playlistCreationResult by mutableStateOf<PlaylistCreationResult?>(null)
+        private set
     internal var playlistEditTarget by mutableStateOf<PlaylistEditTarget?>(null)
         private set
     private var playlistReloadRequired = false
@@ -226,7 +229,7 @@ class MusicViewModel @JvmOverloads constructor(application: Application, private
         private set
     internal fun songBusy(track: Track): Boolean = busy || track.key in pendingSongs
     internal fun canRate(track: Track, metadata: SongMetadata?, user: User?): Boolean =
-        track.name.endsWith(".mp3", true) && metadata != null && user != null &&
+        track.mediaType != "video" && track.name.endsWith(".mp3", true) && metadata != null && user != null &&
             (user.isShared || (metadata.canEdit && library.library.jobs.find { it.id == track.jobId }?.canModify(user) == true))
     private val pendingReorders = ArrayDeque<SongReorder>()
     internal var recoveringSongOrder by mutableStateOf(false)
@@ -256,6 +259,7 @@ class MusicViewModel @JvmOverloads constructor(application: Application, private
                 recoveringSongOrder = false
                 transcriptionGeneration++
                 playlistSaveResult = null
+                playlistCreationResult = null
                 playlistEditTarget = null
                 playlistReloadRequired = false
                 if (account == null) {
@@ -654,6 +658,43 @@ class MusicViewModel @JvmOverloads constructor(application: Application, private
     fun createFolder(name: String, parentId: String?) = mutate("/api/library/entries", json(
         "action" to "create-folder", "id" to UUID.randomUUID().toString(), "name" to name.trim(), "parentId" to parentId))
 
+    internal fun clearPlaylistCreationResult() { playlistCreationResult = null }
+
+    fun createPlaylist(title: String) = launchAction {
+        val account = sessions.account.value
+        playlistCreationResult = null
+        val job = try {
+            val user = account?.user
+            require(user != null && !user.isShared && user.id.isNotBlank()) { "This library is read-only." }
+            require(isValidPlaylistTitle(title)) {
+                "Playlist title must be between 1 and 200 characters without control characters."
+            }
+            val result = api.request("/api/library/playlists", "POST", json("playlistTitle" to title.trim()))
+            ApiJson.decodeFromJsonElement<Job>(result.jsonObject.getValue("job"))
+        } catch (error: Exception) {
+            if (error is CancellationException) throw error
+            if (sameAccount(account)) playlistCreationResult = PlaylistCreationResult(
+                error.message ?: "Unable to create the playlist.")
+            throw error
+        }
+        // Creation has succeeded; do not leave the form open if the subsequent refresh fails.
+        playlistCreationResult = PlaylistCreationResult()
+        try {
+            loadLibrary()
+            if (!sameAccount(account)) return@launchAction
+            require(library.library.entries.any { it.id == job.id && it.type == "playlist" }) {
+                "The new playlist is not yet available in the library."
+            }
+            selectLibrary(job.id)
+            message("Playlist created.")
+        } catch (error: Exception) {
+            if (error is CancellationException) throw error
+            if (!sameAccount(account)) return@launchAction
+            message("Playlist created, but the library could not be refreshed. Refresh before creating another playlist. " +
+                (error.message ?: "Unable to contact the server."))
+        }
+    }
+
     fun moveEntry(entry: LibraryEntry, parentId: String?) = mutate("/api/library/entries", json(
         "action" to "move", "id" to entry.id, "parentId" to parentId, "targetId" to null, "after" to true))
 
@@ -818,7 +859,7 @@ class MusicViewModel @JvmOverloads constructor(application: Application, private
             require(!playlist.active) { "Wait for the playlist's active job to finish." }
             if (!entry.protected && playlist.canRename(user)) {
                 val name = title.trim()
-                require(name.length in 1..200 && name.none { it < ' ' || it == '\u007f' }) {
+                require(isValidPlaylistTitle(name)) {
                     "Playlist title must be between 1 and 200 characters without control characters."
                 }
                 if (name != playlist.playlistTitle) {
@@ -1236,6 +1277,9 @@ internal const val MAX_LYRICS_TEXT_SCALE = 2f
 
 internal fun normalizeLyricsTextScale(scale: Float): Float =
     if (scale.isFinite()) scale.coerceIn(MIN_LYRICS_TEXT_SCALE, MAX_LYRICS_TEXT_SCALE) else 1f
+
+internal fun isValidPlaylistTitle(title: String): Boolean =
+    title.trim().let { it.length in 1..200 && it.none { char -> char < ' ' || char == '\u007f' } }
 
 internal const val INACTIVE_TRANSCRIPTION_MESSAGE =
     "Transciption service is currently inactive. Refresh the app when transcription service is available"

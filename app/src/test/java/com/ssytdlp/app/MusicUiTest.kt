@@ -1151,6 +1151,30 @@ class MusicUiTest {
         compose.runOnIdle { assertEquals(0, selected) }
     }
 
+    @Test fun libraryVideoRowsHideRatingsWithoutHidingPlaybackOrMenus() {
+        val audio = Track("job", "song.mp3", title = "Song", rating = 3)
+        val video = Track("job", "movie.mp4", title = "Movie", rating = 5, mediaType = "video")
+        var selected = -1
+        var menu: Track? = null
+        var rated: Track? = null
+        compose.setContent { MusicTheme {
+            LibraryContent(LibraryState(tracks = TrackPage(files = listOf(audio, video))),
+                PlaybackState(connected = true), { selected = it }, {}, onRating = { rated = it }) { track, _ ->
+                ToolButton(Icons.Rounded.MoreVert, "Options for ${track.displayTitle}") { menu = track }
+            }
+        } }
+        compose.onNodeWithContentDescription("Rating: 5 out of 5").assertDoesNotExist()
+        compose.onNodeWithText("5/5", useUnmergedTree = true).assertDoesNotExist()
+        compose.onNodeWithContentDescription("Rating: 3 out of 5").performClick()
+        compose.onNodeWithContentDescription("Options for Movie").assertIsDisplayed().performClick()
+        compose.onNodeWithText("Movie").performClick()
+        compose.runOnIdle {
+            assertEquals(audio, rated)
+            assertEquals(video, menu)
+            assertEquals(1, selected)
+        }
+    }
+
     @Test fun compactTrackRowKeepsDragHandleAndOptionsVisibleInShortViewport() {
         var menu = false
         var rated = false

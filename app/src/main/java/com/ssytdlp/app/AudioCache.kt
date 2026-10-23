@@ -20,6 +20,11 @@ import com.ssytdlp.app.core.Account
 import com.ssytdlp.app.core.ServerResource
 import java.io.File
 import java.io.IOException
+import java.nio.file.FileVisitResult
+import java.nio.file.Files
+import java.nio.file.Path
+import java.nio.file.SimpleFileVisitor
+import java.nio.file.attribute.BasicFileAttributes
 import java.security.MessageDigest
 import java.time.Instant
 import java.util.UUID
@@ -28,6 +33,7 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import okhttp3.Call
 
 /** One application-owned cache, with revocable service leases and deferred release of active readers. */
@@ -57,6 +63,24 @@ internal class AudioCache(
         if (maxBytes == bytes) return
         maxBytes = bytes
         entries.values.forEach { it.evictor.resize(it.cache, bytes) }
+    }
+
+    suspend fun usedBytes(): Long = withContext(Dispatchers.IO) {
+        synchronized(this@AudioCache) {
+            val owner = account?.owner() ?: return@synchronized 0L
+            entries[owner]?.takeUnless { it.discard }?.let { return@synchronized it.cache.cacheSpace }
+            if (directory.exists() && !directory.isDirectory) throw IOException("Offline cache directory is unavailable.")
+            val path = File(directory, owner).toPath()
+            if (!Files.exists(path)) return@synchronized 0L
+            var bytes = 0L
+            Files.walkFileTree(path, object : SimpleFileVisitor<Path>() {
+                override fun visitFile(file: Path, attributes: BasicFileAttributes): FileVisitResult {
+                    if (attributes.isRegularFile && file.fileName.toString().endsWith(".exo")) bytes += attributes.size()
+                    return FileVisitResult.CONTINUE
+                }
+            })
+            bytes
+        }
     }
 
     /** Callbacks only use the SimpleCache monitor, never the enclosing AudioCache monitor. */

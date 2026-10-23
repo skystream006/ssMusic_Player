@@ -116,11 +116,15 @@ class AudioCacheTest {
     }
 
     @Test fun `current track finishes in background and survives a cache recreation without HTTP`() = runBlocking {
+        assertEquals(0L, cache.usedBytes())
         val handle = lease()
         withTimeout(5_000) { requireNotNull(handle.cacheCurrent(uri())).join() }
+        assertEquals(bytes.size.toLong(), cache.usedBytes())
         assertEquals(1, server.requestCount)
         handle.close()
+        assertEquals(bytes.size.toLong(), cache.usedBytes())
         cache = AudioCache(context).apply { setAccount(account) }
+        assertEquals(bytes.size.toLong(), cache.usedBytes())
 
         assertArrayEquals(bytes, read(lease()))
         assertEquals(1, server.requestCount)
@@ -175,10 +179,12 @@ class AudioCacheTest {
         fill(handle, first)
         fill(handle, second)
         fill(handle, third)
+        assertEquals(12288L, runBlocking { cache.usedBytes() })
         Thread.sleep(10) // Make the touch newer than every committed span, even on coarse clocks.
         assertArrayEquals(bytes, read(handle, first))
         cache.setMaxBytes(8192)
         assertEquals(8192L, storedBytes())
+        assertEquals(8192L, runBlocking { cache.usedBytes() })
         assertArrayEquals(bytes, read(handle, first))
         assertArrayEquals(bytes, read(lease(), third))
         assertEquals(3, server.requestCount)
@@ -278,6 +284,24 @@ class AudioCacheTest {
     }
 
     private fun storedBytes() = root.walkTopDown().filter { it.extension == "exo" }.sumOf { it.length() }
+
+    @Test fun `usage excludes another account even while its old reader retains cache files`() = runBlocking {
+        val first = lease()
+        fill(first)
+        val source = first.factory.createDataSource()
+        try {
+            source.open(DataSpec(uri()))
+            val other = account.copy(user = User("other"))
+            cache.setAccount(other)
+            assertEquals(bytes.size.toLong(), storedBytes())
+            assertEquals(0L, cache.usedBytes())
+            fill(lease(other))
+            assertEquals(bytes.size.toLong() * 2, storedBytes())
+            assertEquals(bytes.size.toLong(), cache.usedBytes())
+        } finally { source.close() }
+        cache.setAccount(null)
+        assertEquals(0L, cache.usedBytes())
+    }
 
     @Test fun `account user origin and logout changes revoke old factories and remove old bytes`() {
         val first = lease()
@@ -389,6 +413,7 @@ class AudioCacheTest {
 
     @Test fun `unavailable cache directory falls back to normal streaming`() {
         root.writeText("not a directory")
+        assertThrows(IOException::class.java) { runBlocking { cache.usedBytes() } }
         assertArrayEquals(bytes, read(lease()))
         assertEquals(1, server.requestCount)
         root.delete()

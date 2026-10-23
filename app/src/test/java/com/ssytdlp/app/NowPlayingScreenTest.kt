@@ -1674,6 +1674,41 @@ class NowPlayingScreenTest {
         compose.onAllNodesWithContentDescription("Rating: 3 out of 5").assertCountEquals(1)
     }
 
+    @Test fun videoRatingsStayHiddenInThePlayerAndQueueAcrossTrackChanges() {
+        val video = Track("preview", "movie.mp4", title = "Movie", rating = 5, mediaType = "video")
+        val audio = Track("preview", "song.mp3", title = "Song", rating = 3)
+        val state = mutableStateOf(PlaybackState(track = video, queue = listOf(video, audio), duration = 60_000))
+        compose.setContent { MusicTheme { NowPlayingScreen(model, state.value) { _, _ -> } } }
+        compose.onAllNodes(hasContentDescription("Rating:", substring = true)).assertCountEquals(0)
+        (1..5).forEach { compose.onNodeWithContentDescription("$it stars").assertDoesNotExist() }
+        compose.onNodeWithContentDescription("Play").assertIsDisplayed()
+        compose.onNodeWithText("Queue").performClick()
+        compose.onNodeWithContentDescription("Rating: 5 out of 5").assertDoesNotExist()
+        compose.onNodeWithContentDescription("Rating: 3 out of 5").assertIsDisplayed().assertHasClickAction()
+        compose.onNodeWithText("Player").performClick()
+        compose.runOnIdle { state.value = state.value.copy(track = audio, index = 1) }
+        compose.onNodeWithContentDescription("Rating: 3 out of 5").assertIsDisplayed()
+        compose.runOnIdle { state.value = state.value.copy(track = video, index = 0) }
+        compose.onAllNodes(hasContentDescription("Rating:", substring = true)).assertCountEquals(0)
+    }
+
+    @Test
+    @Config(qualifiers = "w800dp-h360dp-land")
+    fun videoRatingsStayHiddenInLandscapeWhileAudioQueueRatingsRemain() {
+        val video = Track("preview", "movie.mp4", rating = 5, mediaType = "video")
+        val audio = Track("preview", "song.mp3", rating = 3)
+        compose.setContent { MusicTheme {
+            NowPlayingScreen(model, PlaybackState(track = video, queue = listOf(video, audio), duration = 60_000)) { _, _ -> }
+        } }
+        compose.onNode(hasContentDescription("Rating:", substring = true) and
+            hasAnyAncestor(hasTestTag("now-playing-pane"))).assertDoesNotExist()
+        compose.onNodeWithContentDescription("Rating: 5 out of 5").assertDoesNotExist()
+        compose.onNode(hasContentDescription("Rating: 3 out of 5") and
+            hasAnyAncestor(hasTestTag("now-playing-queue-pane"))).assertIsDisplayed()
+        (1..5).forEach { compose.onNodeWithContentDescription("$it stars").assertDoesNotExist() }
+        compose.onNodeWithContentDescription("Play").assertIsDisplayed()
+    }
+
     @Test fun playerRatingStarsSelectAndClearDirectly() {
         val rating = mutableStateOf(3)
         val enabled = mutableStateOf(true)
@@ -1716,11 +1751,16 @@ class NowPlayingScreenTest {
             compose.runOnIdle {
                 account.value = Account("https://music.example", user, Session("test", "2099-01-01T00:00:00Z"))
                 library.value = LibraryState(library = Library(jobs = listOf(Job("source", initiatedBy = User("owner")))))
-                track.value = track.value.copy(name = name)
+                track.value = track.value.copy(name = name, mediaType = if (name == "video.mp4") "video" else "audio")
                 metadata.value = SongMetadata(rating = 3, canEdit = canEdit)
             }
-            compose.onNodeWithContentDescription("Rating: 3 out of 5").assertIsDisplayed()
-            (1..5).forEach { compose.onNodeWithContentDescription("$it stars").assertIsNotEnabled().performClick() }
+            if (track.value.mediaType == "video") {
+                compose.onNodeWithContentDescription("Rating: 3 out of 5").assertDoesNotExist()
+                (1..5).forEach { compose.onNodeWithContentDescription("$it stars").assertDoesNotExist() }
+            } else {
+                compose.onNodeWithContentDescription("Rating: 3 out of 5").assertIsDisplayed()
+                (1..5).forEach { compose.onNodeWithContentDescription("$it stars").assertIsNotEnabled().performClick() }
+            }
             compose.onNodeWithText("Save").assertDoesNotExist()
             compose.onNode(isDialog()).assertDoesNotExist()
         }
