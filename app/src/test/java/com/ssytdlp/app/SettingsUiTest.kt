@@ -3,6 +3,7 @@ package com.ssytdlp.app
 import android.app.Application
 import android.app.NotificationManager
 import android.content.Context
+import android.net.Uri
 import android.os.PowerManager
 import android.provider.Settings
 import androidx.activity.ComponentActivity
@@ -39,6 +40,8 @@ import java.security.Provider
 import java.security.Security
 import kotlinx.coroutines.cancel
 import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.runBlocking
+import kotlinx.coroutines.withTimeout
 import kotlinx.serialization.encodeToString
 import okhttp3.OkHttpClient
 import okhttp3.Protocol
@@ -76,10 +79,10 @@ class SettingsUiTest {
         val restoration = StateRestorationTester(compose)
         restoration.setContent {
             CompositionLocalProvider(LocalDensity provides Density(LocalDensity.current.density, 1.5f)) {
-                MusicTheme { OfflineCacheSetting(size.value) { size.value = it } }
+                MusicTheme { OfflineCacheSetting(size.value, 0L) { size.value = it } }
             }
         }
-        compose.onNodeWithText("32 MiB").assertIsDisplayed()
+        compose.onNodeWithText("0 B of 32 MiB used").assertIsDisplayed()
         compose.onNodeWithText("Offline cache size").performClick()
         restoration.emulateSavedInstanceStateRestore()
         compose.onNode(isDialog()).assertIsDisplayed()
@@ -101,7 +104,7 @@ class SettingsUiTest {
             assertTrue(bounds.height >= 48.dp)
             row.performClick()
             compose.onNode(isDialog()).assertDoesNotExist()
-            compose.onNodeWithText(option.label).assertIsDisplayed()
+            compose.onNodeWithText("0 B of ${option.label} used").assertIsDisplayed()
             compose.runOnIdle { assertEquals(option, size.value) }
         }
     }
@@ -109,6 +112,55 @@ class SettingsUiTest {
     private fun cacheSizeOption(size: OfflineCacheSize) =
         compose.onNode(hasText(size.label + if (size == OfflineCacheSize.DEFAULT) " (default)" else "") and
             hasAnyAncestor(isDialog()))
+
+    @Test fun offlineCacheSummaryShowsUsedSpaceInBinaryUnitsAndUnavailableUsage() {
+        val size = mutableStateOf(OfflineCacheSize.DEFAULT)
+        val used = mutableStateOf<Long?>(0L)
+        compose.setContent { MusicTheme { OfflineCacheSetting(size.value, used.value) { size.value = it } } }
+        compose.onNodeWithText("0 B of 32 MiB used").assertIsDisplayed()
+        for ((bytes, label) in listOf(512L to "512 B", 2560L to "2.5 KiB",
+            12L * 1024 * 1024 to "12 MiB", 1280L * 1024 * 1024 to "1.2 GiB")) {
+            compose.runOnIdle { used.value = bytes; size.value = OfflineCacheSize.GIB_2 }
+            compose.onNodeWithText("$label of 2 GiB used").assertIsDisplayed()
+        }
+        compose.runOnIdle { used.value = null }
+        compose.onNodeWithText("Usage unavailable (2 GiB selected)").assertIsDisplayed()
+    }
+
+    @Test
+    @Config(qualifiers = "w800dp-h1600dp")
+    fun offlineCacheUsageUpdatesAsCurrentAudioIsCachedAndCleared() {
+        withSettingsModel(role = "shared") { model ->
+            val account = model.sessions.account.value!!
+            val cache = model.sessions.audioCache
+            cache.setAccount(account)
+            val client = OkHttpClient.Builder().addInterceptor { chain ->
+                Response.Builder().request(chain.request()).protocol(Protocol.HTTP_1_1)
+                    .code(200).message("OK").body("x".repeat(2048).toResponseBody()).build()
+            }.build()
+            val handle = cache.acquire(account, client)
+            val limit = model.sessions.offlineCacheSize.value.label
+            try {
+                showSettings(model)
+                compose.runOnUiThread { owner.lifecycle.currentState = Lifecycle.State.RESUMED }
+                fun waitForUsage(used: String) = compose.waitUntil(5_000) {
+                    compose.onAllNodesWithText("$used of $limit used").fetchSemanticsNodes().isNotEmpty()
+                }
+                waitForUsage("0 B")
+                runBlocking {
+                    withTimeout(5_000) { requireNotNull(handle.cacheCurrent(Uri.parse("${account.origin}/api/stream/setting"))).join() }
+                }
+                waitForUsage("2 KiB")
+                handle.close()
+                cache.setAccount(null)
+                waitForUsage("0 B")
+            } finally {
+                compose.runOnUiThread { owner.lifecycle.currentState = Lifecycle.State.STARTED }
+                handle.close()
+                cache.setAccount(null)
+            }
+        }
+    }
 
     @Test fun offlineCachePreferencePersistsAndInvalidValuesFallBackTo32MiB() {
         assertEquals(OfflineCacheSize.MIB_32, OfflineCacheSize.DEFAULT)
@@ -159,14 +211,18 @@ class SettingsUiTest {
         try {
             withSettingsModel(role = "shared") { model ->
                 showSettings(model)
+                compose.runOnUiThread { owner.lifecycle.currentState = Lifecycle.State.RESUMED }
+                compose.waitUntil(5_000) {
+                    compose.onAllNodesWithText("0 B of 32 MiB used").fetchSemanticsNodes().isNotEmpty()
+                }
                 compose.runOnUiThread { owner.lifecycle.currentState = Lifecycle.State.STARTED }
                 val cache = compose.onNodeWithText("Offline cache size").assertIsDisplayed().getUnclippedBoundsInRoot()
                 val appearance = compose.onNodeWithText("Appearance").assertIsDisplayed().getUnclippedBoundsInRoot()
                 assertTrue(cache.bottom < appearance.top)
-                compose.onNodeWithText("32 MiB").assertIsDisplayed()
+                compose.onNodeWithText("0 B of 32 MiB used").assertIsDisplayed()
                 compose.onNodeWithText("Offline cache size").performClick()
                 cacheSizeOption(OfflineCacheSize.GIB_1).performScrollTo().performClick()
-                compose.onNodeWithText("1 GiB").assertIsDisplayed()
+                compose.onNodeWithText("0 B of 1 GiB used").assertIsDisplayed()
                 assertEquals(OfflineCacheSize.GIB_1, model.sessions.offlineCacheSize.value)
                 assertEquals(OfflineCacheSize.GIB_1.bytes, preferences.getLong("offline_cache_bytes", -1))
                 assertEquals(OfflineCacheSize.GIB_1.bytes,

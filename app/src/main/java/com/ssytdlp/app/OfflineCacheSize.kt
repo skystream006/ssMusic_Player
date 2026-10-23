@@ -1,5 +1,7 @@
 package com.ssytdlp.app
 
+import java.text.NumberFormat
+
 internal enum class OfflineCacheSize(val bytes: Long, val label: String) {
     MIB_32(32L * 1024 * 1024, "32 MiB"),
     MIB_64(64L * 1024 * 1024, "64 MiB"),
@@ -14,4 +16,16 @@ internal enum class OfflineCacheSize(val bytes: Long, val label: String) {
         fun fromPreference(bytes: Long?): OfflineCacheSize =
             entries.firstOrNull { it.bytes == bytes } ?: DEFAULT
     }
+}
+
+internal fun formatOfflineCacheBytes(bytes: Long): String {
+    require(bytes >= 0)
+    val (unit, divisor) = when {
+        bytes >= OfflineCacheSize.GIB_1.bytes -> "GiB" to OfflineCacheSize.GIB_1.bytes
+        bytes >= 1024L * 1024 -> "MiB" to 1024L * 1024
+        bytes >= 1024L -> "KiB" to 1024L
+        else -> "B" to 1L
+    }
+    val number = NumberFormat.getNumberInstance().apply { maximumFractionDigits = 1 }
+    return "${number.format(bytes.toDouble() / divisor)} $unit"
 }

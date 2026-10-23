@@ -54,7 +54,7 @@ internal fun EditPlaylistDialog(model: MusicViewModel, entry: LibraryEntry, play
     val locations = playlistLocations(model.library.library.entries)
     val dirty = (canRename && name.trim() != playlist.playlistTitle) ||
         (canChangePrivacy && isPrivate != playlist.isPrivate) || parentId != entry.parentId
-    val validName = name.trim().let { it.length in 1..200 && it.none { char -> char < ' ' || char == '\u007f' } }
+    val validName = isValidPlaylistTitle(name)
     val uriHandler = LocalUriHandler.current
     AlertDialog(onDismissRequest = { if (!model.busy) dismiss() }, title = { Text("Edit playlist") }, text = {
         Column(Modifier.verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(12.dp)) {

@@ -182,7 +182,7 @@ it does not prove an installed app's identity. Authorize only sign-ins you start
 | Area | Implemented |
 | --- | --- |
 | Library | All Music, server-side search, local 50-track pages with name/rating sorting across the complete selection, folder navigation, playlist counts, linked tracks, cached 192px AVIF audio/video thumbnails in Library and Queue (including Android 8+, with legacy JPEG/PNG/WebP support) |
-| Organization | Create/rename/remove/move folders, move playlists, add/move/remove song memberships, drag to reorder songs within an unfiltered playlist page |
+| Organization | Create/rename/remove/move folders, create empty playlists, move playlists, add/move/remove song memberships, drag to reorder songs within an unfiltered playlist page |
 | Playback | Authenticated audio/video streams, persistent mini-player, full player, seek, next/previous, queue editing, shuffle, repeat, instrumental companions |
 | Lyrics and tags | Album artwork, expandable full-screen SYLT/USLT lyrics, timestamp-highlighted seekable SYLT lyrics, plain USLT lyrics, editing both lyric formats and MP3 tags/ratings, transcription requests and locking |
 | Jobs | Add audio/video YouTube jobs, metadata-only jobs, status polling, search, owner filter, rerun, rename, delete, contributors, add existing files to playlists, save ZIPs |
@@ -215,7 +215,7 @@ These actions remain available on the Player, Lyrics, and Queue tabs.
 The mini-player has the same **More song actions** menu beside its progress slider,
 including Replace File, Share Media, and read-only metadata for shared accounts
 where permitted, without opening Now Playing or changing playback.
-Track ratings remain visible even at zero; tap the star beside a track's menu
+Audio track ratings remain visible even at zero; tap the star beside a track's menu
 or queue controls to open **Rate song**. Shared accounts can update or clear MP3
 ratings in their granted libraries without permission to edit other metadata.
 Ratings are saved to the song and visible to everyone with access, not personal
@@ -223,7 +223,7 @@ ratings. Tap the selected star again to clear a rating, then **Save**.
 On the Player tab, tap the stars above the progress bar to save a rating directly,
 without a dialog. Tap the selected star again to clear it. These stars are read-only
 for non-MP3 files or accounts without rating permission and disabled while a change
-is saving.
+is saving. Video files do not show rating buttons in Library, Queue, or the Player tab.
 
 Shared accounts can choose **View song metadata** (the info icon) from a Library
 song's options or the Now Playing three-dot menu. For audio in their granted libraries,
@@ -328,6 +328,8 @@ its remaining bytes once playback starts (not the rest of the queue). Reopening
 reuses those bytes, including seeks; interrupted downloads fetch only missing
 ranges. Settings → Offline cache size (above Appearance) sets this device's
 persistent audio cache limit: 32 (default), 64, 128, 256, or 512 MiB, or 1 or 2 GiB.
+The setting shows the current account's used cache space out of the selected limit,
+and updates while Settings is visible as audio is cached or evicted.
 The choice persists across restarts and takes effect without restarting playback;
 reducing it immediately evicts least recently used audio. It is isolated by server
 and account and cleared on sign-out,
@@ -360,6 +362,12 @@ the filter. There is no top-bar play button; tap a song to play the page.
 On each library page, `[NoVocals]/` tracks appear after originals in a collapsed
 **[NoVocals]** section. Expanding it keeps playback and track actions associated
 with the original page indices.
+Choose **New playlist** beside the folder-creation button in the library browser,
+enter a playlist name, and tap **Create**. No URL or files are required. The empty
+playlist is created at the library root and selected automatically; use its menu
+to move it into a folder. Names are limited to 200 characters. Shared accounts
+cannot create playlists. This requires server support for
+`POST /api/library/playlists`.
 Choose **Edit playlist** from a playlist's three-dot menu to change its name,
 privacy, or folder location. Owners and administrators can rename ordinary
 playlists; only owners can change privacy. Contributors can change location in

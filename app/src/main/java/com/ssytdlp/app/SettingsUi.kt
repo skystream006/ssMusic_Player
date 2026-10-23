@@ -41,6 +41,7 @@ import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.repeatOnLifecycle
+import java.io.IOException
 import kotlinx.coroutines.delay
 import kotlinx.serialization.json.*
 
@@ -51,6 +52,14 @@ fun SettingsScreen(model: MusicViewModel, download: (String, String) -> Unit, on
     val currentAccount by model.sessions.account.collectAsStateWithLifecycle()
     val offlineCacheSize by model.sessions.offlineCacheSize.collectAsStateWithLifecycle()
     val account = currentAccount ?: return
+    val offlineCacheUsed by produceState<Long?>(null, lifecycle, account.origin, account.user.id, offlineCacheSize) {
+        lifecycle.repeatOnLifecycle(Lifecycle.State.RESUMED) {
+            while (true) {
+                value = try { model.sessions.audioCache.usedBytes() } catch (_: IOException) { null }
+                delay(1_000)
+            }
+        }
+    }
     val showJobsAndBackup = !account.user.isShared
     var logout by remember { mutableStateOf(false) }
     var schedule by remember { mutableStateOf(false) }
@@ -75,7 +84,7 @@ fun SettingsScreen(model: MusicViewModel, download: (String, String) -> Unit, on
                 style = MaterialTheme.typography.bodySmall, textAlign = TextAlign.End)
         }
         HorizontalDivider()
-        OfflineCacheSetting(offlineCacheSize, model.sessions::chooseOfflineCacheSize)
+        OfflineCacheSetting(offlineCacheSize, offlineCacheUsed, model.sessions::chooseOfflineCacheSize)
         CollapsibleSettingsSection("Appearance", defaultExpanded = false) {
             SingleChoiceSegmentedButtonRow(Modifier.fillMaxWidth()) {
                 listOf("Blue Wave", "Server theme").forEachIndexed { index, label ->
@@ -162,11 +171,12 @@ fun SettingsScreen(model: MusicViewModel, download: (String, String) -> Unit, on
 }
 
 @Composable
-internal fun OfflineCacheSetting(size: OfflineCacheSize, onSizeChange: (OfflineCacheSize) -> Unit) {
+internal fun OfflineCacheSetting(size: OfflineCacheSize, usedBytes: Long?, onSizeChange: (OfflineCacheSize) -> Unit) {
     var showPicker by rememberSaveable { mutableStateOf(false) }
     ListItem(
         headlineContent = { Text("Offline cache size") },
-        supportingContent = { Text(size.label) },
+        supportingContent = { Text(if (usedBytes == null) "Usage unavailable (${size.label} selected)"
+            else "${formatOfflineCacheBytes(usedBytes)} of ${size.label} used") },
         trailingContent = { Icon(Icons.AutoMirrored.Rounded.KeyboardArrowRight, null) },
         modifier = Modifier.clickable(role = Role.Button, onClickLabel = "Choose offline cache size") {
             showPicker = true
