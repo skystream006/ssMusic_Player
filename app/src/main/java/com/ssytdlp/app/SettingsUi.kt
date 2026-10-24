@@ -84,7 +84,6 @@ fun SettingsScreen(model: MusicViewModel, download: (String, String) -> Unit, on
                 style = MaterialTheme.typography.bodySmall, textAlign = TextAlign.End)
         }
         HorizontalDivider()
-        OfflineCacheSetting(offlineCacheSize, offlineCacheUsed, model.sessions::chooseOfflineCacheSize)
         CollapsibleSettingsSection("Appearance", defaultExpanded = false) {
             SingleChoiceSegmentedButtonRow(Modifier.fillMaxWidth()) {
                 listOf("Blue Wave", "Server theme").forEachIndexed { index, label ->
@@ -149,6 +148,8 @@ fun SettingsScreen(model: MusicViewModel, download: (String, String) -> Unit, on
         DeviceSettings()
         HorizontalDivider()
         CollapsibleSettingsSection("Server", defaultExpanded = false) {
+            ItemsPerPageSetting(model.library.pageSize, model::choosePageSize)
+            OfflineCacheSetting(offlineCacheSize, offlineCacheUsed, model.sessions::chooseOfflineCacheSize)
             if (showJobsAndBackup) JobsSetting(onJobs)
             val media = model.health?.get("media") as? JsonObject
             Text("Media files: ${media?.get("totalFiles")?.jsonPrimitive?.content ?: "Unavailable"}")
@@ -168,6 +169,42 @@ fun SettingsScreen(model: MusicViewModel, download: (String, String) -> Unit, on
     })
     if (logout) ConfirmDialog("Sign out?", "Playback will stop and this device's server session will be revoked.", { logout = false }) { logout = false; model.logout() }
     if (schedule && showJobsAndBackup) BackupScheduleDialog(model) { schedule = false }
+}
+
+@Composable
+internal fun ItemsPerPageSetting(size: LibraryPageSize, onSizeChange: (LibraryPageSize) -> Unit) {
+    var showPicker by rememberSaveable { mutableStateOf(false) }
+    ListItem(
+        headlineContent = { Text("Items per page") },
+        supportingContent = { Text("${size.items} items per page") },
+        trailingContent = { Icon(Icons.AutoMirrored.Rounded.KeyboardArrowRight, null) },
+        modifier = Modifier.clickable(role = Role.Button, onClickLabel = "Choose items per page") {
+            showPicker = true
+        }
+    )
+    if (showPicker) {
+        AlertDialog(onDismissRequest = { showPicker = false }, title = { Text("Items per page") }, text = {
+            Column(Modifier.verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                Text("Saved on this device for library, playlist, folder, and search results. " +
+                    "Changing the size returns to page one without changing playback.",
+                    style = MaterialTheme.typography.bodySmall)
+                Column(Modifier.selectableGroup()) {
+                    LibraryPageSize.entries.forEach { option ->
+                        Row(Modifier.fillMaxWidth().heightIn(min = 48.dp)
+                            .selectable(size == option, role = Role.RadioButton, onClick = {
+                                onSizeChange(option)
+                                showPicker = false
+                            }).padding(horizontal = 12.dp, vertical = 8.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                            RadioButton(size == option, onClick = null)
+                            Text("${option.items}" + if (option == LibraryPageSize.DEFAULT) " (default)" else "")
+                        }
+                    }
+                }
+            }
+        }, confirmButton = { TextButton(onClick = { showPicker = false }) { Text("Close") } })
+    }
 }
 
 @Composable

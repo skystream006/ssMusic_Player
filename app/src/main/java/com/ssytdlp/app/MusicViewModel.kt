@@ -34,6 +34,7 @@ data class LibraryState(
     val library: Library = Library(), val tracks: TrackPage = TrackPage(),
     val selectedId: String? = null, val search: String = "", val page: Int = 1,
     val loading: Boolean = false, val sort: TrackSort = TrackSort.ORDER,
+    val pageSize: LibraryPageSize = LibraryPageSize.DEFAULT,
     val allPagesLoaded: Boolean = false,
     val pendingTranscriptions: Map<String, Transcription> = emptyMap(),
     val transcriptions: Map<String, Transcription?> = emptyMap(),
@@ -80,7 +81,8 @@ data class LibraryState(
     fun rating(track: Track): Int = ratings[track.key] ?: track.rating
 
     val totalPages: Int
-        get() = if (allPagesLoaded) ((tracks.files.size + 49) / 50).coerceAtLeast(1) else tracks.totalPages.coerceAtLeast(1)
+        get() = if (allPagesLoaded) ((tracks.files.size + pageSize.items - 1) / pageSize.items).coerceAtLeast(1)
+            else tracks.totalPages.coerceAtLeast(1)
 
     val currentPage: Int get() = page.coerceIn(1, totalPages)
 
@@ -91,7 +93,7 @@ data class LibraryState(
                 val (originals, instrumentals) = sorted.partition { !it.name.startsWith("[NoVocals]/", true) }
                 originals + instrumentals
             }
-            return if (allPagesLoaded) ordered.drop((currentPage - 1) * 50).take(50) else ordered
+            return if (allPagesLoaded) ordered.drop((currentPage - 1) * pageSize.items).take(pageSize.items) else ordered
         }
 
     fun artworkUrl(track: Track): String? = if (artworkUrls.containsKey(track.key)) artworkUrls[track.key] else track.artworkUrl
@@ -108,10 +110,16 @@ data class LibraryState(
         })
 
     fun withAllTracks(result: TrackPage): LibraryState {
-        val totalPages = ((result.files.size + 49) / 50).coerceAtLeast(1)
+        val totalPages = ((result.files.size + pageSize.items - 1) / pageSize.items).coerceAtLeast(1)
         val page = page.coerceIn(1, totalPages)
-        return withTrackPage(result.copy(page = page, pageSize = 50, total = result.files.size, totalPages = totalPages))
+        return withTrackPage(result.copy(page = page, pageSize = pageSize.items, total = result.files.size, totalPages = totalPages))
             .copy(allPagesLoaded = true)
+    }
+
+    fun withPageSize(size: LibraryPageSize): LibraryState {
+        val resized = copy(pageSize = size, page = 1)
+        return if (allPagesLoaded) resized.copy(tracks = tracks.copy(
+            page = 1, pageSize = size.items, totalPages = resized.totalPages)) else resized
     }
 
     fun withTranscriptions(job: Job, tracks: List<Track>): LibraryState = copy(
@@ -167,7 +175,10 @@ class MusicViewModel @JvmOverloads constructor(application: Application, private
     val sessions = app.sessions
     val api = app.api
     val playback = PlaybackConnection(application, api, viewModelScope)
-    var library by mutableStateOf(LibraryState(selectedId = sessions.account.value?.let(sessions.playback::selectedLibrary)))
+    var library by mutableStateOf(LibraryState(
+        selectedId = sessions.account.value?.let(sessions.playback::selectedLibrary),
+        pageSize = LibraryPageSize.fromPreference(
+            application.getSharedPreferences("settings", 0).all["items_per_page"] as? Int)))
         private set
     var jobs by mutableStateOf<List<Job>>(emptyList())
         private set
@@ -266,14 +277,14 @@ class MusicViewModel @JvmOverloads constructor(application: Application, private
                     operation?.cancel()
                     trackRequest?.cancel()
                     playback.disconnect(stop = true)
-                    library = LibraryState()
+                    library = LibraryState(pageSize = library.pageSize)
                     jobs = emptyList()
                     metadata = null
                     backup = null
                     health = null
                 } else {
                     health = null
-                    library = LibraryState(selectedId = sessions.playback.selectedLibrary(account))
+                    library = LibraryState(selectedId = sessions.playback.selectedLibrary(account), pageSize = library.pageSize)
                     if (connectPlayback) playback.connect()
                     runAction {
                         if (!refreshAccount()) return@runAction
@@ -498,6 +509,11 @@ class MusicViewModel @JvmOverloads constructor(application: Application, private
         library = library.copy(page = value.coerceIn(1, library.totalPages))
     }
     fun sortLibrary(sort: TrackSort) { library = library.copy(sort = sort, page = 1) }
+    fun choosePageSize(size: LibraryPageSize) {
+        if (library.pageSize == size) return
+        library = library.withPageSize(size)
+        getApplication<Application>().getSharedPreferences("settings", 0).edit().putInt("items_per_page", size.items).apply()
+    }
     fun refresh() = launchAction { loadLibrary(); refreshTracks(); refreshHealth() }
 
     fun refreshTracks(debounce: Boolean = false, background: Boolean = false) {

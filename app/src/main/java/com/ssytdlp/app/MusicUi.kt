@@ -358,9 +358,10 @@ class LibraryBrowsingState internal constructor(
 
 @Composable
 fun rememberLibraryBrowsingState(state: LibraryState): LibraryBrowsingState {
-    val tracks = rememberSaveable(state.selectedId, state.search, state.currentPage, state.sort, saver = LazyListState.Saver) { LazyListState() }
+    val tracks = rememberSaveable(state.selectedId, state.search, state.currentPage, state.pageSize, state.sort,
+        saver = LazyListState.Saver) { LazyListState() }
     val browser = rememberSaveable(saver = LazyListState.Saver) { LazyListState() }
-    val expanded = rememberSaveable(state.selectedId, state.search, state.currentPage) { mutableStateOf(false) }
+    val expanded = rememberSaveable(state.selectedId, state.search, state.currentPage, state.pageSize) { mutableStateOf(false) }
     val parent = rememberSaveable { mutableStateOf<String?>(null) }
     return remember(tracks, browser, expanded, parent) { LibraryBrowsingState(tracks, browser, expanded, parent) }
 }
@@ -373,7 +374,9 @@ fun LibraryContent(state: LibraryState, playback: PlaybackState, onPlay: (Int) -
     onReorder: ((Track, Track, Boolean) -> Unit)? = null,
     onSort: ((TrackSort) -> Unit)? = null,
     trackActions: @Composable (Track, Int) -> Unit) {
-    val files = remember(state.tracks.files, state.sort, state.ratings, state.allPagesLoaded, state.currentPage) { state.orderedTracks }
+    val files = remember(state.tracks.files, state.sort, state.ratings, state.allPagesLoaded, state.currentPage, state.pageSize) {
+        state.orderedTracks
+    }
     val groups = remember(files) {
         files.withIndex().partition { !it.value.name.startsWith("[NoVocals]/", ignoreCase = true) }
     }

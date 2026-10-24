@@ -74,6 +74,41 @@ class SettingsUiTest {
 
     @Test
     @Config(qualifiers = "w320dp-h480dp")
+    fun itemsPerPagePickerShowsAllChoicesAndRestoresWithLargeText() {
+        val size = mutableStateOf(LibraryPageSize.DEFAULT)
+        val restoration = StateRestorationTester(compose)
+        restoration.setContent {
+            CompositionLocalProvider(LocalDensity provides Density(LocalDensity.current.density, 1.5f)) {
+                MusicTheme { ItemsPerPageSetting(size.value) { size.value = it } }
+            }
+        }
+        compose.onNodeWithText("50 items per page").assertIsDisplayed()
+        compose.onNodeWithText("Items per page").performClick()
+        restoration.emulateSavedInstanceStateRestore()
+        compose.onNode(isDialog()).assertIsDisplayed()
+        compose.onNodeWithText("50 (default)").assertIsSelected()
+        compose.onNodeWithText("Close").performClick()
+        compose.runOnIdle { assertEquals(LibraryPageSize.DEFAULT, size.value) }
+        LibraryPageSize.entries.forEach { option ->
+            compose.onNodeWithText("Items per page").performClick()
+            LibraryPageSize.entries.forEach {
+                val row = compose.onNodeWithText("${it.items}" + if (it == LibraryPageSize.DEFAULT) " (default)" else "")
+                if (it == size.value) row.assertIsSelected() else row.assertIsNotSelected()
+            }
+            val row = compose.onNodeWithText("${option.items}" + if (option == LibraryPageSize.DEFAULT) " (default)" else "")
+                .performScrollTo().assertIsDisplayed()
+            val bounds = row.getUnclippedBoundsInRoot()
+            assertTrue(bounds.left >= 0.dp && bounds.right <= 320.dp)
+            assertTrue(bounds.height >= 48.dp)
+            row.performClick()
+            compose.onNode(isDialog()).assertDoesNotExist()
+            compose.onNodeWithText("${option.items} items per page").assertIsDisplayed()
+            compose.runOnIdle { assertEquals(option, size.value) }
+        }
+    }
+
+    @Test
+    @Config(qualifiers = "w320dp-h480dp")
     fun offlineCachePickerIsSingleChoiceScrollableAndRestorableWithLargeText() {
         val size = mutableStateOf(OfflineCacheSize.DEFAULT)
         val restoration = StateRestorationTester(compose)
@@ -142,6 +177,7 @@ class SettingsUiTest {
             val limit = model.sessions.offlineCacheSize.value.label
             try {
                 showSettings(model)
+                compose.onNodeWithText("Server").performScrollTo().performClick()
                 compose.runOnUiThread { owner.lifecycle.currentState = Lifecycle.State.RESUMED }
                 fun waitForUsage(used: String) = compose.waitUntil(5_000) {
                     compose.onAllNodesWithText("$used of $limit used").fetchSemanticsNodes().isNotEmpty()
@@ -204,21 +240,31 @@ class SettingsUiTest {
 
     @Test
     @Config(qualifiers = "w800dp-h1600dp")
-    fun offlineCacheSettingAppearsImmediatelyAboveAppearanceAndSavesSelection() {
+    fun serverContainsOfflineCacheAndItemsPerPageAndSavesSelectionsForSharedUsers() {
         val preferences = ApplicationProvider.getApplicationContext<Application>()
             .getSharedPreferences("settings", Context.MODE_PRIVATE)
         preferences.edit().remove("offline_cache_bytes").commit()
+        preferences.edit().remove("items_per_page").commit()
         try {
             withSettingsModel(role = "shared") { model ->
                 showSettings(model)
+                compose.onNodeWithText("Offline cache size").assertDoesNotExist()
+                compose.onNodeWithText("Items per page").assertDoesNotExist()
+                compose.onNodeWithText("Server").performScrollTo().performClick()
                 compose.runOnUiThread { owner.lifecycle.currentState = Lifecycle.State.RESUMED }
                 compose.waitUntil(5_000) {
                     compose.onAllNodesWithText("0 B of 32 MiB used").fetchSemanticsNodes().isNotEmpty()
                 }
                 compose.runOnUiThread { owner.lifecycle.currentState = Lifecycle.State.STARTED }
+                val server = compose.onNodeWithText("Server").getUnclippedBoundsInRoot()
+                val items = compose.onNodeWithText("Items per page").assertIsDisplayed().getUnclippedBoundsInRoot()
                 val cache = compose.onNodeWithText("Offline cache size").assertIsDisplayed().getUnclippedBoundsInRoot()
-                val appearance = compose.onNodeWithText("Appearance").assertIsDisplayed().getUnclippedBoundsInRoot()
-                assertTrue(cache.bottom < appearance.top)
+                assertTrue(server.bottom < items.top && items.bottom < cache.top)
+                compose.onNodeWithText("Items per page").performClick()
+                compose.onNodeWithText("200").performScrollTo().performClick()
+                compose.onNodeWithText("200 items per page").assertIsDisplayed()
+                assertEquals(LibraryPageSize.ITEMS_200, model.library.pageSize)
+                assertEquals(200, preferences.getInt("items_per_page", -1))
                 compose.onNodeWithText("0 B of 32 MiB used").assertIsDisplayed()
                 compose.onNodeWithText("Offline cache size").performClick()
                 cacheSizeOption(OfflineCacheSize.GIB_1).performScrollTo().performClick()
@@ -229,7 +275,7 @@ class SettingsUiTest {
                     ReflectionHelpers.getField<Long>(model.sessions.audioCache, "maxBytes"))
             }
         } finally {
-            preferences.edit().remove("offline_cache_bytes").commit()
+            preferences.edit().remove("offline_cache_bytes").remove("items_per_page").commit()
         }
     }
 
@@ -562,7 +608,7 @@ class SettingsUiTest {
             val inLeft = hasAnyAncestor(hasTestTag("settings-left-pane"))
             val inRight = hasAnyAncestor(hasTestTag("settings-right-pane"))
             listOf("Settings", "App updates", "Preview", "https://music.example.com",
-                "Session expires 2099-01-01", "Offline cache size", "Appearance").forEach {
+                "Session expires 2099-01-01", "Appearance").forEach {
                 compose.onNode(hasText(it) and inLeft).assertExists()
             }
             assertCompactInformation("settings-left-pane")
@@ -579,10 +625,17 @@ class SettingsUiTest {
                 compose.onNode(hasText(it) and inRight).assertExists()
             }
             compose.onNodeWithText("Jobs").assertDoesNotExist()
+            compose.onNodeWithText("Offline cache size").assertDoesNotExist()
+            compose.onNodeWithText("Items per page").assertDoesNotExist()
             compose.onNodeWithText("Server").performScrollTo().performClick()
+            listOf("Offline cache size", "Items per page").forEach {
+                compose.onNode(hasText(it) and inRight).performScrollTo().assertIsDisplayed()
+            }
             compose.onNode(hasText("Jobs") and inRight).performScrollTo().assertIsDisplayed()
             compose.onNodeWithText("Server").performScrollTo().performClick()
             compose.onNodeWithText("Jobs").assertDoesNotExist()
+            compose.onNodeWithText("Offline cache size").assertDoesNotExist()
+            compose.onNodeWithText("Items per page").assertDoesNotExist()
         }
     }
 
