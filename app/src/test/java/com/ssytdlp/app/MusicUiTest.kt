@@ -58,6 +58,47 @@ import org.robolectric.annotation.GraphicsMode
 class MusicUiTest {
     @get:Rule val compose = createAndroidComposeRule<ComponentActivity>()
 
+    @Test fun pageSizeChangesRefreshRowsResetScrollingAndKeepPageRelativePlaybackIndices() {
+        val files = (1..101).map { Track("job", "$it.mp3", title = "Song $it") }
+        val state = mutableStateOf(LibraryState().withAllTracks(TrackPage(files = files)))
+        lateinit var browsing: LibraryBrowsingState
+        var played: Track? = null
+        compose.setContent {
+            browsing = rememberLibraryBrowsingState(state.value)
+            MusicTheme {
+                LibraryContent(state.value, PlaybackState(connected = true),
+                    onPlay = { played = state.value.orderedTracks[it] },
+                    onPage = { state.value = state.value.copy(page = it) }, browsing = browsing) { _, _ -> }
+            }
+        }
+        compose.onNodeWithText("1 / 3").assertIsDisplayed()
+        for (size in listOf(LibraryPageSize.ITEMS_100, LibraryPageSize.ITEMS_200, LibraryPageSize.ITEMS_50)) {
+            compose.onNodeWithTag("library-tracks").performScrollToIndex(30)
+            compose.runOnIdle { assertTrue(browsing.tracks.firstVisibleItemIndex > 0) }
+            compose.runOnIdle { state.value = state.value.withPageSize(size) }
+            compose.runOnIdle { assertEquals(0, browsing.tracks.firstVisibleItemIndex) }
+            val count = minOf(size.items, files.size)
+            compose.onNodeWithText("1 / ${state.value.totalPages}").assertIsDisplayed()
+            compose.onNodeWithTag("library-tracks").performScrollToIndex(count - 1)
+            compose.onNodeWithText("Song $count").assertIsDisplayed().performClick()
+            compose.runOnIdle { assertEquals(files[count - 1], played) }
+            if (size == LibraryPageSize.ITEMS_200) {
+                compose.onNodeWithContentDescription("Next page").assertDoesNotExist()
+            } else {
+                compose.onNodeWithContentDescription("Previous page").assertIsNotEnabled()
+                compose.onNodeWithContentDescription("Next page").assertIsEnabled()
+            }
+        }
+        compose.onNodeWithContentDescription("Next page").performClick()
+        compose.onNodeWithText("2 / 3").assertIsDisplayed()
+        compose.onNodeWithText("Song 51").assertIsDisplayed().performClick()
+        compose.runOnIdle { assertEquals(files[50], played) }
+        compose.onNodeWithContentDescription("Next page").performClick()
+        compose.onNodeWithText("3 / 3").assertIsDisplayed()
+        compose.onNodeWithText("Song 101").assertIsDisplayed()
+        compose.onNodeWithContentDescription("Next page").assertIsNotEnabled()
+    }
+
     @Test fun skinsDoNotReplaceAnyColorThemeOrLightDarkPreference() {
         val preferences = mutableStateOf(Preferences())
         val wave = mutableStateOf(true)

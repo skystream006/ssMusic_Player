@@ -181,19 +181,25 @@ it does not prove an installed app's identity. Authorize only sign-ins you start
 
 | Area | Implemented |
 | --- | --- |
-| Library | All Music, server-side search, local 50-track pages with name/rating sorting across the complete selection, folder navigation, playlist counts, linked tracks, cached 192px AVIF audio/video thumbnails in Library and Queue (including Android 8+, with legacy JPEG/PNG/WebP support) |
+| Library | All Music, server-side search, configurable local pages (50 tracks by default) with name/rating sorting across the complete selection, folder navigation, playlist counts, linked tracks, cached 192px AVIF audio/video thumbnails in Library and Queue (including Android 8+, with legacy JPEG/PNG/WebP support) |
 | Organization | Create/rename/remove/move folders, create empty playlists, move playlists, add/move/remove song memberships, drag to reorder songs within an unfiltered playlist page |
 | Playback | Authenticated audio/video streams, persistent mini-player, full player, seek, next/previous, queue editing, shuffle, repeat, instrumental companions |
 | Lyrics and tags | Album artwork, expandable full-screen SYLT/USLT lyrics, timestamp-highlighted seekable SYLT lyrics, plain USLT lyrics, editing both lyric formats and MP3 tags/ratings, transcription requests and locking |
 | Jobs | Add audio/video YouTube jobs, metadata-only jobs, status polling, search, owner filter, rerun, rename, delete, contributors, add existing files to playlists, save ZIPs |
 | Import | Android document picker for media files or iTunes XML + ZIP; server-local XML + ZIP imports; server upload limits enforced while streaming |
 | Backup | Android/iTunes exports, progress, download latest ZIP, daily/weekly UTC schedules |
-| Settings | Updates at the top, Blue Wave appearance, edge-lighting toggle, optional server-synced theme and light/dark mode, account expiry, server media count, collapsible device/debugging sections, browser account/admin access |
+| Settings | Updates at the top, Blue Wave appearance, edge-lighting toggle, optional server-synced theme and light/dark mode, account expiry, server media count, items per page and offline cache size under Server, collapsible device/debugging sections, browser account/admin access |
 
 Library loading and refresh retrieve the complete selected playlist, folder, or
 search result before displaying local pages. Name and rating sorts apply before
 pagination; changing the sort or page does not request the server. **Order number**
 restores the saved order.
+
+**Settings > Server > Items per page** selects 50 (default), 100, 200, 500, or
+1000 tracks per page, matching the server's choices. The selection is saved on this
+device across restarts and sign-ins and applies to All Music, playlists, folders,
+and search results. Changing it returns to page one immediately without another
+server request or changing the active playback queue.
 
 Drag the bottom mini-player's progress slider to seek without leaving Library.
 Artwork, song information, and playback controls stay on one row even on narrow
@@ -326,7 +332,7 @@ the saved state; a removed playlist falls back to All Music.
 The current track is also cached on this device, with a background download filling
 its remaining bytes once playback starts (not the rest of the queue). Reopening
 reuses those bytes, including seeks; interrupted downloads fetch only missing
-ranges. Settings → Offline cache size (above Appearance) sets this device's
+ranges. Settings → Server → Offline cache size sets this device's
 persistent audio cache limit: 32 (default), 64, 128, 256, or 512 MiB, or 1 or 2 GiB.
 The setting shows the current account's used cache space out of the selected limit,
 and updates while Settings is visible as audio is cached or evicted.

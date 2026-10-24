@@ -17,12 +17,14 @@ import com.ssytdlp.app.core.Account
 import com.ssytdlp.app.core.ApiJson
 import com.ssytdlp.app.core.Job
 import com.ssytdlp.app.core.Library
+import com.ssytdlp.app.core.LibraryEntry
 import com.ssytdlp.app.core.LyricLine
 import com.ssytdlp.app.core.Preferences
 import com.ssytdlp.app.core.Session
 import com.ssytdlp.app.core.SongMetadata
 import com.ssytdlp.app.core.Track
 import com.ssytdlp.app.core.TrackPage
+import com.ssytdlp.app.core.TrackSort
 import com.ssytdlp.app.core.User
 import com.ssytdlp.app.core.UserResponse
 import java.io.InputStream
@@ -118,6 +120,100 @@ class AccountRefreshTest {
 
         @JvmStatic @AfterClass fun removeKeyStore() {
             Security.removeProvider(provider.name)
+        }
+    }
+
+    @Test fun pageSizeDefaultsPersistAcrossRecreationAndInvalidPreferencesFallBackTo50() {
+        val settings = context.getSharedPreferences("settings", Context.MODE_PRIVATE)
+        settings.edit().remove("items_per_page").commit()
+        try {
+            var model = createModel(connectPlayback = false)
+            assertEquals(LibraryPageSize.DEFAULT, model.library.pageSize)
+            assertFalse(settings.contains("items_per_page"))
+            for (size in LibraryPageSize.entries.reversed()) {
+                compose.runOnUiThread { model.choosePageSize(size) }
+                assertEquals(size.items, settings.getInt("items_per_page", -1))
+                model = createModel(connectPlayback = false)
+                assertEquals(size, model.library.pageSize)
+            }
+            listOf(0, -1, 75, 1001, Int.MAX_VALUE).forEach {
+                settings.edit().putInt("items_per_page", it).commit()
+                assertEquals(LibraryPageSize.DEFAULT, createModel(connectPlayback = false).library.pageSize)
+            }
+            settings.edit().putString("items_per_page", "invalid").commit()
+            assertEquals(LibraryPageSize.DEFAULT, createModel(connectPlayback = false).library.pageSize)
+        } finally {
+            settings.edit().remove("items_per_page").commit()
+        }
+    }
+
+    @Test fun pageSizeAppliesToEverySelectionAndRefreshWithoutChangingPlaybackOrFetchingOnResize() {
+        val settings = context.getSharedPreferences("settings", Context.MODE_PRIVATE)
+        settings.edit().putInt("items_per_page", 100).commit()
+        val files = (1..1205).map { Track("job", "$it.mp3", title = "Song ${it.toString().padStart(4, '0')}") }
+        try {
+            val model = startModel(expectedTracks = files.size) { request ->
+                when (request.requestUrl!!.encodedPath) {
+                    "/api/library" -> MockResponse().setBody(ApiJson.encodeToString(Library(entries = listOf(
+                        LibraryEntry("playlist", "playlist"), LibraryEntry("folder", "folder")))))
+                    "/api/library/tracks" -> {
+                        val size = request.requestUrl!!.queryParameter("pageSize")?.toInt() ?: files.size
+                        val page = request.requestUrl!!.queryParameter("page")?.toInt() ?: 1
+                        MockResponse().setBody(ApiJson.encodeToString(TrackPage(
+                            files = files.drop((page - 1) * size).take(size), page = page, pageSize = size,
+                            total = files.size, totalPages = (files.size + size - 1) / size)))
+                    }
+                    songPath(files.first(), "lyrics") -> MockResponse().setBody(ApiJson.encodeToString(SongMetadata()))
+                    else -> null
+                }
+            }
+            assertEquals(LibraryPageSize.ITEMS_100, model.library.pageSize)
+            assertEquals(100, model.library.orderedTracks.size)
+            val playback = PlaybackState(track = files.first(), queue = files.take(3), position = 42_000)
+            setPlayback(model, playback)
+            waitFor { model.metadata != null }
+            compose.runOnUiThread { model.sortLibrary(TrackSort.NAME) }
+            drainRequests()
+            for (size in LibraryPageSize.entries) {
+                compose.runOnUiThread { model.page(2); model.choosePageSize(size) }
+                assertEquals(1, model.library.currentPage)
+                assertEquals(size.items, model.library.orderedTracks.size)
+                assertEquals(TrackSort.NAME, model.library.sort)
+                assertEquals(playback, model.playback.state.value)
+                assertTrue(drainRequests().isEmpty())
+            }
+            for (selection in listOf("playlist", "folder", null)) {
+                perform(model) { model.selectLibrary(selection) }
+                assertEquals(selection, model.library.selectedId)
+                assertEquals(LibraryPageSize.ITEMS_1000, model.library.pageSize)
+                assertEquals(1000, model.library.orderedTracks.size)
+                perform(model) { model.search("Song") }
+                assertEquals("Song", model.library.search)
+                assertEquals(1000, model.library.orderedTracks.size)
+                compose.runOnUiThread { model.page(2) }
+                assertEquals(files.drop(1000), model.library.orderedTracks)
+                perform(model) { model.refresh() }
+                assertEquals(2, model.library.currentPage)
+                assertEquals(files.drop(1000), model.library.orderedTracks)
+                assertEquals(playback, model.playback.state.value)
+            }
+            compose.runOnUiThread {
+                model.refreshTracks()
+                model.choosePageSize(LibraryPageSize.ITEMS_200)
+            }
+            waitFor { !model.library.loading }
+            assertEquals(1, model.library.currentPage)
+            assertEquals(200, model.library.orderedTracks.size)
+            assertEquals(playback, model.playback.state.value)
+            compose.runOnUiThread { sessions.clear() }
+            waitFor { model.library.tracks.files.isEmpty() }
+            assertEquals(LibraryPageSize.ITEMS_200, model.library.pageSize)
+            compose.runOnUiThread { sessions.save(account) }
+            waitFor { model.library.allPagesLoaded && !model.library.loading }
+            assertEquals(200, model.library.orderedTracks.size)
+            assertEquals(LibraryPageSize.ITEMS_200, model.library.pageSize)
+        } finally {
+            settings.edit().remove("items_per_page").commit()
         }
     }
 

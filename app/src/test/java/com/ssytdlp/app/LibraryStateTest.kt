@@ -18,6 +18,73 @@ class LibraryStateTest {
     private val sent = Transcription(status = "sent")
     private val done = Transcription(status = "transcribed", lyricsIncluded = true)
 
+    @Test fun `all supported sizes paginate complete sorted results without dropping or repeating tracks`() {
+        val files = (0 until 1205).map {
+            track.copy(name = "$it.mp3", title = (1204 - it).toString().padStart(4, '0'), rating = it % 6)
+        }
+        assertEquals(50, LibraryPageSize.DEFAULT.items)
+        assertEquals(listOf(50, 100, 200, 500, 1000), LibraryPageSize.entries.map { it.items })
+        LibraryPageSize.entries.forEach { size ->
+            val state = LibraryState(pageSize = size).withAllTracks(TrackPage(files = files))
+                .copy(ratings = mapOf(files.last().key to 5))
+            for ((sort, expected) in listOf(
+                TrackSort.NAME to files.reversed(),
+                TrackSort.RATING to files.sortedByDescending(state::rating),
+                TrackSort.ORDER to files)) {
+                val sorted = state.copy(sort = sort)
+                val pages = (1..sorted.totalPages).map { sorted.copy(page = it).orderedTracks }
+                assertEquals(expected, pages.flatten())
+                assertEquals(files, sorted.tracks.files)
+                assertEquals((files.size + size.items - 1) / size.items, sorted.totalPages)
+                assertEquals(size.items, sorted.tracks.pageSize)
+                assertTrue(pages.dropLast(1).all { it.size == size.items })
+                assertEquals(files.size % size.items, pages.last().size)
+            }
+        }
+    }
+
+    @Test fun `resizing returns to page one and preserves cached edits and browsing selection`() {
+        val files = (0 until 1205).map { track.copy(name = "$it.mp3", rating = 1) }
+        val state = LibraryState(selectedId = "playlist", search = "song", sort = TrackSort.RATING)
+            .withAllTracks(TrackPage(files = files)).copy(page = 20,
+                ratings = mapOf(files.last().key to 5), pendingTranscriptions = mapOf(track.key to sent))
+        LibraryPageSize.entries.forEach { size ->
+            val resized = state.withPageSize(size)
+            assertEquals(1, resized.currentPage)
+            assertEquals(1, resized.tracks.page)
+            assertEquals(resized.totalPages, resized.tracks.totalPages)
+            assertEquals(size.items, resized.tracks.pageSize)
+            assertEquals(size.items, resized.orderedTracks.size)
+            assertEquals(files.last(), resized.orderedTracks.first())
+            assertEquals(state.ratings, resized.ratings)
+            assertEquals(state.pendingTranscriptions, resized.pendingTranscriptions)
+            assertEquals(state.sort, resized.sort)
+            assertEquals(state.search, resized.search)
+            assertEquals(state.selectedId, resized.selectedId)
+            val refreshed = resized.copy(page = 2).withAllTracks(TrackPage(files = files))
+            assertEquals(size, refreshed.pageSize)
+            assertEquals(2, refreshed.currentPage)
+        }
+    }
+
+    @Test fun `every size handles empty exact boundary and removed last pages`() {
+        LibraryPageSize.entries.forEach { size ->
+            val files = (0..size.items).map { track.copy(name = "$it.mp3") }
+            val state = LibraryState(pageSize = size).withAllTracks(TrackPage(files = files)).copy(page = 2)
+            assertEquals(2, state.totalPages)
+            assertEquals(listOf(files.last()), state.orderedTracks)
+            val removed = state.withoutMembership(files.last())
+            assertEquals(1, removed.totalPages)
+            assertEquals(1, removed.currentPage)
+            assertEquals(files.dropLast(1), removed.orderedTracks)
+            val empty = state.withAllTracks(TrackPage())
+            assertEquals(size, empty.pageSize)
+            assertEquals(1, empty.page)
+            assertEquals(1, empty.totalPages)
+            assertTrue(empty.orderedTracks.isEmpty())
+        }
+    }
+
     @Test fun `sorting precedes pagination and all pages retain stable ties and saved order`() {
         val files = (0 until 103).map {
             track.copy(name = "$it.mp3", title = (102 - it).toString().padStart(3, '0'), rating = it % 6)
