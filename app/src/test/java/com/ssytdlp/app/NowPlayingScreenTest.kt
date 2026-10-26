@@ -1365,9 +1365,11 @@ class NowPlayingScreenTest {
         actions.forEach {
             songAction(it).assertIsDisplayed().assertIsEnabled().assertHasClickAction()
         }
-        compose.onAllNodes(hasClickAction() and hasAnyAncestor(isPopup())).assertCountEquals(actions.size)
+        songAction("Linked Playlists").assertIsDisplayed().assertIsEnabled().assertHasClickAction()
+        compose.onAllNodes(hasClickAction() and hasAnyAncestor(isPopup())).assertCountEquals(actions.size + 1)
         compose.runOnIdle { busy.value = true }
         actions.forEach { songAction(it).assertIsNotEnabled() }
+        songAction("Linked Playlists").assertIsEnabled()
         compose.runOnIdle { busy.value = false }
         songAction("Save file").performClick()
         compose.runOnIdle { assertEquals(listOf(songPath(track, "download") to track.name), downloads) }
@@ -1385,6 +1387,7 @@ class NowPlayingScreenTest {
             openSongActions()
             songAction("Edit lyrics").assertDoesNotExist()
             actions.filterNot { it == "Edit lyrics" }.forEach { songAction(it).assertIsDisplayed().assertIsEnabled() }
+            songAction("Linked Playlists").assertIsDisplayed().assertIsEnabled().assertHasClickAction()
         }
     }
 
