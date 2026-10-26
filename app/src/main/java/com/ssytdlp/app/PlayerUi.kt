@@ -358,6 +358,7 @@ private fun SongActionsMenu(model: MusicViewModel, track: Track?, download: (Str
     val account by model.sessions.account.collectAsStateWithLifecycle()
     var editingTrack by remember { mutableStateOf<Track?>(null) }
     var sharingTrack by remember { mutableStateOf<Track?>(null) }
+    var linkedTrack by remember(account?.origin, account?.user?.id, account?.session) { mutableStateOf<Track?>(null) }
     var replacingTrack by remember(account?.origin, account?.user?.id, account?.user?.role) { mutableStateOf<Track?>(null) }
     track?.let { track ->
         val job = model.library.library.jobs.find { it.id == track.jobId }
@@ -375,6 +376,11 @@ private fun SongActionsMenu(model: MusicViewModel, track: Track?, download: (Str
         Box {
             ToolButton(Icons.Rounded.MoreVert, "More song actions", modifier = Modifier.size(48.dp)) { moreActions = true }
             DropdownMenu(expanded = moreActions, onDismissRequest = { moreActions = false }) {
+                if (track.canShowPlaylistLinks) {
+                    DropdownMenuItem(text = { Text("Linked Playlists") },
+                        leadingIcon = { Icon(Icons.AutoMirrored.Rounded.QueueMusic, null) },
+                        onClick = { moreActions = false; linkedTrack = track })
+                }
                 if (editLyrics != null) {
                     DropdownMenuItem(text = { Text("Edit lyrics") }, enabled = !model.songBusy(track),
                         leadingIcon = { Icon(Icons.Rounded.EditNote, null) }, onClick = {
@@ -415,6 +421,7 @@ private fun SongActionsMenu(model: MusicViewModel, track: Track?, download: (Str
         if (canEdit && transcribe) TranscribeDialog(model, track) { transcribe = false }
     }
     editingTrack?.let { track -> MetadataDialog(model, track) { editingTrack = null } }
+    linkedTrack?.let { track -> PlaylistLinksDialog(model, track) { linkedTrack = null } }
     sharingTrack?.let { track ->
         val job = model.library.library.jobs.find { it.id == track.jobId } ?: model.jobs.find { it.id == track.jobId }
         val canShare = track.mediaType == "audio" && account?.user?.let { user ->
@@ -859,6 +866,9 @@ fun TrackMenu(model: MusicViewModel, track: Track, index: Int, onRemoveFromQueue
     var share by remember { mutableStateOf(false) }
     val account by model.sessions.account.collectAsStateWithLifecycle()
     val user = account?.user
+    var playlistLinks by remember(track.key, track.libraryOwnerId, account?.origin, user?.id, account?.session) {
+        mutableStateOf(false)
+    }
     val canTransfer = user?.isShared == false && track.playlistId != null
     var transfer by remember(canTransfer) { mutableStateOf<String?>(null) }
     val canModify = user != null && !user.isShared &&
@@ -870,6 +880,9 @@ fun TrackMenu(model: MusicViewModel, track: Track, index: Int, onRemoveFromQueue
     Box {
         ToolButton(Icons.Rounded.MoreVert, "Options for ${track.displayTitle}", enabled = !model.busy) { open = true }
         DropdownMenu(open, { open = false }) {
+            if (track.canShowPlaylistLinks) DropdownMenuItem(text = { Text("Linked Playlists") },
+                leadingIcon = { Icon(Icons.AutoMirrored.Rounded.QueueMusic, null) },
+                onClick = { open = false; playlistLinks = true })
             if (!inQueue) DropdownMenuItem(text = { Text("Add to queue") }, leadingIcon = { Icon(Icons.AutoMirrored.Rounded.PlaylistAdd, null) }, onClick = { open = false; model.playback.enqueue(track) })
             DropdownMenuItem(text = { Text("Save file") }, leadingIcon = { Icon(Icons.Rounded.Download, null) }, onClick = { open = false; download(track.downloadUrl ?: songPath(track, "download"), track.name) })
             if (canModify && track.mediaType == "audio") DropdownMenuItem(text = { Text("Share Media") },
@@ -898,6 +911,7 @@ fun TrackMenu(model: MusicViewModel, track: Track, index: Int, onRemoveFromQueue
         }
     }
     if (edit) MetadataDialog(model, track) { edit = false }
+    if (playlistLinks) PlaylistLinksDialog(model, track) { playlistLinks = false }
     if (share && canModify && track.mediaType == "audio") ShareMediaDialog(model, track) { share = false }
     if (canReplace && replace) ReplaceFileDialog(model, track) { replace = false }
     if (transcribe) TranscribeDialog(model, track) { transcribe = false }

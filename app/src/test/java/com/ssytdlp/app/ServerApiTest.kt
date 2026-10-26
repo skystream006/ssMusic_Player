@@ -33,6 +33,37 @@ import org.junit.Before
 import org.junit.Test
 
 class ServerApiTest {
+    @Test fun `playlist links encode the media identity and optional shared library owner`() = runBlocking {
+        val track = com.ssytdlp.app.core.Track("job /?#", "[NoVocals]/a & b.mp3", libraryOwnerId = "owner /?&")
+        for (file in listOf(track, track.copy(libraryOwnerId = null))) {
+            server.enqueue(MockResponse().setBody("""{"playlists":[{"id":"mix","title":"My mix"}],"ownerId":"owner"}"""))
+            val result = api.playlistLinks(file)
+            assertEquals("owner", result.ownerId)
+            assertEquals(listOf(com.ssytdlp.app.core.PlaylistLink("mix", "My mix")), result.playlists)
+            val request = server.takeRequest(2, TimeUnit.SECONDS)!!
+            assertEquals("GET", request.method)
+            assertEquals("/api/library/playlist-links", request.requestUrl!!.encodedPath)
+            assertEquals(file.jobId, request.requestUrl!!.queryParameter("jobId"))
+            assertEquals(file.name, request.requestUrl!!.queryParameter("name"))
+            assertEquals(file.libraryOwnerId, request.requestUrl!!.queryParameter("userId"))
+            assertEquals(listOf("Bearer", token).joinToString(" "), request.getHeader("Authorization"))
+        }
+    }
+
+    @Test fun `playlist links distinguish empty membership from errors and malformed responses`() = runBlocking {
+        val track = com.ssytdlp.app.core.Track("job", "song.mp3")
+        server.enqueue(MockResponse().setBody("""{"playlists":[],"ownerId":"owner"}"""))
+        assertTrue(api.playlistLinks(track).playlists.isEmpty())
+        for (status in listOf(403, 404, 500)) {
+            server.enqueue(MockResponse().setResponseCode(status).setBody("""{"error":"Unavailable $status"}"""))
+            val error = runCatching { api.playlistLinks(track) }.exceptionOrNull() as ApiException
+            assertEquals(status, error.status)
+            assertEquals("Unavailable $status", error.message)
+        }
+        server.enqueue(MockResponse().setBody("{}"))
+        assertTrue(runCatching { api.playlistLinks(track) }.isFailure)
+    }
+
     private lateinit var server: MockWebServer
     private lateinit var api: ServerApi
     private var account: Account? = null

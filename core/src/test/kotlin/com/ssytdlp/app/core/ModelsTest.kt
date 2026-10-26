@@ -5,6 +5,14 @@ import org.junit.Assert.*
 import org.junit.Test
 
 class ModelsTest {
+    @Test fun `track shared library ownership survives serialization and defaults absent for old servers`() {
+        val track = ApiJson.decodeFromString<Track>(
+            """{"jobId":"source","name":"song.mp3","libraryOwnerId":"owner"}""")
+        assertEquals("owner", track.libraryOwnerId)
+        assertEquals(track, ApiJson.decodeFromString<Track>(ApiJson.encodeToString(track)))
+        assertNull(ApiJson.decodeFromString<Track>("""{"name":"song.mp3"}""").libraryOwnerId)
+    }
+
     @Test fun `playlist renaming permits owners and admins but not contributors or shared users`() {
         val playlist = LibraryPlaylist("playlist", initiatedBy = User("owner"),
             contributors = listOf(User("contributor")))
