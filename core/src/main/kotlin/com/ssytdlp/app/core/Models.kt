@@ -59,6 +59,12 @@ data class Library(
 )
 
 @Serializable
+data class PlaylistLink(val id: String, val title: String)
+
+@Serializable
+data class PlaylistLinks(val playlists: List<PlaylistLink>, val ownerId: String)
+
+@Serializable
 data class Track(
     val jobId: String = "", val name: String, val title: String = "", val artist: String = "",
     val album: String = "", val rating: Int = 0, val playlistId: String? = null,
@@ -66,7 +72,8 @@ data class Track(
     val isPlayable: Boolean = true, val mediaType: String = "audio", val sizeBytes: Long = 0,
     val noVocalsVersion: Track? = null, val transcription: Transcription? = null,
     val transcriptionLocked: Boolean = false, val artworkUrl: String? = null,
-    @SerialName("private") val isPrivate: Boolean = false, val sourceJob: Job? = null
+    @SerialName("private") val isPrivate: Boolean = false, val sourceJob: Job? = null,
+    val libraryOwnerId: String? = null
 ) {
     val key: String get() = ApiJson.encodeToString(listOf(jobId, name))
     val displayTitle: String get() = title.ifBlank { name.substringAfterLast('/').substringBeforeLast('.') }

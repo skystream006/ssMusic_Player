@@ -218,6 +218,12 @@ chosen with Android's document picker. **Transcribe lyrics** opens the same
 transcription options as the Library menu, including no-vocals generation for
 locked songs, and is disabled while the service is inactive or an action is busy.
 These actions remain available on the Player, Lyrics, and Queue tabs.
+Choose **Linked Playlists** from an audio or video file's three-dot menu in Library,
+Queue, Now Playing, or the mini-player to see its playlist memberships. Tap a
+playlist to open it on the server in your browser. Shared-library ownership and
+visibility are resolved by the server; this requires
+`GET /api/library/playlist-links` support.
+
 The mini-player has the same **More song actions** menu beside its progress slider,
 including Replace File, Share Media, and read-only metadata for shared accounts
 where permitted, without opening Now Playing or changing playback.
