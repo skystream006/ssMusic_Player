@@ -567,15 +567,15 @@ fun EntryMenu(model: MusicViewModel, entry: LibraryEntry) {
                         model.setPlaylistPrivate(playlist, !playlist.isPrivate)
                     })
             }
+            DropdownMenuItem(text = { Text("Move to folder") }, onClick = { open = false; move = true }, leadingIcon = { Icon(Icons.AutoMirrored.Rounded.DriveFileMove, null) })
+            if (entry.type == "folder") DropdownMenuItem(text = { Text("Remove folder") }, onClick = { open = false; remove = true }, leadingIcon = { Icon(Icons.Rounded.DeleteOutline, null) })
+            if (entry.type == "folder") DropdownMenuItem(text = { Text("Rename") }, onClick = { open = false; rename = true }, leadingIcon = { Icon(Icons.Rounded.Edit, null) })
             if (entry.type == "playlist" && playlist?.canShare(account?.user) == true) {
                 DropdownMenuItem(text = { Text("Share Playlist") },
                     leadingIcon = { Icon(Icons.Rounded.Share, null) },
                     enabled = !model.busy && !playlist.isPrivate && playlist.songCount > 0,
                     onClick = { open = false; share = true })
             }
-            if (entry.type == "folder") DropdownMenuItem(text = { Text("Rename") }, onClick = { open = false; rename = true }, leadingIcon = { Icon(Icons.Rounded.Edit, null) })
-            DropdownMenuItem(text = { Text("Move to folder") }, onClick = { open = false; move = true }, leadingIcon = { Icon(Icons.AutoMirrored.Rounded.DriveFileMove, null) })
-            if (entry.type == "folder") DropdownMenuItem(text = { Text("Remove folder") }, onClick = { open = false; remove = true }, leadingIcon = { Icon(Icons.Rounded.DeleteOutline, null) })
         }
     }
     if (rename) NameDialog("Rename folder", entry.name, { rename = false }) { model.folder(it, entry); rename = false }
