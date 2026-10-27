@@ -211,7 +211,7 @@ fun MusicApp(model: MusicViewModel, requestNotifications: () -> Unit) {
     }
     val playLibrary: (Int) -> Unit = { index ->
         requestNotifications()
-        model.playback.play(model.library.orderedTracks, index)
+        model.playLibrary(index)
         playerExpanded = true
     }
     CompositionLocalProvider(LocalMetadataArtworkOwner provides account?.let(::MetadataOwner)) {

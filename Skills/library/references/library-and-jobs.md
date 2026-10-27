@@ -6,7 +6,7 @@ Locate the named method first; do not read the entire file.
 | Request/symptom | First symbols | First tests |
 | --- | --- | --- |
 | Selection, paging, search, missing library rows | `LibraryState`, `selectLibrary`, `refreshTracks`, `loadLibrary`, `trackPage`, `allTracks` | `LibraryStateTest`, pagination cases in `ServerApiTest` |
-| Sort display/playback mismatch | `LibraryState.orderedTracks`, `sortLibrary`; [TrackSort.indices](../../../core/src/main/kotlin/com/ssytdlp/app/core/TrackSort.kt) | `TrackSortTest`, `LibraryStateTest`, `PlaylistEditingTest` |
+| Sort display/playback mismatch | `LibraryState.orderedSelection`, `orderedTracks`, `playLibrary`, `sortLibrary`; [TrackSort.indices](../../../core/src/main/kotlin/com/ssytdlp/app/core/TrackSort.kt) | `TrackSortTest`, `LibraryStateTest`, `PlaylistEditingTest` |
 | Rename, privacy, move playlist, partial save | `savePlaylist`, `openPlaylistEditor`, `updatePlaylistPrivacy` | `PlaylistEditingTest` |
 | Song transfer/remove/reorder and version conflict | `transfer`, `remove`, `reorder`, `mutateSong`, `launchSongAction` | `PlaylistEditingTest`, relevant `AccountRefreshTest` cases |
 | Stale rating/transcription/privacy/artwork on queued tracks | `LibraryState.rating`, `transcription`, `privacy`, `artworkUrl`, `withTrackPage`, `pollTranscriptions` | `LibraryStateTest`, `PrivacyActionsTest` |
@@ -20,9 +20,10 @@ Locate the named method first; do not read the entire file.
 - `LibraryState` overrides stale track snapshots by key. Ratings include explicit
   clearing; transcription precedence is pending → refreshed map (including null)
   → inline track → legacy job summary. Compact job summaries may omit records.
-- Keep source `tracks.files` in saved order. `orderedTracks` derives sorting and
-  local paging, using cached ratings and stable ties. Both rows and playback
-  consume the derived order. `allTracks` avoids mixing inconsistent page versions.
+- Keep source `tracks.files` in saved order. `orderedSelection` sorts the full
+  selection using cached ratings and stable ties; `orderedTracks` slices it for
+  display. `playLibrary` queues the full selection with `pageOffset` added to the
+  clicked row index, without refetching. `allTracks` avoids inconsistent page versions.
 - Per-song previews and pending state must roll back only the affected song.
   Reorders serialize versioned writes; unrelated metadata/navigation must survive
   recovery. Reject late work after account changes.

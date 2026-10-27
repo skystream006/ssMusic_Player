@@ -86,15 +86,19 @@ data class LibraryState(
 
     val currentPage: Int get() = page.coerceIn(1, totalPages)
 
-    val orderedTracks: List<Track>
+    val pageOffset: Int get() = if (allPagesLoaded) (currentPage - 1) * pageSize.items else 0
+
+    val orderedSelection: List<Track>
         get() {
-            val ordered = if (sort == TrackSort.ORDER) tracks.files else {
+            return if (sort == TrackSort.ORDER) tracks.files else {
                 val sorted = sort.indices(tracks.files, ::rating).map { tracks.files[it] }
                 val (originals, instrumentals) = sorted.partition { !it.name.startsWith("[NoVocals]/", true) }
                 originals + instrumentals
             }
-            return if (allPagesLoaded) ordered.drop((currentPage - 1) * pageSize.items).take(pageSize.items) else ordered
         }
+
+    val orderedTracks: List<Track>
+        get() = if (allPagesLoaded) orderedSelection.drop(pageOffset).take(pageSize.items) else orderedSelection
 
     fun artworkUrl(track: Track): String? = if (artworkUrls.containsKey(track.key)) artworkUrls[track.key] else track.artworkUrl
 
@@ -510,6 +514,9 @@ class MusicViewModel @JvmOverloads constructor(application: Application, private
         library = library.copy(page = value.coerceIn(1, library.totalPages))
     }
     fun sortLibrary(sort: TrackSort) { library = library.copy(sort = sort, page = 1) }
+    fun playLibrary(index: Int) {
+        playback.play(library.orderedSelection, library.pageOffset + index)
+    }
     fun choosePageSize(size: LibraryPageSize) {
         if (library.pageSize == size) return
         library = library.withPageSize(size)

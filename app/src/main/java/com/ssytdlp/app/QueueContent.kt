@@ -10,11 +10,16 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.rounded.ArrowBack
+import androidx.compose.material.icons.automirrored.rounded.ArrowForward
 import androidx.compose.material.icons.rounded.DeleteOutline
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.Text
 import androidx.compose.runtime.*
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.AbsoluteAlignment
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clipToBounds
 import androidx.compose.ui.graphics.Color
@@ -29,12 +34,23 @@ import com.ssytdlp.app.core.TrackSort
 import kotlin.math.roundToInt
 
 @Composable
+internal fun rememberQueuePage(state: PlaybackState, size: LibraryPageSize): MutableIntState {
+    val playingPage = state.index.coerceAtLeast(0) / size.items + 1
+    return rememberSaveable(playingPage, size) { mutableIntStateOf(playingPage) }
+}
+
+@Composable
 internal fun QueueContent(state: PlaybackState, library: LibraryState, modifier: Modifier = Modifier,
     onSelect: (Int) -> Unit, onMove: (Int, Int) -> Unit, onRemove: (Int) -> Unit,
     onRating: (Track) -> Unit = {}, artwork: @Composable (Track) -> ImageBitmap? = { null },
     onSort: ((TrackSort) -> Unit)? = null,
+    page: MutableIntState = rememberQueuePage(state, library.pageSize),
     trackActions: @Composable (Track, Int) -> Unit = { _, _ -> }) {
-    val listState = rememberLazyListState()
+    val pageSize = library.pageSize.items
+    val totalPages = ((state.queue.size + pageSize - 1) / pageSize).coerceAtLeast(1)
+    val currentPage = page.intValue.coerceIn(1, totalPages)
+    val listState = key(currentPage, pageSize) { rememberLazyListState() }
+    LaunchedEffect(totalPages) { page.intValue = page.intValue.coerceIn(1, totalPages) }
     Column(modifier) {
         if (onSort != null) Row(Modifier.fillMaxWidth().padding(horizontal = 16.dp),
             horizontalArrangement = Arrangement.End) {
@@ -42,8 +58,11 @@ internal fun QueueContent(state: PlaybackState, library: LibraryState, modifier:
         }
         // Indices identify occurrences, not songs: a queue may contain the same song more than once.
         // A new queue snapshot cancels in-flight gestures rather than applying stale indices.
-        key(state.queue) {
-            val keys = remember(state.queue) { state.queue.indices.map(Int::toString) }
+        key(state.queue, currentPage, pageSize) {
+            val keys = remember(state.queue, currentPage, pageSize) {
+                val start = (currentPage - 1) * pageSize
+                (start until minOf(start + pageSize, state.queue.size)).map(Int::toString)
+            }
             val reorder = rememberSongReorderState(listState, keys, state.connected) { source, target, after ->
                 val from = source.toInt()
                 val targetIndex = target.toInt()
@@ -67,6 +86,16 @@ internal fun QueueContent(state: PlaybackState, library: LibraryState, modifier:
                         }
                     }
                 }
+            }
+        }
+        if (totalPages > 1) Row(Modifier.fillMaxWidth().padding(horizontal = 16.dp),
+            horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
+            ToolButton(Icons.AutoMirrored.Rounded.ArrowBack, "Previous queue page", enabled = currentPage > 1) {
+                page.intValue = currentPage - 1
+            }
+            Text("Page $currentPage / $totalPages", style = MaterialTheme.typography.labelLarge)
+            ToolButton(Icons.AutoMirrored.Rounded.ArrowForward, "Next queue page", enabled = currentPage < totalPages) {
+                page.intValue = currentPage + 1
             }
         }
     }

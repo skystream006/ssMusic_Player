@@ -12,6 +12,7 @@ import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.semantics.SemanticsActions
 import androidx.compose.ui.test.*
 import androidx.compose.ui.test.junit4.createAndroidComposeRule
+import androidx.compose.ui.test.junit4.StateRestorationTester
 import androidx.compose.ui.text.TextLayoutResult
 import androidx.compose.ui.unit.dp
 import com.ssytdlp.app.core.Track
@@ -33,6 +34,93 @@ class SongListGesturesTest {
     private val first = Track("job", "first.mp3", playlistId = "playlist")
     private val second = Track("job", "second.mp3", playlistId = "playlist")
     private val third = Track("job", "third.mp3", playlistId = "playlist")
+
+    @Test fun queuePagesBrowseIndependentlyAndFollowPlaybackOnlyAcrossPageBoundaries() {
+        val tracks = List(500) { first.copy(name = "$it.mp3") }
+        val state = mutableStateOf(PlaybackState(connected = true, queue = tracks, index = 49,
+            track = tracks[49], position = 12_345, playing = true))
+        val selected = mutableListOf<Int>()
+        compose.setContent {
+            MusicTheme {
+                QueueContent(state.value, LibraryState(), onSelect = { selected += it },
+                    onMove = { _, _ -> error("Unexpected move") }, onRemove = { error("Unexpected removal") })
+            }
+        }
+        compose.onNodeWithText("Page 1 / 10").assertIsDisplayed()
+        compose.onNodeWithContentDescription("Previous queue page").assertIsNotEnabled()
+        compose.onNodeWithTag("queue-tracks").performScrollToIndex(49)
+        compose.onNodeWithTag("queue-row-49").assertIsDisplayed()
+        compose.onNodeWithTag("queue-row-50").assertDoesNotExist()
+        compose.onNodeWithContentDescription("Next queue page").performClick()
+        compose.onNodeWithText("Page 2 / 10").assertIsDisplayed()
+        compose.onNodeWithTag("queue-row-50").assertIsDisplayed().performClick()
+        compose.runOnIdle {
+            assertEquals(listOf(50), selected)
+            assertEquals(49, state.value.index)
+            assertEquals(12_345L, state.value.position)
+            assertTrue(state.value.playing)
+            assertEquals(tracks, state.value.queue)
+            state.value = state.value.copy(index = 48, track = tracks[48])
+        }
+        compose.onNodeWithText("Page 2 / 10").assertIsDisplayed()
+        compose.onNodeWithContentDescription("Next queue page").performClick()
+        compose.onNodeWithText("Page 3 / 10").assertIsDisplayed()
+        compose.runOnIdle { state.value = state.value.copy(index = 50, track = tracks[50]) }
+        compose.onNodeWithText("Page 2 / 10").assertIsDisplayed()
+        compose.onNodeWithTag("queue-row-50").assertIsDisplayed()
+        compose.runOnIdle { state.value = state.value.copy(index = 499, track = tracks[499], shuffle = true) }
+        compose.onNodeWithText("Page 10 / 10").assertIsDisplayed()
+        compose.onNodeWithContentDescription("Next queue page").assertIsNotEnabled()
+        compose.runOnIdle { state.value = state.value.copy(index = 0, track = tracks[0]) }
+        compose.onNodeWithText("Page 1 / 10").assertIsDisplayed()
+    }
+
+    @Test fun pagedQueueGesturesAndMenusUseAbsoluteOccurrenceIndices() {
+        val tracks = List(103) { first.copy(name = "$it.mp3") }
+        val removed = mutableListOf<Int>()
+        val moves = mutableListOf<Pair<Int, Int>>()
+        val actions = mutableListOf<Int>()
+        compose.setContent {
+            MusicTheme {
+                QueueContent(PlaybackState(connected = true, queue = tracks, index = 100), LibraryState(),
+                    onSelect = { error("Unexpected selection") },
+                    onMove = { from, to -> moves += from to to }, onRemove = { removed += it }) { _, index ->
+                    ToolButton(Icons.Rounded.MoreVert, "Actions for $index") { actions += index }
+                }
+            }
+        }
+        compose.onNodeWithText("Page 3 / 3").assertIsDisplayed()
+        drag("100", "102")
+        compose.onNodeWithContentDescription("Actions for 101").performClick()
+        compose.onNodeWithTag("queue-row-102").performTouchInput { swipeLeft() }
+        compose.runOnIdle {
+            assertEquals(listOf(100 to 102), moves)
+            assertEquals(listOf(101), actions)
+            assertEquals(listOf(102), removed)
+        }
+    }
+
+    @Test fun queueBrowsingSurvivesRecreationAndClampsAfterRemovalsAndPageSizeChanges() {
+        val restoration = StateRestorationTester(compose)
+        val state = mutableStateOf(PlaybackState(connected = true, queue = List(101) { first.copy(name = "$it.mp3") }))
+        val library = mutableStateOf(LibraryState())
+        restoration.setContent {
+            MusicTheme {
+                QueueContent(state.value, library.value, onSelect = {}, onMove = { _, _ -> }, onRemove = {})
+            }
+        }
+        repeat(2) { compose.onNodeWithContentDescription("Next queue page").performClick() }
+        compose.onNodeWithText("Page 3 / 3").assertIsDisplayed()
+        restoration.emulateSavedInstanceStateRestore()
+        compose.onNodeWithText("Page 3 / 3").assertIsDisplayed()
+        compose.onNodeWithTag("queue-row-100").assertIsDisplayed()
+        compose.runOnIdle { state.value = state.value.copy(queue = state.value.queue.dropLast(1)) }
+        compose.onNodeWithText("Page 2 / 2").assertIsDisplayed()
+        compose.onNodeWithTag("queue-row-50").assertIsDisplayed()
+        compose.runOnIdle { library.value = library.value.withPageSize(LibraryPageSize.ITEMS_100) }
+        compose.onNodeWithContentDescription("Next queue page").assertDoesNotExist()
+        compose.onNodeWithTag("queue-row-0").assertIsDisplayed()
+    }
 
     @Test fun queueSortMenuUsesLocalOrderAndKeepsSelectionAndRemovalIndicesAligned() {
         val queue = mutableStateOf(listOf(third, first, second))
