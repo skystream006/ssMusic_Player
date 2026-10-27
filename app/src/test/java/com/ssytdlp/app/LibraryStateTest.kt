@@ -33,6 +33,15 @@ class LibraryStateTest {
                 TrackSort.ORDER to files)) {
                 val sorted = state.copy(sort = sort)
                 val pages = (1..sorted.totalPages).map { sorted.copy(page = it).orderedTracks }
+                assertEquals(expected, sorted.orderedSelection)
+                for (page in 1..sorted.totalPages) {
+                    val browsed = sorted.copy(page = page)
+                    val selection = browsed.orderedSelection
+                    assertEquals(expected, selection)
+                    browsed.orderedTracks.forEachIndexed { index, track ->
+                        assertEquals(track, selection[browsed.pageOffset + index])
+                    }
+                }
                 assertEquals(expected, pages.flatten())
                 assertEquals(files, sorted.tracks.files)
                 assertEquals((files.size + size.items - 1) / size.items, sorted.totalPages)

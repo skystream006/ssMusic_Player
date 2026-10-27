@@ -83,13 +83,11 @@ class PlaybackConnection(
     }
 
     fun play(tracks: List<Track>, index: Int = 0) {
-        val playable = tracks.filter { it.isPlayable && it.streamUrl != null }
-        val selectedKey = tracks.getOrNull(index)?.key ?: return
-        val selectedIndex = playable.indexOfFirst { it.key == selectedKey }
-        if (selectedIndex < 0) return
+        val selected = tracks.getOrNull(index) ?: return
+        if (!selected.isPlayable || selected.streamUrl == null) return
         val player = controller ?: run { connect(); return }
+        if (!player.setPlaybackQueue(tracks, index, api)) return
         mutableState.value = mutableState.value.copy(error = null)
-        player.setMediaItems(playable.map { it.toMediaItem(api) }, selectedIndex, 0)
         player.prepare()
         player.play()
     }
@@ -150,6 +148,16 @@ class PlaybackConnection(
             player.currentPosition.coerceAtLeast(0), player.duration.coerceAtLeast(0), player.shuffleModeEnabled,
             player.repeatMode, if (player.playerError != null) mutableState.value.error else null)
     }
+}
+
+internal fun Player.setPlaybackQueue(tracks: List<Track>, index: Int, api: ServerApi): Boolean {
+    val selected = tracks.getOrNull(index) ?: return false
+    if (!selected.isPlayable || selected.streamUrl == null) return false
+    val playable = tracks.withIndex().filter { it.value.isPlayable && it.value.streamUrl != null }
+    // Keep the selected occurrence even when the same song appears on several pages.
+    val selectedIndex = playable.indexOfFirst { it.index == index }
+    setMediaItems(playable.map { it.value.toMediaItem(api) }, selectedIndex, 0)
+    return true
 }
 
 internal fun Player.matchesQueue(queue: List<Track>): Boolean =

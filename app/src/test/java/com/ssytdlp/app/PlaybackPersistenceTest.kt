@@ -11,6 +11,7 @@ import androidx.test.core.app.ApplicationProvider
 import com.ssytdlp.app.core.Account
 import com.ssytdlp.app.core.Session
 import com.ssytdlp.app.core.Track
+import com.ssytdlp.app.core.TrackPage
 import com.ssytdlp.app.core.TrackSort
 import com.ssytdlp.app.core.User
 import org.junit.After
@@ -63,6 +64,63 @@ class PlaybackPersistenceTest {
         assertFalse(player.playWhenReady)
         assertTrue(player.shuffleModeEnabled)
         assertEquals(Player.REPEAT_MODE_ONE, player.repeatMode)
+    }
+
+    @Test fun `full 500 song selection advances across pages shuffles globally and restores paused`() {
+        val tracks = (0 until 500).map {
+            first.copy(name = "$it.mp3", title = it.toString().padStart(3, '0'), streamUrl = "/api/stream/$it.mp3")
+        }
+        val library = LibraryState(selectedId = "playlist")
+            .withAllTracks(TrackPage(files = tracks)).copy(page = 7, sort = TrackSort.NAME)
+        attach()
+        assertEquals(50, library.orderedTracks.size)
+        assertTrue(player.setPlaybackQueue(library.orderedSelection, library.pageOffset + 49, api))
+        assertEquals(500, player.mediaItemCount)
+        assertEquals(tracks[349], player.currentMediaItem!!.asTrack())
+        player.seekToNextMediaItem()
+        assertEquals(tracks[350], player.currentMediaItem!!.asTrack())
+
+        player.setShuffleOrder(ShuffleOrder.DefaultShuffleOrder((499 downTo 0).toList().toIntArray(), 0L))
+        player.shuffleModeEnabled = true
+        player.repeatMode = Player.REPEAT_MODE_ALL
+        val visited = mutableSetOf<Int>()
+        repeat(500) {
+            visited += player.currentMediaItemIndex
+            player.seekToNextMediaItem()
+        }
+        assertEquals((0 until 500).toSet(), visited)
+        player.seekTo(499, 87_654)
+        flushEvents()
+        persistence!!.close()
+        persistence = null
+        player.release()
+
+        store = PlaybackStore(context).apply { setAccount(account) }
+        player = ExoPlayer.Builder(context).build()
+        attach()
+        assertEquals(tracks, store.playback(account)!!.queue)
+        assertEquals(500, player.mediaItemCount)
+        assertEquals(499, player.currentMediaItemIndex)
+        assertEquals(87_654L, player.currentPosition)
+        assertTrue(player.shuffleModeEnabled)
+        assertEquals(Player.REPEAT_MODE_ALL, player.repeatMode)
+        assertEquals(Player.STATE_IDLE, player.playbackState)
+        assertFalse(player.playWhenReady)
+    }
+
+    @Test fun `starting an off-page duplicate preserves its occurrence after filtering unplayable files`() {
+        val tracks = List(101) { first }.toMutableList().apply {
+            this[1] = second.copy(isPlayable = false)
+            this[2] = second.copy(streamUrl = null)
+        }
+        assertTrue(player.setPlaybackQueue(tracks, 100, api))
+        assertEquals(99, player.mediaItemCount)
+        assertEquals(98, player.currentMediaItemIndex)
+        assertFalse(player.setPlaybackQueue(tracks, 1, api))
+        assertFalse(player.setPlaybackQueue(tracks, -1, api))
+        assertFalse(player.setPlaybackQueue(tracks, 101, api))
+        assertEquals(98, player.currentMediaItemIndex)
+        assertEquals(99, player.mediaItemCount)
     }
 
     @Test fun `seek queue edits transitions and playback modes are saved by player events`() {

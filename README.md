@@ -312,13 +312,20 @@ Removing a last song link can delete the physical file, and deleting a job
 deletes it for all users. Both require confirmation. When removing a link deletes
 the file, the completion message names the deleted song.
 
-Playback queues initially contain the displayed page; **Add to queue** can add
-tracks from other pages. Browsing another page or tab does not replace playback.
+Choosing a Library song queues the entire matching playlist, folder, or search
+result in the selected sort order, starting at that song, not just its visible
+page. Queueing reuses the already-loaded selection without another track-list
+request. **Add to queue** appends an individual song.
+The Queue has independent page controls using **Settings > Server > Items per
+page**. Browsing queue or library pages does not seek, pause, or replace playback.
+When playback crosses a queue-page boundary (including shuffle and repeat), the
+Queue follows the playing song's page. Paging and advancing use the in-memory
+queue without track-list requests; shuffle covers the entire queue.
 Each queued song has a three-dot menu with the permitted Library song actions
 and **Remove from queue**, instead of a separate close button. Queue menus omit
 **Add to queue**, **Move to playlist**, **Remove from playlist**, and playlist
 reordering; removing a queued song does not change its playlist membership.
-Drag a song's handle up or down to reorder the queue or an unfiltered playlist
+Drag a song's handle up or down to reorder the current queue page or an unfiltered playlist
 page in Library. Hold near the list's top or bottom to scroll while dragging.
 Manually reordering the queue turns shuffle off so playback follows the displayed
 order, without restarting the current song or changing the source playlist.
@@ -330,7 +337,7 @@ In Queue only, swipe a song left to remove that occurrence without deleting the
 song or changing its playlist membership. Short, canceled, or rightward swipes
 do not remove songs.
 
-The selected playlist or folder, queue order, current song and playback position,
+The selected playlist or folder, full queue order, current song and playback position,
 shuffle, and repeat are saved on this device. Reopening after the app has stopped
 restores the queue paused; press Play to continue from the saved timestamp.
 Position is checkpointed every 30 seconds while playing and on seeks, pauses, queue
@@ -373,7 +380,7 @@ receive touch, keyboard, or accessibility interaction. The transition respects
 Android's animation duration setting. There is no bottom navigation bar in portrait or landscape.
 The Library top bar contains a content-width playlist/folder selector and a
 **Search** icon. Tap Search to expand and focus the input; closing search clears
-the filter. There is no top-bar play button; tap a song to play the page.
+the filter. There is no top-bar play button; tap a song to queue the full selection.
 On each library page, `[NoVocals]/` tracks appear after originals in a collapsed
 **[NoVocals]** section. Expanding it keeps playback and track actions associated
 with the original page indices.

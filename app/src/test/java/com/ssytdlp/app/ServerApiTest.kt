@@ -6,6 +6,8 @@ import com.ssytdlp.app.core.ApiJson
 import com.ssytdlp.app.core.Job
 import com.ssytdlp.app.core.Library
 import com.ssytdlp.app.core.Session
+import com.ssytdlp.app.core.Track
+import com.ssytdlp.app.core.TrackPage
 import com.ssytdlp.app.core.TrackSort
 import com.ssytdlp.app.core.User
 import java.io.ByteArrayOutputStream
@@ -14,6 +16,7 @@ import java.net.URI
 import java.time.Instant
 import java.util.concurrent.TimeUnit
 import kotlinx.coroutines.runBlocking
+import kotlinx.serialization.encodeToString
 import kotlinx.serialization.json.JsonNull
 import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.buildJsonObject
@@ -338,6 +341,25 @@ class ServerApiTest {
             LibraryState(sort = TrackSort.NAME).withAllTracks(result).orderedTracks.map { it.name })
         assertEquals("/api/library/tracks?page=1&pageSize=1000&search=song", server.takeRequest().path)
         assertEquals("/api/library/tracks?page=2&pageSize=2&search=song", server.takeRequest().path)
+    }
+
+    @Test fun `500 song queue reuses loaded metadata across library pages and sorting`() = runBlocking {
+        val tracks = List(500) { Track("job", "$it.mp3", title = it.toString().padStart(3, '0'),
+            streamUrl = "/api/stream/$it.mp3") }
+        server.enqueue(MockResponse().setBody(ApiJson.encodeToString(
+            TrackPage(files = tracks, pageSize = 1000, total = 500))))
+        val loaded = LibraryState().withAllTracks(api.allTracks(LibraryState()))
+        assertEquals(1, server.requestCount)
+        assertEquals("1000", server.takeRequest().requestUrl!!.queryParameter("pageSize"))
+        for (sort in TrackSort.entries) {
+            for (page in 1..10) {
+                val selection = loaded.copy(page = page, sort = sort)
+                val queue = selection.orderedSelection
+                assertEquals(500, queue.size)
+                assertEquals(selection.orderedTracks.first(), queue[selection.pageOffset])
+            }
+        }
+        assertEquals(1, server.requestCount)
     }
 
     @Test fun `changed pagination is retried as a whole rather than combining inconsistent pages`() = runBlocking {
