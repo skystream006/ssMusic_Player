@@ -91,17 +91,21 @@ fun JobMenu(model: MusicViewModel, job: Job, requestNotifications: () -> Unit, d
     Box {
         ToolButton(Icons.Rounded.MoreVert, "Download options", enabled = !model.busy) { open = true }
         DropdownMenu(open, { open = false }) {
-            DropdownMenuItem(text = { Text("Play files") }, leadingIcon = { Icon(Icons.Rounded.PlayArrow, null) }, enabled = job.files.isNotEmpty(), onClick = { open = false; requestNotifications(); model.playJob(job) })
-            DropdownMenuItem(text = { Text("Save ZIP") }, leadingIcon = { Icon(Icons.Rounded.Download, null) }, enabled = job.files.isNotEmpty(), onClick = { open = false; download("/api/jobs/${encode(job.id)}/download-all", "${job.playlistTitle.ifBlank { "music" }}.zip") })
             if (job.isMember(user)) {
-                DropdownMenuItem(text = { Text("Show in library") }, leadingIcon = { Icon(Icons.Rounded.LibraryAdd, null) }, onClick = { open = false; model.jobAction(job, "link") })
                 DropdownMenuItem(text = { Text("Add files to playlist") }, leadingIcon = { Icon(Icons.AutoMirrored.Rounded.PlaylistAdd, null) }, onClick = { open = false; playlist = true })
             }
             if (job.canModify(user)) {
-                DropdownMenuItem(text = { Text("Rename") }, leadingIcon = { Icon(Icons.Rounded.Edit, null) }, onClick = { open = false; rename = true })
-                if (!job.active && job.source !in listOf("files", "itunes")) DropdownMenuItem(text = { Text("Rerun download") }, leadingIcon = { Icon(Icons.Rounded.Refresh, null) }, onClick = { open = false; rerun = true })
                 if (user.role == "admin" || job.initiatedBy?.id == user.id) DropdownMenuItem(text = { Text("Contributors") }, leadingIcon = { Icon(Icons.Rounded.Group, null) }, onClick = { open = false; contributors = true })
                 if (!job.active) DropdownMenuItem(text = { Text("Delete job and files") }, leadingIcon = { Icon(Icons.Rounded.DeleteOutline, null) }, onClick = { open = false; deleting = true })
+            }
+            DropdownMenuItem(text = { Text("Play files") }, leadingIcon = { Icon(Icons.Rounded.PlayArrow, null) }, enabled = job.files.isNotEmpty(), onClick = { open = false; requestNotifications(); model.playJob(job) })
+            if (job.canModify(user)) {
+                DropdownMenuItem(text = { Text("Rename") }, leadingIcon = { Icon(Icons.Rounded.Edit, null) }, onClick = { open = false; rename = true })
+                if (!job.active && job.source !in listOf("files", "itunes")) DropdownMenuItem(text = { Text("Rerun download") }, leadingIcon = { Icon(Icons.Rounded.Refresh, null) }, onClick = { open = false; rerun = true })
+            }
+            DropdownMenuItem(text = { Text("Save ZIP") }, leadingIcon = { Icon(Icons.Rounded.Download, null) }, enabled = job.files.isNotEmpty(), onClick = { open = false; download("/api/jobs/${encode(job.id)}/download-all", "${job.playlistTitle.ifBlank { "music" }}.zip") })
+            if (job.isMember(user)) {
+                DropdownMenuItem(text = { Text("Show in library") }, leadingIcon = { Icon(Icons.Rounded.LibraryAdd, null) }, onClick = { open = false; model.jobAction(job, "link") })
             }
         }
     }

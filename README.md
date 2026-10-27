@@ -179,6 +179,9 @@ it does not prove an installed app's identity. Authorize only sign-ins you start
 
 ## Native Features
 
+Three-dot menus list their available actions alphabetically, including song,
+queue, playlist, folder, and download-job menus.
+
 | Area | Implemented |
 | --- | --- |
 | Library | All Music, server-side search, configurable local pages (50 tracks by default) with name/rating sorting across the complete selection, folder navigation, playlist counts, linked tracks, cached 192px AVIF audio/video thumbnails in Library and Queue (including Android 8+, with legacy JPEG/PNG/WebP support) |

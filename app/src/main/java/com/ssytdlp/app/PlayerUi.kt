@@ -376,11 +376,6 @@ private fun SongActionsMenu(model: MusicViewModel, track: Track?, download: (Str
         Box {
             ToolButton(Icons.Rounded.MoreVert, "More song actions", modifier = Modifier.size(48.dp)) { moreActions = true }
             DropdownMenu(expanded = moreActions, onDismissRequest = { moreActions = false }) {
-                if (track.canShowPlaylistLinks) {
-                    DropdownMenuItem(text = { Text("Linked Playlists") },
-                        leadingIcon = { Icon(Icons.AutoMirrored.Rounded.QueueMusic, null) },
-                        onClick = { moreActions = false; linkedTrack = track })
-                }
                 if (editLyrics != null) {
                     DropdownMenuItem(text = { Text("Edit lyrics") }, enabled = !model.songBusy(track),
                         leadingIcon = { Icon(Icons.Rounded.EditNote, null) }, onClick = {
@@ -392,6 +387,29 @@ private fun SongActionsMenu(model: MusicViewModel, track: Track?, download: (Str
                     DropdownMenuItem(text = { Text("Edit metadata") }, enabled = !model.songBusy(track),
                         leadingIcon = { Icon(Icons.Rounded.Edit, null) },
                         onClick = { moreActions = false; editingTrack = track })
+                }
+                if (track.canShowPlaylistLinks) {
+                    DropdownMenuItem(text = { Text("Linked Playlists") },
+                        leadingIcon = { Icon(Icons.AutoMirrored.Rounded.QueueMusic, null) },
+                        onClick = { moreActions = false; linkedTrack = track })
+                }
+                SongPrivacyMenuItem(model, track) { moreActions = false }
+                if (canReplaceFile(account?.user, job, track)) {
+                    DropdownMenuItem(text = { Text("Replace File") }, enabled = !model.songBusy(track),
+                        leadingIcon = { Icon(Icons.Rounded.UploadFile, null) },
+                        onClick = { moreActions = false; replacingTrack = track })
+                }
+                DropdownMenuItem(text = { Text("Save file") }, enabled = !model.busy,
+                    leadingIcon = { Icon(Icons.Rounded.Download, null) }, onClick = {
+                        moreActions = false
+                        download(track.downloadUrl ?: songPath(track, "download"), track.name)
+                    })
+                if (canShare) {
+                    DropdownMenuItem(text = { Text("Share Media") }, enabled = !model.songBusy(track) && !model.songPrivacy(track).isPrivate,
+                        leadingIcon = { Icon(Icons.Rounded.Share, null) },
+                        onClick = { moreActions = false; sharingTrack = track })
+                }
+                if (canEdit) {
                     TranscribeMenuItem(model.library.transcriptionLocked(track), model.transcriptionAvailable, model.songBusy(track)) {
                         moreActions = false; transcribe = true
                     }
@@ -400,22 +418,6 @@ private fun SongActionsMenu(model: MusicViewModel, track: Track?, download: (Str
                         leadingIcon = { Icon(Icons.Rounded.Info, null) },
                         onClick = { moreActions = false; editingTrack = track })
                 }
-                if (canReplaceFile(account?.user, job, track)) {
-                    DropdownMenuItem(text = { Text("Replace File") }, enabled = !model.songBusy(track),
-                        leadingIcon = { Icon(Icons.Rounded.UploadFile, null) },
-                        onClick = { moreActions = false; replacingTrack = track })
-                }
-                SongPrivacyMenuItem(model, track) { moreActions = false }
-                if (canShare) {
-                    DropdownMenuItem(text = { Text("Share Media") }, enabled = !model.songBusy(track) && !model.songPrivacy(track).isPrivate,
-                        leadingIcon = { Icon(Icons.Rounded.Share, null) },
-                        onClick = { moreActions = false; sharingTrack = track })
-                }
-                DropdownMenuItem(text = { Text("Save file") }, enabled = !model.busy,
-                    leadingIcon = { Icon(Icons.Rounded.Download, null) }, onClick = {
-                        moreActions = false
-                        download(track.downloadUrl ?: songPath(track, "download"), track.name)
-                    })
             }
         }
         if (canEdit && transcribe) TranscribeDialog(model, track) { transcribe = false }
@@ -873,6 +875,8 @@ fun TrackMenu(model: MusicViewModel, track: Track, index: Int, onRemoveFromQueue
     var transfer by remember(canTransfer) { mutableStateOf<String?>(null) }
     val canModify = user != null && !user.isShared &&
         model.library.library.jobs.find { it.id == track.jobId }?.canModify(user) == true
+    val canEdit = canModify && track.mediaType != "video" && track.name.endsWith(".mp3", true)
+    val inheritedPrivacy = model.songPrivacy(track).inherited
     val canReplace = canReplaceFile(user,
         model.library.library.jobs.find { it.id == track.jobId } ?: model.jobs.find { it.id == track.jobId }, track)
     var replace by remember(canReplace, track.key, account?.origin, user?.id) { mutableStateOf(false) }
@@ -880,21 +884,30 @@ fun TrackMenu(model: MusicViewModel, track: Track, index: Int, onRemoveFromQueue
     Box {
         ToolButton(Icons.Rounded.MoreVert, "Options for ${track.displayTitle}", enabled = !model.busy) { open = true }
         DropdownMenu(open, { open = false }) {
+            if (canTransfer) {
+                DropdownMenuItem(text = { Text("Add to playlist") }, enabled = !model.songBusy(track), leadingIcon = { Icon(Icons.Rounded.LibraryAdd, null) }, onClick = { open = false; transfer = "link" })
+            }
+            if (!inQueue) DropdownMenuItem(text = { Text("Add to queue") }, leadingIcon = { Icon(Icons.AutoMirrored.Rounded.PlaylistAdd, null) }, onClick = { open = false; model.playback.enqueue(track) })
+            if (canEdit) {
+                DropdownMenuItem(text = { Text("Edit song / rating") }, enabled = !model.songBusy(track), leadingIcon = { Icon(Icons.Rounded.Edit, null) }, onClick = { open = false; edit = true })
+            }
             if (track.canShowPlaylistLinks) DropdownMenuItem(text = { Text("Linked Playlists") },
                 leadingIcon = { Icon(Icons.AutoMirrored.Rounded.QueueMusic, null) },
                 onClick = { open = false; playlistLinks = true })
-            if (!inQueue) DropdownMenuItem(text = { Text("Add to queue") }, leadingIcon = { Icon(Icons.AutoMirrored.Rounded.PlaylistAdd, null) }, onClick = { open = false; model.playback.enqueue(track) })
+            if (!inheritedPrivacy) SongPrivacyMenuItem(model, track) { open = false }
+            if (canTransfer && !inQueue) DropdownMenuItem(text = { Text("Move to playlist") }, enabled = !model.songBusy(track), leadingIcon = { Icon(Icons.AutoMirrored.Rounded.DriveFileMove, null) }, onClick = { open = false; transfer = "move" })
+            if (inheritedPrivacy) SongPrivacyMenuItem(model, track) { open = false }
+            if (!inQueue && canModify && track.playlistId != null) DropdownMenuItem(text = { Text("Remove from playlist") }, enabled = !model.songBusy(track), leadingIcon = { Icon(Icons.Rounded.DeleteOutline, null) }, onClick = { open = false; remove = true })
+            if (onRemoveFromQueue != null) DropdownMenuItem(text = { Text("Remove from queue") },
+                leadingIcon = { Icon(Icons.Rounded.Close, null) }, onClick = { open = false; onRemoveFromQueue() })
+            if (canReplace) DropdownMenuItem(text = { Text("Replace File") },
+                leadingIcon = { Icon(Icons.Rounded.UploadFile, null) }, enabled = !model.songBusy(track),
+                onClick = { open = false; replace = true })
             DropdownMenuItem(text = { Text("Save file") }, leadingIcon = { Icon(Icons.Rounded.Download, null) }, onClick = { open = false; download(track.downloadUrl ?: songPath(track, "download"), track.name) })
             if (canModify && track.mediaType == "audio") DropdownMenuItem(text = { Text("Share Media") },
                 enabled = !model.songBusy(track) && !model.songPrivacy(track).isPrivate,
                 leadingIcon = { Icon(Icons.Rounded.Share, null) }, onClick = { open = false; share = true })
-            SongPrivacyMenuItem(model, track) { open = false }
-            if (canTransfer) {
-                DropdownMenuItem(text = { Text("Add to playlist") }, enabled = !model.songBusy(track), leadingIcon = { Icon(Icons.Rounded.LibraryAdd, null) }, onClick = { open = false; transfer = "link" })
-                if (!inQueue) DropdownMenuItem(text = { Text("Move to playlist") }, enabled = !model.songBusy(track), leadingIcon = { Icon(Icons.AutoMirrored.Rounded.DriveFileMove, null) }, onClick = { open = false; transfer = "move" })
-            }
-            if (canModify && track.mediaType != "video" && track.name.endsWith(".mp3", true)) {
-                DropdownMenuItem(text = { Text("Edit song / rating") }, enabled = !model.songBusy(track), leadingIcon = { Icon(Icons.Rounded.Edit, null) }, onClick = { open = false; edit = true })
+            if (canEdit) {
                 TranscribeMenuItem(model.library.transcriptionLocked(track), model.transcriptionAvailable, model.songBusy(track)) {
                     open = false; transcribe = true
                 }
@@ -902,12 +915,6 @@ fun TrackMenu(model: MusicViewModel, track: Track, index: Int, onRemoveFromQueue
                 DropdownMenuItem(text = { Text("View song metadata") }, leadingIcon = { Icon(Icons.Rounded.Info, null) },
                     onClick = { open = false; edit = true })
             }
-            if (canReplace) DropdownMenuItem(text = { Text("Replace File") },
-                leadingIcon = { Icon(Icons.Rounded.UploadFile, null) }, enabled = !model.songBusy(track),
-                onClick = { open = false; replace = true })
-            if (!inQueue && canModify && track.playlistId != null) DropdownMenuItem(text = { Text("Remove from playlist") }, enabled = !model.songBusy(track), leadingIcon = { Icon(Icons.Rounded.DeleteOutline, null) }, onClick = { open = false; remove = true })
-            if (onRemoveFromQueue != null) DropdownMenuItem(text = { Text("Remove from queue") },
-                leadingIcon = { Icon(Icons.Rounded.Close, null) }, onClick = { open = false; onRemoveFromQueue() })
         }
     }
     if (edit) MetadataDialog(model, track) { edit = false }

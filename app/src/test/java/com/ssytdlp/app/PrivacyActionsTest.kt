@@ -7,6 +7,7 @@ import androidx.activity.ComponentActivity
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.MutableState
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.ui.semantics.SemanticsProperties
 import androidx.compose.ui.test.*
 import androidx.compose.ui.test.junit4.createAndroidComposeRule
 import androidx.lifecycle.ViewModelStore
@@ -20,6 +21,7 @@ import com.ssytdlp.app.core.Library
 import com.ssytdlp.app.core.LibraryEntry
 import com.ssytdlp.app.core.LibraryPlaylist
 import com.ssytdlp.app.core.Session
+import com.ssytdlp.app.core.SongMetadata
 import com.ssytdlp.app.core.Track
 import com.ssytdlp.app.core.TrackPage
 import com.ssytdlp.app.core.User
@@ -440,6 +442,125 @@ class PrivacyActionsTest {
         assertTrue(drainRequests().isEmpty())
     }
 
+    @Test
+    @Config(qualifiers = "w360dp-h1600dp")
+    fun songMenusAreAlphabeticalAcrossSurfacesAndPrivacyStates() {
+        val linked = track.copy(playlistId = entry.id)
+        val model = startModel()
+        compose.runOnIdle { model.viewModelScope.cancel() }
+        val surface = mutableStateOf(SongSurface.LIBRARY)
+        compose.setContent { MusicTheme { SongMenu(surface.value, model, linked) } }
+        val cases = listOf(
+            job to "Make song private",
+            job.copy(privateFiles = listOf(track.name)) to "Make song public",
+            job.copy(isPrivate = true) to "Private — inherited from source"
+        )
+        for (location in SongSurface.entries) {
+            compose.runOnIdle { surface.value = location }
+            for ((source, privacyLabel) in cases) {
+                compose.runOnIdle {
+                    state(model).value = LibraryState().withLibrary(library(source))
+                }
+                openMenu(location.description)
+                val expected = mutableListOf("Linked Playlists", privacyLabel, "Replace File",
+                    "Save file", "Share Media", "Transcribe lyrics")
+                when (location) {
+                    SongSurface.LIBRARY -> expected += listOf("Add to playlist", "Add to queue",
+                        "Edit song / rating", "Move to playlist", "Remove from playlist")
+                    SongSurface.QUEUE -> expected += listOf("Add to playlist", "Edit song / rating", "Remove from queue")
+                    SongSurface.DOCK, SongSurface.NOW_PLAYING -> expected += "Edit metadata"
+                }
+                assertMenuOrder(expected.sortedWith(String.CASE_INSENSITIVE_ORDER))
+            }
+            if (location == SongSurface.NOW_PLAYING) {
+                compose.onNodeWithText("Save file").performClick()
+                compose.runOnIdle {
+                    ReflectionHelpers.getField<MutableState<SongMetadata?>>(model, "metadata\$delegate").value =
+                        SongMetadata(canEdit = true, uslt = "Editable lyrics")
+                }
+                compose.onNodeWithText("USLT Lyrics").performClick()
+                openMenu(location.description)
+                assertMenuOrder(listOf("Edit lyrics", "Edit metadata", "Linked Playlists",
+                    "Private — inherited from source", "Replace File", "Save file", "Share Media", "Transcribe lyrics"))
+            }
+            compose.runOnIdle { account.value = testAccount(owner.copy(role = "shared")) }
+            openMenu(location.description)
+            val expected = mutableListOf("Linked Playlists", "Save file", "View song metadata")
+            if (location == SongSurface.LIBRARY) expected += "Add to queue"
+            if (location == SongSurface.QUEUE) expected += "Remove from queue"
+            assertMenuOrder(expected.sortedWith(String.CASE_INSENSITIVE_ORDER))
+            compose.runOnIdle { account.value = testAccount(owner) }
+        }
+        assertTrue(drainRequests().isEmpty())
+    }
+
+    @Test
+    @Config(qualifiers = "w360dp-h1600dp")
+    fun playlistAndFolderMenusAreAlphabetical() {
+        val model = startModel()
+        compose.runOnIdle { model.viewModelScope.cancel() }
+        val currentEntry = mutableStateOf(entry)
+        compose.setContent { MusicTheme { EntryMenu(model, currentEntry.value) } }
+        for (isPrivate in listOf(false, true)) {
+            compose.runOnIdle {
+                state(model).value = model.library.withLibrary(library(playlist = playlist.copy(isPrivate = isPrivate)))
+            }
+            openMenu("Options for Playlist")
+            assertMenuOrder(listOf("Edit playlist",
+                if (isPrivate) "Make playlist public" else "Make playlist private",
+                "Move to folder", "Share Playlist"))
+        }
+        compose.runOnIdle { currentEntry.value = LibraryEntry("folder", "folder", "Folder") }
+        openMenu("Options for Folder")
+        assertMenuOrder(listOf("Move to folder", "Remove folder", "Rename"))
+        assertTrue(drainRequests().isEmpty())
+    }
+
+    @Test
+    @Config(qualifiers = "w360dp-h1600dp")
+    fun jobMenusAreAlphabeticalForOwnersContributorsAdminsAndReaders() {
+        val model = startModel()
+        compose.runOnIdle { model.viewModelScope.cancel() }
+        val currentJob = mutableStateOf(job)
+        var savedName: String? = null
+        compose.setContent {
+            MusicTheme { JobMenu(model, currentJob.value, {}) { _, name -> savedName = name } }
+        }
+        for (user in listOf(owner, contributor, User("admin", role = "admin"), User("reader"))) {
+            compose.runOnIdle { account.value = testAccount(user) }
+            for (source in listOf(job, job.copy(status = "running"), job.copy(source = "files"))) {
+                compose.runOnIdle { currentJob.value = source }
+                openMenu("Download options")
+                val expected = mutableListOf("Play files", "Save ZIP")
+                if (source.isMember(user)) expected += listOf("Add files to playlist", "Show in library")
+                if (source.canModify(user)) {
+                    expected += "Rename"
+                    if (user.role == "admin" || source.initiatedBy?.id == user.id) expected += "Contributors"
+                    if (!source.active) {
+                        expected += "Delete job and files"
+                        if (source.source !in listOf("files", "itunes")) expected += "Rerun download"
+                    }
+                }
+                assertMenuOrder(expected.sortedWith(String.CASE_INSENSITIVE_ORDER))
+                compose.onNodeWithText("Play files").assertIsNotEnabled()
+                compose.onNodeWithText("Save ZIP").assertIsNotEnabled()
+            }
+        }
+        compose.runOnIdle { currentJob.value = job.copy(files = listOf(track.name)) }
+        compose.onNodeWithText("Save ZIP").assertIsEnabled().performClick()
+        assertEquals("music.zip", savedName)
+        compose.onNode(isPopup()).assertDoesNotExist()
+        assertTrue(drainRequests().isEmpty())
+    }
+
+    private fun assertMenuOrder(expected: List<String>) {
+        val items = compose.onAllNodes(hasAnyAncestor(isPopup()) and hasClickAction())
+            .fetchSemanticsNodes()
+            .filter { it.config.contains(SemanticsProperties.Text) }
+            .sortedBy { it.boundsInRoot.top }
+        assertEquals(expected, items.map { it.config[SemanticsProperties.Text].single().text })
+    }
+
     private fun library(source: Job = job, playlist: LibraryPlaylist = this.playlist) = Library(
         entries = listOf(entry.copy(isPrivate = playlist.isPrivate)), playlists = listOf(playlist), jobs = listOf(source))
 
@@ -514,13 +635,15 @@ class PrivacyActionsTest {
     }
 
     private enum class SongSurface(val description: String) {
-        LIBRARY("Options for Song"), DOCK("More song actions"), NOW_PLAYING("More song actions")
+        LIBRARY("Options for Song"), QUEUE("Options for Song"),
+        DOCK("More song actions"), NOW_PLAYING("More song actions")
     }
 
     @Composable private fun SongMenu(surface: SongSurface, model: MusicViewModel, queued: Track) {
         val playback = PlaybackState(track = queued, queue = listOf(queued))
         when (surface) {
             SongSurface.LIBRARY -> TrackMenu(model, queued, 0) { _, _ -> }
+            SongSurface.QUEUE -> TrackMenu(model, queued, 0, onRemoveFromQueue = {}) { _, _ -> }
             SongSurface.DOCK -> PlayerDock(playback, model, {}, {}) { _, _ -> }
             SongSurface.NOW_PLAYING -> NowPlayingScreen(model, playback) { _, _ -> }
         }
