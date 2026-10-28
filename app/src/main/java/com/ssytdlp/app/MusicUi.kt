@@ -53,6 +53,7 @@ import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.repeatOnLifecycle
 import com.ssytdlp.app.core.*
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.launch
 
 val LocalWaveAppearance = staticCompositionLocalOf { true }
 
@@ -182,6 +183,9 @@ fun MusicApp(model: MusicViewModel, requestNotifications: () -> Unit) {
     }
     val back: () -> Unit = {
         if (playerExpanded) playerExpanded = false
+        else if (screen == 0 && landscape && libraryUi.parent != null) {
+            libraryUi.navigateUp(model.library.library.entries)
+        }
         else screen = when (screen) {
             3 -> 2
             2 -> {
@@ -354,6 +358,10 @@ class LibraryBrowsingState internal constructor(
 ) {
     var showNoVocals by expanded
     var parent by folder
+
+    fun navigateUp(entries: List<LibraryEntry>) {
+        parent = entries.find { it.id == parent }?.parentId
+    }
 }
 
 @Composable
@@ -464,7 +472,16 @@ internal fun TrackSortMenu(description: String, enabled: Boolean, selected: Trac
 
 @Composable
 fun LibraryBrowser(model: MusicViewModel, browsing: LibraryBrowsingState = rememberLibraryBrowsingState(model.library), dismiss: () -> Unit) {
-    ModalBottomSheet(onDismissRequest = dismiss, sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)) {
+    val sheet = rememberModalBottomSheetState(skipPartiallyExpanded = true)
+    val scope = rememberCoroutineScope()
+    ModalBottomSheet(onDismissRequest = dismiss, sheetState = sheet,
+        properties = ModalBottomSheetProperties(shouldDismissOnBackPress = false)) {
+        BackHandler {
+            if (browsing.parent != null) browsing.navigateUp(model.library.library.entries)
+            else scope.launch { sheet.hide() }.invokeOnCompletion {
+                if (!sheet.isVisible) dismiss()
+            }
+        }
         LibraryBrowserPane(model, Modifier.fillMaxHeight(0.85f), browsing, dismiss)
     }
 }
@@ -481,7 +498,7 @@ private fun LibraryBrowserPane(model: MusicViewModel, modifier: Modifier = Modif
     LazyColumn(modifier, state = browsing.browser) {
         item {
         Row(Modifier.fillMaxWidth().padding(horizontal = 16.dp), verticalAlignment = Alignment.CenterVertically) {
-            if (parent != null) ToolButton(Icons.AutoMirrored.Rounded.ArrowBack, "Parent folder") { browsing.parent = library.entries.find { it.id == parent }?.parentId }
+            if (parent != null) ToolButton(Icons.AutoMirrored.Rounded.ArrowBack, "Parent folder") { browsing.navigateUp(library.entries) }
             Text(library.entries.find { it.id == parent }?.name ?: "Library", style = MaterialTheme.typography.titleLarge, modifier = Modifier.weight(1f), maxLines = 2)
             ToolButton(Icons.Rounded.CreateNewFolder, "Create folder") { create = true }
             if (canCreatePlaylist) ToolButton(Icons.AutoMirrored.Rounded.PlaylistAdd, "New playlist",

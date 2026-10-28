@@ -381,6 +381,10 @@ Android's animation duration setting. There is no bottom navigation bar in portr
 The Library top bar contains a content-width playlist/folder selector and a
 **Search** icon. Tap Search to expand and focus the input; closing search clears
 the filter. There is no top-bar play button; tap a song to queue the full selection.
+In the playlist/folder browser, system **Back** moves up one folder at a time,
+just like **Parent folder**, and closes the portrait browser only at the library
+root. The landscape browser also navigates to the parent folder on Back.
+Swiping down or tapping outside the portrait browser still closes it directly.
 On each library page, `[NoVocals]/` tracks appear after originals in a collapsed
 **[NoVocals]** section. Expanding it keeps playback and track actions associated
 with the original page indices.
