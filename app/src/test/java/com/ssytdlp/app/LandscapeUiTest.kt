@@ -10,7 +10,9 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.width
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.MutableState
+import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.setValue
 import androidx.compose.runtime.snapshots.Snapshot
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalConfiguration
@@ -52,6 +54,7 @@ import org.junit.runner.RunWith
 import org.robolectric.RobolectricTestRunner
 import org.robolectric.annotation.Config
 import org.robolectric.annotation.GraphicsMode
+import org.robolectric.shadows.ShadowDialog
 import org.robolectric.util.ReflectionHelpers
 import org.robolectric.util.ReflectionHelpers.ClassParameter
 
@@ -155,6 +158,124 @@ class LandscapeUiTest {
         compose.onNodeWithContentDescription("Parent folder").performClick()
         compose.onNodeWithText("All Music").performClick()
         compose.runOnIdle { assertEquals(null, model.library.selectedId) }
+    }
+
+    @Test
+    @Config(sdk = [28, 34], qualifiers = "w360dp-h800dp-port")
+    fun browserBackClimbsFoldersBeforeDismissing() {
+        setNestedLibrary()
+        var open by mutableStateOf(true)
+        compose.setContent {
+            MusicTheme { if (open) LibraryBrowser(model) { open = false } }
+        }
+        compose.onNodeWithText("Collection").performClick()
+        compose.onNodeWithText("Favorites").performClick()
+        compose.onNodeWithText("Evening playlist").assertIsDisplayed()
+        val dialog = ShadowDialog.getLatestDialog()
+
+        compose.runOnUiThread { dialog.onBackPressed() }
+        compose.onNodeWithText("Collection").assertIsDisplayed()
+        compose.onNodeWithText("Favorites").assertIsDisplayed()
+        compose.onNodeWithText("Evening playlist").assertDoesNotExist()
+        compose.runOnIdle { assertTrue(open) }
+
+        compose.runOnUiThread { dialog.onBackPressed() }
+        compose.onNodeWithText("All Music").assertIsDisplayed()
+        compose.onNodeWithContentDescription("Parent folder").assertDoesNotExist()
+        compose.runOnIdle { assertTrue(open) }
+
+        compose.runOnUiThread { dialog.onBackPressed() }
+        compose.waitUntil(5_000) { !open }
+        compose.onNode(isDialog()).assertDoesNotExist()
+        compose.runOnIdle {
+            assertFalse(open)
+            assertEquals("playlist", model.library.selectedId)
+        }
+    }
+
+    @Test
+    @Config(qualifiers = "w360dp-h800dp-port")
+    fun browserParentButtonAndBackUseTheSameHierarchy() {
+        setNestedLibrary()
+        compose.setContent { MusicTheme { LibraryBrowser(model) {} } }
+        compose.onNodeWithText("Collection").performClick()
+        compose.onNodeWithText("Favorites").performClick()
+        compose.onNodeWithContentDescription("Parent folder").performClick()
+        compose.onNodeWithText("Collection").assertIsDisplayed()
+        compose.onNodeWithText("Favorites").assertIsDisplayed()
+        compose.runOnUiThread { ShadowDialog.getLatestDialog().onBackPressed() }
+        compose.onNodeWithText("All Music").assertIsDisplayed()
+        compose.onNodeWithContentDescription("Parent folder").assertDoesNotExist()
+    }
+
+    @Test
+    @Config(qualifiers = "w360dp-h800dp-port")
+    fun browserOutsideTapStillDismissesFromNestedFolder() {
+        setNestedLibrary()
+        var open by mutableStateOf(true)
+        compose.setContent {
+            MusicTheme { if (open) LibraryBrowser(model) { open = false } }
+        }
+        compose.onNodeWithText("Collection").performClick()
+        compose.onNodeWithText("Favorites").performClick()
+        compose.onNodeWithContentDescription("Close sheet").performTouchInput {
+            click(percentOffset(0.5f, 0.02f))
+        }
+        compose.waitUntil(5_000) { !open }
+        compose.onNode(isDialog()).assertDoesNotExist()
+        compose.runOnIdle { assertFalse(open) }
+    }
+
+    @Test
+    @Config(qualifiers = "w320dp-h800dp-port")
+    fun childDialogBackDoesNotNavigateTheBrowser() {
+        setNestedLibrary()
+        compose.setContent { MusicTheme { LibraryBrowser(model) {} } }
+        compose.onNodeWithText("Collection").performClick()
+        compose.onNodeWithText("Favorites").performClick()
+        compose.onNodeWithContentDescription("Create folder").performClick()
+        compose.onNodeWithText("New folder").assertIsDisplayed()
+        compose.runOnUiThread { ShadowDialog.getLatestDialog().onBackPressed() }
+        compose.onNodeWithText("New folder").assertDoesNotExist()
+        compose.onNodeWithText("Evening playlist").assertIsDisplayed()
+    }
+
+    @Test fun landscapeBrowserBackClimbsFoldersWithoutChangingSelection() {
+        setNestedLibrary()
+        compose.runOnUiThread {
+            ViewModelProvider(compose.activity)[AppUpdater::class.java].viewModelScope.cancel()
+            model.getApplication<MusicApplication>().serverConfig.set("https://music.example.com")
+            ReflectionHelpers.getField<MutableStateFlow<Account?>>(model.sessions, "mutableAccount").value =
+                Account("https://music.example.com", User(name = "Listener"),
+                    Session("test-session", "2099-01-01T00:00:00Z"))
+            ReflectionHelpers.getField<MutableStateFlow<PlaybackState>>(model.playback, "mutableState").value = playback
+        }
+        compose.setContent { MusicApp(model) {} }
+        compose.onNodeWithText("Collection").performClick()
+        compose.onNodeWithText("Favorites").performClick()
+        compose.onNode(hasText("Evening playlist") and hasAnyAncestor(hasTestTag("library-playlists-pane")))
+            .assertIsDisplayed()
+
+        compose.onNodeWithContentDescription("Search").performClick()
+        pressBackWithoutLeavingApp()
+        compose.onNodeWithText("Search your music").assertDoesNotExist()
+        compose.onNodeWithText("Favorites").assertIsDisplayed()
+
+        compose.onNodeWithText("First song").performClick()
+        compose.onNodeWithTag("now-playing-pane").assertIsDisplayed()
+        pressBackWithoutLeavingApp()
+        compose.onNodeWithText("Favorites").assertIsDisplayed()
+
+        pressBackWithoutLeavingApp()
+        compose.onNodeWithText("Collection").assertIsDisplayed()
+        compose.onNodeWithText("Favorites").assertIsDisplayed()
+        pressBackWithoutLeavingApp()
+        compose.onNodeWithText("All Music").assertIsDisplayed()
+        compose.onNodeWithContentDescription("Parent folder").assertDoesNotExist()
+        compose.onNodeWithTag("library-playlists-pane").assertIsDisplayed()
+        pressBackWithoutLeavingApp()
+        compose.onNodeWithTag("library-playlists-pane").assertIsDisplayed()
+        compose.runOnIdle { assertEquals("playlist", model.library.selectedId) }
     }
 
     @Test fun shortLibraryPanesScrollIndependently() {
@@ -449,6 +570,19 @@ class LandscapeUiTest {
                 compose.activity.onBackPressedDispatcher.hasEnabledCallbacks())
             compose.activity.onBackPressedDispatcher.onBackPressed()
             assertFalse(compose.activity.isFinishing)
+        }
+    }
+
+    private fun setNestedLibrary() {
+        compose.runOnUiThread {
+            ReflectionHelpers.getField<MutableState<LibraryState>>(model, "library\$delegate").value =
+                LibraryState(selectedId = "playlist", library = Library(
+                    entries = listOf(
+                        LibraryEntry("parent", "folder", "Collection"),
+                        LibraryEntry("child", "folder", "Favorites", parentId = "parent"),
+                        LibraryEntry("playlist", "playlist", "Evening playlist", parentId = "child")),
+                    playlists = listOf(LibraryPlaylist("playlist", "Evening playlist", 1))),
+                    tracks = TrackPage(files = listOf(track)))
         }
     }
 
