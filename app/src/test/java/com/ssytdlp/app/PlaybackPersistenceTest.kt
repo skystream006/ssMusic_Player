@@ -123,6 +123,64 @@ class PlaybackPersistenceTest {
         assertEquals(99, player.mediaItemCount)
     }
 
+    @Test fun `regular playback excludes NoVocals across pages and preserves the selected duplicate`() {
+        val instrumental = first.copy(name = "[NoVocals]/first.mp3")
+        val tracks = List(105) { first }.toMutableList().apply {
+            this[0] = instrumental
+            this[49] = instrumental.copy(name = "[novocals]/other.mp3")
+            this[50] = second
+            this[51] = second.copy(isPlayable = false)
+            this[52] = first.copy(streamUrl = null)
+            this[104] = instrumental
+        }.toList()
+        val library = LibraryState().withAllTracks(TrackPage(files = tracks)).copy(page = 3)
+        val expected = tracks.filter { it.isPlayable && it.streamUrl != null &&
+            !it.name.startsWith("[NoVocals]/", ignoreCase = true) }
+        attach()
+
+        assertTrue(player.setPlaybackQueue(library.orderedSelection, library.pageOffset + 3, api))
+        assertTrue(player.matchesQueue(expected))
+        assertEquals(99, player.currentMediaItemIndex)
+        assertEquals(first, player.currentMediaItem!!.asTrack())
+        flushEvents()
+        assertEquals(expected, store.playback(account)!!.queue)
+        assertEquals(tracks, library.tracks.files)
+        assertEquals(105, library.tracks.total)
+
+        assertTrue(player.setPlaybackQueue(tracks, 48, api))
+        player.seekToNextMediaItem()
+        assertEquals(second, player.currentMediaItem!!.asTrack())
+        player.seekToPreviousMediaItem()
+        assertEquals(first, player.currentMediaItem!!.asTrack())
+    }
+
+    @Test fun `NoVocals selection includes the full queue and regular selection switches back`() {
+        val instrumental = first.copy(name = "[novocals]/first.mp3")
+        val tracks = listOf(instrumental, first, second.copy(isPlayable = false), second, instrumental)
+        val playable = listOf(instrumental, first, second, instrumental)
+
+        assertTrue(player.setPlaybackQueue(tracks, 4, api))
+        assertTrue(player.matchesQueue(playable))
+        assertEquals(3, player.currentMediaItemIndex)
+        assertTrue(player.setPlaybackQueue(tracks, 1, api))
+        assertTrue(player.matchesQueue(listOf(first, second)))
+        assertEquals(0, player.currentMediaItemIndex)
+        assertTrue(player.setPlaybackQueue(tracks, 0, api))
+        assertTrue(player.matchesQueue(playable))
+        assertEquals(0, player.currentMediaItemIndex)
+    }
+
+    @Test fun `NoVocals-only selections and explicitly appended companions remain playable`() {
+        val instrumental = first.copy(name = "[NoVocals]/first.mp3")
+        assertTrue(player.setPlaybackQueue(listOf(instrumental), 0, api))
+        assertTrue(player.matchesQueue(listOf(instrumental)))
+        assertTrue(player.setPlaybackQueue(listOf(first), 0, api))
+        player.addMediaItem(instrumental.toMediaItem(api))
+        assertTrue(player.matchesQueue(listOf(first, instrumental)))
+        player.seekToNextMediaItem()
+        assertEquals(instrumental, player.currentMediaItem!!.asTrack())
+    }
+
     @Test fun `seek queue edits transitions and playback modes are saved by player events`() {
         attach()
         player.setMediaItems(listOf(first, second).map { it.toMediaItem(api) }, 1, 32_100)

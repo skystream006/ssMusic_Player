@@ -147,6 +147,25 @@ class AccountRefreshTest {
         }
     }
 
+    @Test fun playingAJobWithOnlyNoVocalsReportsNoPlayableOriginals() {
+        val files = listOf(
+            Track(name = "[NoVocals]/song.mp3", streamUrl = "/api/stream/song.mp3"),
+            Track(name = "[novocals]/other.mp3", streamUrl = "/api/stream/other.mp3"),
+            Track(name = "unavailable.mp3", streamUrl = null),
+            Track(name = "notes.txt", isPlayable = false, streamUrl = "/api/stream/notes.txt"))
+        val model = startModel { request ->
+            if (request.requestUrl!!.encodedPath == "/api/jobs/job/files")
+                MockResponse().setBody(ApiJson.encodeToString(TrackPage(files = files)))
+            else null
+        }
+
+        perform(model) { model.playJob(Job("job")) }
+
+        assertEquals("No playable files are available yet.", model.notice)
+        assertTrue(model.playback.state.value.queue.isEmpty())
+        assertNull(model.playback.controller)
+    }
+
     @Test fun pageSizeAppliesToEverySelectionAndRefreshWithoutChangingPlaybackOrFetchingOnResize() {
         val settings = context.getSharedPreferences("settings", Context.MODE_PRIVATE)
         settings.edit().putInt("items_per_page", 100).commit()
