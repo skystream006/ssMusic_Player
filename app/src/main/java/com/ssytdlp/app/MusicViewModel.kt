@@ -671,7 +671,9 @@ class MusicViewModel @JvmOverloads constructor(application: Application, private
 
     fun playJob(job: Job) = launchAction {
         val result = ApiJson.decodeFromJsonElement<TrackPage>(api.request("/api/jobs/${encode(job.id)}/files"))
-        val tracks = result.files.filter { it.isPlayable && it.streamUrl != null }.map { it.copy(jobId = job.id, playlistTitle = job.playlistTitle) }
+        val tracks = result.files.filter {
+            it.isPlayable && it.streamUrl != null && !it.name.startsWith("[NoVocals]/", ignoreCase = true)
+        }.map { it.copy(jobId = job.id, playlistTitle = job.playlistTitle) }
         if (tracks.isEmpty()) message("No playable files are available yet.") else playback.play(tracks)
     }
 

@@ -314,8 +314,11 @@ the file, the completion message names the deleted song.
 
 Choosing a Library song queues the entire matching playlist, folder, or search
 result in the selected sort order, starting at that song, not just its visible
-page. Queueing reuses the already-loaded selection without another track-list
-request. **Add to queue** appends an individual song.
+page. Regular songs exclude `[NoVocals]/` tracks from that queue; starting from a
+NoVocals track includes both originals and NoVocals tracks. Playing a job starts
+with the first playable original and excludes NoVocals tracks.
+Queueing reuses the already-loaded selection without another track-list
+request. **Add to queue** appends an individual song, including NoVocals tracks.
 The Queue has independent page controls using **Settings > Server > Items per
 page**. Browsing queue or library pages does not seek, pause, or replace playback.
 When playback crosses a queue-page boundary (including shuffle and repeat), the
