@@ -69,7 +69,8 @@ internal fun QueueContent(state: PlaybackState, library: LibraryState, modifier:
                 val to = targetIndex + (if (after) 1 else 0) - (if (from < targetIndex) 1 else 0)
                 onMove(from, to)
             }
-            LazyColumn(Modifier.weight(1f).testTag("queue-tracks"), state = listState) {
+            LazyColumn(Modifier.weight(1f).fillMaxWidth().background(Color.Black.copy(alpha = 0.2f))
+                .testTag("queue-tracks"), state = listState) {
                 items(reorder.keys, key = { it }) { key ->
                     val index = key.toInt()
                     val track = state.queue[index]

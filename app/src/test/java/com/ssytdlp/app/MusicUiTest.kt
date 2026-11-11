@@ -22,6 +22,7 @@ import androidx.compose.runtime.snapshots.Snapshot
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.luminance
 import androidx.compose.ui.graphics.toArgb
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.testTag
@@ -174,6 +175,59 @@ class MusicUiTest {
             assertEquals("Each skin must have distinct artwork", AppSkin.entries.size, rendered.toSet().size)
             compose.runOnIdle { skin.value = null }
             assertTrue(pixels().all { it == background.toArgb() })
+        }
+    }
+
+    @Test fun queueBackgroundIsDarkerThanLibraryWhileKeepingSkinsVisible() {
+        val queue = mutableStateOf(false)
+        val wave = mutableStateOf(true)
+        val mode = mutableStateOf("dark")
+        val skin = mutableStateOf<AppSkin?>(null)
+        val track = Track("job", "song.mp3")
+        compose.setContent {
+            MusicTheme(Preferences(theme = "black", mode = mode.value), waveAppearance = wave.value, skin = skin.value) {
+                SkinBackground(Modifier.fillMaxSize()) {
+                    if (queue.value) {
+                        QueueContent(PlaybackState(queue = listOf(track)), LibraryState(), Modifier.fillMaxSize(),
+                            onSelect = {}, onMove = { _, _ -> }, onRemove = {})
+                    } else {
+                        LibraryContent(LibraryState(tracks = TrackPage(files = listOf(track))), PlaybackState(),
+                            onPlay = {}, onPage = {}) { _, _ -> }
+                    }
+                }
+            }
+        }
+        fun pixels(): List<Color> = compose.runOnIdle {
+            val content = compose.activity.findViewById<ViewGroup>(android.R.id.content).getChildAt(0)
+            val image = content.drawToBitmap()
+            try {
+                listOf(0.6f, 0.7f, 0.8f, 0.9f).flatMap { y ->
+                    listOf(0.25f, 0.5f, 0.75f).map { x ->
+                        Color(image.getPixel((image.width * x).toInt(), (image.height * y).toInt()))
+                    }
+                }
+            } finally {
+                image.recycle()
+            }
+        }
+        listOf(true to "dark", false to "dark", false to "light").forEach { (blueWave, appearance) ->
+            listOf(null, AppSkin.OCEAN_MOONLIGHT).forEach { option ->
+                compose.runOnIdle {
+                    queue.value = false
+                    wave.value = blueWave
+                    mode.value = appearance
+                    skin.value = option
+                }
+                val libraryPixels = pixels()
+                compose.runOnIdle { queue.value = true }
+                val queuePixels = pixels()
+                assertTrue("Queue must be darker in $appearance mode (Blue Wave: $blueWave, skin: $option)",
+                    queuePixels.zip(libraryPixels).all { (queued, library) -> queued.luminance() < library.luminance() })
+                if (option != null) assertTrue("The skin must remain visible through the queue background",
+                    queuePixels.toSet().size > 1)
+                compose.runOnIdle { queue.value = false }
+                assertEquals(libraryPixels, pixels())
+            }
         }
     }
 
