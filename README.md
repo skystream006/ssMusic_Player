@@ -342,7 +342,8 @@ do not remove songs.
 
 The selected playlist or folder, full queue order, current song and playback position,
 shuffle, and repeat are saved on this device. Reopening after the app has stopped
-restores the queue paused; press Play to continue from the saved timestamp.
+opens Now Playing when a saved queue is available, or Library when the queue is empty.
+The saved queue is restored paused; press Play to continue from the saved timestamp.
 Position is checkpointed every 30 seconds while playing and on seeks, pauses, queue
 changes, leaving the foreground, and service shutdown. Reopening while background playback continues does
 not interrupt it. Sign-out, session expiry, or switching accounts/servers clears

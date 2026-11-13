@@ -164,7 +164,10 @@ fun MusicApp(model: MusicViewModel, requestNotifications: () -> Unit) {
     val playback by model.playback.state.collectAsStateWithLifecycle()
     val snackbar = remember { SnackbarHostState() }
     var screen by rememberSaveable { mutableIntStateOf(0) }
-    var playerExpanded by rememberSaveable(account?.origin, account?.user?.id) { mutableStateOf(false) }
+    var playerExpanded by rememberSaveable(account?.origin, account?.user?.id) {
+        mutableStateOf(if (playback.connected) playback.queue.isNotEmpty()
+            else account?.let { model.sessions.playback.playback(it) }?.queue?.isNotEmpty() == true)
+    }
     var settingsReturnScreen by rememberSaveable { mutableIntStateOf(0) }
     var settingsReturnPlayer by rememberSaveable { mutableStateOf(false) }
     var libraryBrowser by rememberSaveable(screen) { mutableStateOf(false) }
