@@ -98,6 +98,58 @@ class LandscapeUiTest {
         assertAppNavigationWithoutBottomBar()
     }
 
+    @Test fun landscapeAppOpensPlayerForCachedQueue() {
+        assertCachedQueueOpensPlayer()
+    }
+
+    @Test
+    @Config(qualifiers = "w360dp-h800dp-port")
+    fun portraitAppOpensPlayerForCachedQueue() {
+        assertCachedQueueOpensPlayer()
+    }
+
+    @Test fun emptyCachedQueueOpensLibraryAndLaterQueueChangesDoNotOpenPlayer() {
+        prepareStartup(SavedPlayback())
+        compose.setContent { MusicApp(model) {} }
+        compose.onNodeWithText("TRACKS").assertIsDisplayed()
+        compose.onNodeWithTag("now-playing-pane").assertDoesNotExist()
+        compose.runOnIdle { playbackState().value = playback }
+        compose.onNodeWithText("TRACKS").assertIsDisplayed()
+        compose.onNodeWithTag("now-playing-pane").assertDoesNotExist()
+        compose.onNodeWithContentDescription("Playback position").assertIsDisplayed()
+    }
+
+    @Test fun liveQueueOpensPlayerWithoutCachedSnapshotAndBackSurvivesRecreation() {
+        prepareStartup(initialPlayback = playback)
+        val restoration = StateRestorationTester(compose)
+        restoration.setContent { MusicApp(model) {} }
+        compose.onNodeWithTag("now-playing-pane").assertIsDisplayed()
+        compose.onNodeWithContentDescription("Back").performClick()
+        compose.onNodeWithText("TRACKS").assertIsDisplayed()
+        restoration.emulateSavedInstanceStateRestore()
+        compose.onNodeWithText("TRACKS").assertIsDisplayed()
+        compose.onNodeWithTag("now-playing-pane").assertDoesNotExist()
+        compose.runOnIdle { playbackState().value = playback.copy(track = queued, index = 1) }
+        compose.onNodeWithText("TRACKS").assertIsDisplayed()
+        compose.onNodeWithTag("now-playing-pane").assertDoesNotExist()
+    }
+
+    @Test fun emptyLiveQueueTakesPrecedenceOverCachedQueue() {
+        prepareStartup(SavedPlayback(queue = listOf(track)), PlaybackState(connected = true))
+        compose.setContent { MusicApp(model) {} }
+        compose.onNodeWithText("TRACKS").assertIsDisplayed()
+        compose.onNodeWithTag("now-playing-pane").assertDoesNotExist()
+    }
+
+    @Test fun cachedQueueFallsBackToLibraryIfPlaybackRestoresNoTracks() {
+        prepareStartup(SavedPlayback(queue = listOf(track)))
+        compose.setContent { MusicApp(model) {} }
+        compose.onNodeWithTag("now-playing-pane").assertIsDisplayed()
+        compose.runOnIdle { playbackState().value = PlaybackState(connected = true) }
+        compose.onNodeWithText("TRACKS").assertIsDisplayed()
+        compose.onNodeWithTag("now-playing-pane").assertDoesNotExist()
+    }
+
     @Test
     @Config(qualifiers = "w360dp-h800dp-port")
     fun systemBackKeepsSetupAndSignInOpen() {
@@ -423,6 +475,49 @@ class LandscapeUiTest {
         compose.onNodeWithText("Lyrics").assertIsSelected()
         compose.onNodeWithText("Queue").assertHasClickAction()
         compose.onNodeWithTag("now-playing-queue-pane").assertDoesNotExist()
+    }
+
+    private fun playbackState(): MutableStateFlow<PlaybackState> =
+        ReflectionHelpers.getField(model.playback, "mutableState")
+
+    private fun prepareStartup(saved: SavedPlayback? = null, initialPlayback: PlaybackState = PlaybackState()) {
+        compose.runOnUiThread {
+            ViewModelProvider(compose.activity)[AppUpdater::class.java].viewModelScope.cancel()
+            val account = Account("https://music.example.com", User(id = "listener", name = "Listener"),
+                Session("test-session", "2099-01-01T00:00:00Z"))
+            model.getApplication<MusicApplication>().serverConfig.set(account.origin)
+            model.sessions.playback.setAccount(account)
+            saved?.let { model.sessions.playback.savePlayback(account, it) }
+            ReflectionHelpers.getField<MutableStateFlow<Account?>>(model.sessions, "mutableAccount").value = account
+            playbackState().value = initialPlayback
+        }
+    }
+
+    private fun assertCachedQueueOpensPlayer() {
+        val saved = SavedPlayback(queue = listOf(
+            track.copy(streamUrl = "/api/files/first.mp3"),
+            queued.copy(streamUrl = "/api/files/second.mp3")), index = 1, position = 42_000)
+        prepareStartup(saved)
+        val restoration = StateRestorationTester(compose)
+        restoration.setContent { MusicApp(model) {} }
+        compose.onNodeWithTag("now-playing-pane").assertIsDisplayed()
+        compose.onNodeWithText("Player").assertIsSelected()
+        compose.runOnIdle {
+            playbackState().value = playback.copy(track = saved.queue[saved.index], queue = saved.queue,
+                index = saved.index, position = saved.position)
+        }
+        compose.onNode(hasText("Second song") and SemanticsMatcher.keyIsDefined(SemanticsProperties.Heading))
+            .assertIsDisplayed()
+        compose.onNodeWithContentDescription("Play").assertIsDisplayed()
+        restoration.emulateSavedInstanceStateRestore()
+        compose.onNodeWithTag("now-playing-pane").assertIsDisplayed()
+        compose.onNodeWithContentDescription("Back").performClick()
+        compose.onNodeWithText("TRACKS").assertIsDisplayed()
+        compose.runOnIdle { playbackState().value = playbackState().value.copy(position = 43_000) }
+        compose.onNodeWithTag("now-playing-pane").assertDoesNotExist()
+        restoration.emulateSavedInstanceStateRestore()
+        compose.onNodeWithText("TRACKS").assertIsDisplayed()
+        compose.onNodeWithTag("now-playing-pane").assertDoesNotExist()
     }
 
     private fun assertLibrarySongSelectionOpensNowPlaying() {
