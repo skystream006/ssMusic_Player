@@ -303,6 +303,8 @@ class LandscapeUiTest {
             ReflectionHelpers.getField<MutableStateFlow<PlaybackState>>(model.playback, "mutableState").value = playback
         }
         compose.setContent { MusicApp(model) {} }
+        compose.onNodeWithTag("now-playing-pane").assertIsDisplayed()
+        compose.onNodeWithContentDescription("Back").performClick()
         compose.onNodeWithText("Collection").performClick()
         compose.onNodeWithText("Favorites").performClick()
         compose.onNode(hasText("Evening playlist") and hasAnyAncestor(hasTestTag("library-playlists-pane")))
@@ -501,11 +503,11 @@ class LandscapeUiTest {
         val restoration = StateRestorationTester(compose)
         restoration.setContent { MusicApp(model) {} }
         compose.onNodeWithTag("now-playing-pane").assertIsDisplayed()
-        compose.onNodeWithText("Player").assertIsSelected()
         compose.runOnIdle {
             playbackState().value = playback.copy(track = saved.queue[saved.index], queue = saved.queue,
                 index = saved.index, position = saved.position)
         }
+        compose.onNodeWithText("Player").assertIsSelected()
         compose.onNode(hasText("Second song") and SemanticsMatcher.keyIsDefined(SemanticsProperties.Heading))
             .assertIsDisplayed()
         compose.onNodeWithContentDescription("Play").assertIsDisplayed()
