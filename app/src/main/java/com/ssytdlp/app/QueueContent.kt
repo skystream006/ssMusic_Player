@@ -49,7 +49,12 @@ internal fun QueueContent(state: PlaybackState, library: LibraryState, modifier:
     val pageSize = library.pageSize.items
     val totalPages = ((state.queue.size + pageSize - 1) / pageSize).coerceAtLeast(1)
     val currentPage = page.intValue.coerceIn(1, totalPages)
-    val listState = key(currentPage, pageSize) { rememberLazyListState() }
+    val listState = key(currentPage, pageSize) {
+        val pageStart = (currentPage - 1) * pageSize
+        val initialIndex = if (state.index in pageStart until minOf(pageStart + pageSize, state.queue.size))
+            state.index - pageStart else 0
+        rememberLazyListState(initialFirstVisibleItemIndex = initialIndex)
+    }
     LaunchedEffect(totalPages) { page.intValue = page.intValue.coerceIn(1, totalPages) }
     Column(modifier) {
         if (onSort != null) Row(Modifier.fillMaxWidth().padding(horizontal = 16.dp),

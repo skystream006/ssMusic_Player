@@ -48,7 +48,6 @@ class SongListGesturesTest {
         }
         compose.onNodeWithText("Page 1 / 10").assertIsDisplayed()
         compose.onNodeWithContentDescription("Previous queue page").assertIsNotEnabled()
-        compose.onNodeWithTag("queue-tracks").performScrollToIndex(49)
         compose.onNodeWithTag("queue-row-49").assertIsDisplayed()
         compose.onNodeWithTag("queue-row-50").assertDoesNotExist()
         compose.onNodeWithContentDescription("Next queue page").performClick()
@@ -70,6 +69,7 @@ class SongListGesturesTest {
         compose.onNodeWithTag("queue-row-50").assertIsDisplayed()
         compose.runOnIdle { state.value = state.value.copy(index = 499, track = tracks[499], shuffle = true) }
         compose.onNodeWithText("Page 10 / 10").assertIsDisplayed()
+        compose.onNodeWithTag("queue-row-499").assertIsDisplayed()
         compose.onNodeWithContentDescription("Next queue page").assertIsNotEnabled()
         compose.runOnIdle { state.value = state.value.copy(index = 0, track = tracks[0]) }
         compose.onNodeWithText("Page 1 / 10").assertIsDisplayed()

@@ -199,7 +199,7 @@ private fun RepeatButton(mode: Int, repeat: () -> Unit) {
 fun NowPlayingScreen(model: MusicViewModel, state: PlaybackState, onBack: () -> Unit = {},
     onSettings: () -> Unit = {}, snackbar: SnackbarHostState? = null, download: (String, String) -> Unit) {
     val landscape = isLandscape()
-    var tab by rememberSaveable { mutableIntStateOf(0) }
+    var tab by rememberSaveable { mutableIntStateOf(2) }
     val visibleTab = if (landscape && tab == 2) 0 else tab
     var ratingTrack by remember { mutableStateOf<Track?>(null) }
     val account by model.sessions.account.collectAsStateWithLifecycle()
