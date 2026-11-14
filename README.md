@@ -342,7 +342,9 @@ do not remove songs.
 
 The selected playlist or folder, full queue order, current song and playback position,
 shuffle, and repeat are saved on this device. Reopening after the app has stopped
-opens Now Playing when a saved queue is available, or Library when the queue is empty.
+opens Now Playing's Queue tab when a saved queue is available, scrolled to the
+current song, or Library when the queue is empty. In landscape, the queue remains
+beside the Player and Lyrics tabs and opens at the current song.
 The saved queue is restored paused; press Play to continue from the saved timestamp.
 Position is checkpointed every 30 seconds while playing and on seeks, pauses, queue
 changes, leaving the foreground, and service shutdown. Reopening while background playback continues does

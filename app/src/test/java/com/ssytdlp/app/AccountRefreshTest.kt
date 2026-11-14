@@ -427,6 +427,7 @@ class AccountRefreshTest {
         compose.setContent {
             MusicTheme { NowPlayingScreen(model, model.playback.state.collectAsState().value) { _, _ -> } }
         }
+        compose.onNodeWithText("Player").performClick()
         // Browse another page so the original playback snapshot must use the saved rating cache.
         compose.runOnUiThread { model.page(2) }
         waitFor { !model.library.loading }
@@ -485,6 +486,7 @@ class AccountRefreshTest {
         compose.setContent {
             MusicTheme { NowPlayingScreen(model, model.playback.state.collectAsState().value) { _, _ -> } }
         }
+        compose.onNodeWithText("Player").performClick()
         drainRequests()
         for (code in listOf(403, 409)) {
             status.set(code)

@@ -253,6 +253,7 @@ class NowPlayingScreenTest {
         val visible = mutableStateOf(true)
         val restoration = StateRestorationTester(compose)
         restoration.setContent { MusicTheme { if (visible.value) NowPlayingScreen(model, playback) { _, _ -> } } }
+        compose.onNodeWithText("Player").performClick()
         compose.onNodeWithContentDescription("Audio visualizer").assertIsOff()
         compose.onNodeWithContentDescription("Album artwork unavailable").assertIsDisplayed()
         compose.onNodeWithContentDescription("Visualizer style").assertDoesNotExist()
@@ -283,6 +284,7 @@ class NowPlayingScreenTest {
         compose.runOnIdle { visible.value = false }
         compose.onNodeWithContentDescription("Radial pulse audio visualizer").assertDoesNotExist()
         compose.runOnIdle { visible.value = true }
+        compose.onNodeWithText("Player").performClick()
         compose.onNodeWithContentDescription("Audio visualizer").assertIsOn()
         compose.onNodeWithContentDescription("Radial pulse audio visualizer").assertIsDisplayed()
         compose.onNodeWithText("0:42").assertIsDisplayed()
@@ -317,6 +319,9 @@ class NowPlayingScreenTest {
         val playback = mutableStateOf(PlaybackState(track = track, queue = listOf(track)))
         compose.mainClock.autoAdvance = false
         compose.setContent { MusicTheme { NowPlayingScreen(model, playback.value) { _, _ -> } } }
+        compose.onNodeWithText("Player").performClick()
+        compose.runOnIdle { Snapshot.sendApplyNotifications() }
+        compose.mainClock.advanceTimeByFrame()
         compose.onNodeWithContentDescription("Audio visualizer").performClick()
         fun assertVisualizerState(description: String) {
             compose.runOnIdle { Snapshot.sendApplyNotifications() }
@@ -689,7 +694,7 @@ class NowPlayingScreenTest {
         }
         waitForPopupDismissal()
         compose.onNode(isPopup()).assertDoesNotExist()
-        compose.onNodeWithText("Player").assertIsSelected()
+        compose.onNodeWithText("Queue").assertIsSelected()
         openSongActions()
         compose.runOnUiThread {
             val event = MotionEvent.obtain(0, 0, MotionEvent.ACTION_OUTSIDE, -10f, -10f, 0)
@@ -1092,6 +1097,7 @@ class NowPlayingScreenTest {
         for (location in listOf("Library", "Player", "Dock")) {
             compose.runOnIdle { surface.value = location; Snapshot.sendApplyNotifications() }
             compose.mainClock.advanceTimeByFrame()
+            if (location == "Player") compose.onNodeWithText("Player").performClick()
             for (name in listOf("song.mp3", "[NoVocals]/song.MP3", "song.flac")) {
                 compose.runOnIdle { track.value = track.value.copy(name = name); Snapshot.sendApplyNotifications() }
                 compose.mainClock.advanceTimeByFrame()
@@ -1461,11 +1467,13 @@ class NowPlayingScreenTest {
         val state = PlaybackState(track = track, queue = listOf(track), duration = 180_000)
         val restoration = StateRestorationTester(compose)
         restoration.setContent { MusicTheme { NowPlayingScreen(model, state) { _, _ -> } } }
-        compose.onNodeWithText("Player").assertIsSelected()
+        compose.onNodeWithText("Queue").assertIsSelected()
         compose.onNodeWithContentDescription("Playback position").assertIsDisplayed()
         compose.onNodeWithContentDescription("Play").assertIsDisplayed()
         compose.onNodeWithContentDescription("Close player").assertDoesNotExist()
         compose.onNodeWithText("Lyrics").performClick().assertIsSelected()
+        restoration.emulateSavedInstanceStateRestore()
+        compose.onNodeWithText("Lyrics").assertIsSelected()
         compose.onNodeWithContentDescription("Playback position").assertIsDisplayed()
         compose.onNodeWithText("Queue").performClick().assertIsSelected()
         compose.onNode(hasText("Blue hour") and !isSongHeading).assertIsDisplayed()
@@ -1630,6 +1638,7 @@ class NowPlayingScreenTest {
             position = 42_000, duration = 60_000))
         val library = ReflectionHelpers.getField<MutableState<LibraryState>>(model, "library\$delegate")
         compose.setContent { MusicTheme { NowPlayingScreen(model, state.value) { _, _ -> } } }
+        compose.onNodeWithText("Player").performClick()
         val rating = compose.onNodeWithContentDescription("Rating: 4 out of 5")
             .assertIsDisplayed().assertHasNoClickAction().getUnclippedBoundsInRoot()
         val progress = compose.onNodeWithContentDescription("Playback position").getUnclippedBoundsInRoot()
@@ -1682,6 +1691,7 @@ class NowPlayingScreenTest {
         val audio = Track("preview", "song.mp3", title = "Song", rating = 3)
         val state = mutableStateOf(PlaybackState(track = video, queue = listOf(video, audio), duration = 60_000))
         compose.setContent { MusicTheme { NowPlayingScreen(model, state.value) { _, _ -> } } }
+        compose.onNodeWithText("Player").performClick()
         compose.onAllNodes(hasContentDescription("Rating:", substring = true)).assertCountEquals(0)
         (1..5).forEach { compose.onNodeWithContentDescription("$it stars").assertDoesNotExist() }
         compose.onNodeWithContentDescription("Play").assertIsDisplayed()
@@ -1746,6 +1756,7 @@ class NowPlayingScreenTest {
         val busy = ReflectionHelpers.getField<MutableState<Boolean>>(model, "busy\$delegate")
         val requests = metadataResponses { 500 to "{}" }
         compose.setContent { MusicTheme { NowPlayingScreen(model, PlaybackState(track = track.value)) { _, _ -> } } }
+        compose.onNodeWithText("Player").performClick()
         listOf(Triple(User("reader", role = "Shared"), "song.flac", false),
             Triple(User("reader", role = "SHARED"), "video.mp4", true),
             Triple(User("owner"), "song.mp3", false),
@@ -2232,6 +2243,7 @@ class NowPlayingScreenTest {
         val track = Track(jobId = "source", name = "song.mp3", artist = "Northbound")
         val library = ReflectionHelpers.getField<MutableState<LibraryState>>(model, "library\$delegate")
         compose.setContent { MusicTheme { NowPlayingScreen(model, PlaybackState(track = track)) { _, _ -> } } }
+        compose.onNodeWithText("Player").performClick()
         compose.onNodeWithText("Northbound").performScrollTo().assertIsDisplayed()
         compose.onNodeWithText("Not transcribed").assertDoesNotExist()
         compose.onNodeWithContentDescription("Transcription status unknown", substring = true).assertDoesNotExist()
@@ -2346,6 +2358,7 @@ class NowPlayingScreenTest {
                 swipe(Offset(width * 0.1f, y), Offset(width * 0.9f, y))
             }
         }
+        compose.onNodeWithText("Player").performClick()
         swipeBothWaysAt(compose.onNodeWithContentDescription("Album artwork unavailable"))
         compose.runOnIdle { assertEquals(0, unhandledSwipes) }
         compose.onNodeWithText("SYLT Lyrics").performClick()
@@ -2368,6 +2381,7 @@ class NowPlayingScreenTest {
                 }
             }
         }
+        compose.onNodeWithText("Player").performClick()
         val artwork = compose.onNodeWithContentDescription("Album artwork unavailable")
         val original = artwork.fetchSemanticsNode().boundsInRoot
         val title = compose.onNode(hasText("Blue hour") and !isSongHeading).fetchSemanticsNode().boundsInRoot
@@ -2407,6 +2421,7 @@ class NowPlayingScreenTest {
                 Box(Modifier.fillMaxSize().testTag("page")) { NowPlayingScreen(model, state.value) { _, _ -> } }
             }
         }
+        compose.onNodeWithText("Player").performClick()
         val artwork = compose.onNodeWithContentDescription("Album artwork unavailable")
         val original = artwork.fetchSemanticsNode().boundsInRoot
         compose.mainClock.autoAdvance = false

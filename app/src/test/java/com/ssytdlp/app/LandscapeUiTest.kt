@@ -108,6 +108,16 @@ class LandscapeUiTest {
         assertCachedQueueOpensPlayer()
     }
 
+    @Test fun liveQueueOpensScrolledToCurrentSongInLandscape() {
+        assertLiveQueueOpensAtCurrentSong()
+    }
+
+    @Test
+    @Config(qualifiers = "w360dp-h800dp-port")
+    fun liveQueueOpensScrolledToCurrentSongInPortrait() {
+        assertLiveQueueOpensAtCurrentSong()
+    }
+
     @Test fun emptyCachedQueueOpensLibraryAndLaterQueueChangesDoNotOpenPlayer() {
         prepareStartup(SavedPlayback())
         compose.setContent { MusicApp(model) {} }
@@ -496,9 +506,9 @@ class LandscapeUiTest {
     }
 
     private fun assertCachedQueueOpensPlayer() {
-        val saved = SavedPlayback(queue = listOf(
-            track.copy(streamUrl = "/api/files/first.mp3"),
-            queued.copy(streamUrl = "/api/files/second.mp3")), index = 1, position = 42_000)
+        val saved = SavedPlayback(queue = List(130) {
+            track.copy(name = "$it.mp3", title = "Song $it", streamUrl = "/api/files/$it.mp3")
+        }, index = 87, position = 42_000)
         prepareStartup(saved)
         val restoration = StateRestorationTester(compose)
         restoration.setContent { MusicApp(model) {} }
@@ -507,12 +517,15 @@ class LandscapeUiTest {
             playbackState().value = playback.copy(track = saved.queue[saved.index], queue = saved.queue,
                 index = saved.index, position = saved.position)
         }
-        compose.onNodeWithText("Player").assertIsSelected()
-        compose.onNode(hasText("Second song") and SemanticsMatcher.keyIsDefined(SemanticsProperties.Heading))
+        assertInitialQueueTab()
+        compose.onNodeWithText("Page 2 / 3").assertIsDisplayed()
+        compose.onNodeWithTag("queue-row-87").assertIsDisplayed()
+        compose.onNode(hasText("Song 87") and SemanticsMatcher.keyIsDefined(SemanticsProperties.Heading))
             .assertIsDisplayed()
         compose.onNodeWithContentDescription("Play").assertIsDisplayed()
         restoration.emulateSavedInstanceStateRestore()
         compose.onNodeWithTag("now-playing-pane").assertIsDisplayed()
+        compose.onNodeWithTag("queue-row-87").assertIsDisplayed()
         compose.onNodeWithContentDescription("Back").performClick()
         compose.onNodeWithText("TRACKS").assertIsDisplayed()
         compose.runOnIdle { playbackState().value = playbackState().value.copy(position = 43_000) }
@@ -520,6 +533,25 @@ class LandscapeUiTest {
         restoration.emulateSavedInstanceStateRestore()
         compose.onNodeWithText("TRACKS").assertIsDisplayed()
         compose.onNodeWithTag("now-playing-pane").assertDoesNotExist()
+    }
+
+    private fun assertInitialQueueTab() {
+        val landscape = compose.activity.resources.configuration.orientation == Configuration.ORIENTATION_LANDSCAPE
+        compose.onNodeWithText(if (landscape) "Player" else "Queue").assertIsSelected()
+    }
+
+    private fun assertLiveQueueOpensAtCurrentSong() {
+        compose.mainClock.autoAdvance = false
+        val tracks = List(130) { track.copy(name = "$it.mp3", title = "Song $it") }
+        val live = playback.copy(track = tracks[87], queue = tracks, index = 87,
+            playing = true, position = 42_000)
+        prepareStartup(initialPlayback = live)
+        compose.setContent { MusicApp(model) {} }
+        compose.mainClock.advanceTimeBy(500)
+        assertInitialQueueTab()
+        compose.onNodeWithText("Page 2 / 3").assertIsDisplayed()
+        compose.onNodeWithTag("queue-row-87").assertIsDisplayed()
+        compose.runOnIdle { assertEquals(live, playbackState().value) }
     }
 
     private fun assertLibrarySongSelectionOpensNowPlaying() {
@@ -626,7 +658,7 @@ class LandscapeUiTest {
         assertLibrary()
         compose.onNodeWithText("First song").performClick()
         compose.onNodeWithTag("now-playing-pane").assertIsDisplayed()
-        compose.onNodeWithText("Player").assertIsSelected()
+        assertInitialQueueTab()
         assertNowPlayingTopBar()
         assertNoBottomNavigation()
         compose.onNodeWithContentDescription("Settings").performClick()
