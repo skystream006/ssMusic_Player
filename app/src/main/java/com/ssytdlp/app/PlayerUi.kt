@@ -283,6 +283,7 @@ fun NowPlayingScreen(model: MusicViewModel, state: PlaybackState, onBack: () -> 
                                 artworkOffset = { artworkOffset }, transcription = model.library.transcription(state.track),
                                 display = model.playerDisplay, onDisplay = model::choosePlayerDisplay,
                                 songVideo = model.library.songVideo(state.track), api = model.api, account = account,
+                                audioCache = model.sessions.audioCache,
                                 visualizerStyle = model.audioVisualizerStyle, onVisualizerStyle = model::chooseAudioVisualizerStyle,
                                 rating = if (landscape) rating else ({})) {
                                 model.playback.play(listOfNotNull(state.track?.noVocalsVersion))
@@ -487,7 +488,8 @@ internal fun PlayerArtwork(state: PlaybackState, metadata: SongMetadata?, modifi
     controller: Player? = null, artworkOffset: () -> Float = { 0f },
     transcription: Transcription? = null, display: PlayerDisplay = PlayerDisplay.ALBUM_ART,
     onDisplay: (PlayerDisplay) -> Unit = {}, songVideo: SongVideo = SongVideo(state.track?.videoUrl, state.track?.linkedVideo),
-    api: ServerApi? = null, account: Account? = null, visualizerStyle: AudioVisualizerStyle = AudioVisualizerStyle.WAVEFORM,
+    api: ServerApi? = null, account: Account? = null, audioCache: AudioCache? = null,
+    visualizerStyle: AudioVisualizerStyle = AudioVisualizerStyle.WAVEFORM,
     onVisualizerStyle: (AudioVisualizerStyle) -> Unit = {}, rating: @Composable () -> Unit = {},
     onInstrumental: () -> Unit = {}) {
     val track = state.track
@@ -545,7 +547,8 @@ internal fun PlayerArtwork(state: PlaybackState, metadata: SongMetadata?, modifi
         else {
             val artworkModifier = visualModifier.absoluteOffset { IntOffset(artworkOffset().roundToInt(), 0) }
             if (visibleDisplay == PlayerDisplay.VIDEO && songVideo.available) {
-                SongVideoPlayer(state, api, account, requireNotNull(songVideo.linkedVideo?.streamUrl), controller, artworkModifier)
+                SongVideoPlayer(state, api, account, requireNotNull(songVideo.linkedVideo?.streamUrl), controller,
+                    requireNotNull(audioCache), artworkModifier)
             } else if (visibleDisplay == PlayerDisplay.AUDIO_VISUALIZER && track != null) key(track.key) {
                 PlaybackAudioVisualizer(state.playing && !state.buffering && state.error == null,
                     visualizerStyle, artworkModifier)

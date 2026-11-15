@@ -28,7 +28,6 @@ import androidx.media3.common.MediaItem
 import androidx.media3.common.PlaybackException
 import androidx.media3.common.Player
 import androidx.media3.common.util.UnstableApi
-import androidx.media3.datasource.okhttp.OkHttpDataSource
 import androidx.media3.exoplayer.ExoPlayer
 import androidx.media3.exoplayer.source.DefaultMediaSourceFactory
 import androidx.media3.ui.PlayerView
@@ -66,11 +65,22 @@ internal fun synchronizeSongVideo(video: Player, state: PlaybackState, audio: Pl
 }
 
 @androidx.annotation.OptIn(UnstableApi::class)
-internal fun createSongVideoPlayer(context: Context, api: ServerApi, account: Account, streamUrl: String): ExoPlayer {
+internal fun createSongVideoPlayer(context: Context, cache: AudioCache.Handle, account: Account, streamUrl: String): ExoPlayer {
     val url = ServerResource.resolve(account.origin, streamUrl)
     return ExoPlayer.Builder(context)
-        .setMediaSourceFactory(DefaultMediaSourceFactory(OkHttpDataSource.Factory(api.playbackCalls(account))))
+        .setMediaSourceFactory(DefaultMediaSourceFactory(cache.factory))
         .build().apply {
+            val video = this
+            addListener(object : Player.Listener {
+                override fun onIsPlayingChanged(isPlaying: Boolean) {
+                    if (isPlaying) cache.cacheCurrent(video.currentMediaItem?.localConfiguration?.uri, retry = true)
+                }
+                override fun onEvents(player: Player, events: Player.Events) {
+                    if (player.playWhenReady && player.playbackState != Player.STATE_IDLE) {
+                        cache.cacheCurrent(player.currentMediaItem?.localConfiguration?.uri)
+                    }
+                }
+            })
             volume = 0f
             trackSelectionParameters = trackSelectionParameters.buildUpon()
                 .setTrackTypeDisabled(C.TRACK_TYPE_AUDIO, true).build()
@@ -81,7 +91,7 @@ internal fun createSongVideoPlayer(context: Context, api: ServerApi, account: Ac
 @androidx.annotation.OptIn(UnstableApi::class)
 @Composable
 internal fun SongVideoPlayer(state: PlaybackState, api: ServerApi?, account: Account?, streamUrl: String,
-    audio: Player?, modifier: Modifier = Modifier) {
+    audio: Player?, cache: AudioCache, modifier: Modifier = Modifier) {
     if (api == null || account == null) {
         Box(modifier, contentAlignment = Alignment.Center) { Text("Sign in to watch the song video.") }
         return
@@ -96,14 +106,16 @@ internal fun SongVideoPlayer(state: PlaybackState, api: ServerApi?, account: Acc
     var error by remember(api, owner, trackKey, streamUrl) { mutableStateOf<String?>(null) }
     var buffering by remember(api, owner, trackKey, streamUrl) { mutableStateOf(true) }
     var attempt by remember(api, owner, trackKey, streamUrl) { mutableIntStateOf(0) }
-    DisposableEffect(context, api, owner, trackKey, streamUrl, audio, resumed, attempt) {
+    DisposableEffect(context, api, owner, trackKey, streamUrl, audio, cache, resumed, attempt) {
         if (!resumed) onDispose {}
         else {
             error = null
             buffering = true
+            val videoCache = cache.acquire(owner, api.playbackCalls(owner))
             val instance = try {
-                createSongVideoPlayer(context, api, owner, streamUrl)
+                createSongVideoPlayer(context, videoCache, owner, streamUrl)
             } catch (failure: IllegalArgumentException) {
+                videoCache.close()
                 DebugLog.event(DebugEvent.PLAYBACK_FAILURE, error = failure)
                 error = "The server returned an invalid song video stream. Song audio is unchanged."
                 null
@@ -137,7 +149,11 @@ internal fun SongVideoPlayer(state: PlaybackState, api: ServerApi?, account: Acc
                 audio?.removeListener(audioListener)
                 instance?.removeListener(videoListener)
                 player = null
-                instance?.release()
+                try {
+                    instance?.release()
+                } finally {
+                    videoCache.close()
+                }
             }
         }
     }

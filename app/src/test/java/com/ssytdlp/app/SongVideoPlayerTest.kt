@@ -18,17 +18,27 @@ import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.media3.common.C
 import androidx.media3.common.Player
 import androidx.media3.common.util.UnstableApi
+import androidx.media3.datasource.DataSpec
+import androidx.media3.datasource.cache.SimpleCache
 import androidx.media3.exoplayer.ExoPlayer
 import androidx.media3.ui.PlayerView
 import com.ssytdlp.app.core.Account
 import com.ssytdlp.app.core.Session
 import com.ssytdlp.app.core.Track
 import com.ssytdlp.app.core.User
+import java.io.ByteArrayOutputStream
+import java.io.File
+import java.nio.ByteBuffer
+import java.nio.ByteOrder
+import java.util.concurrent.atomic.AtomicInteger
+import kotlinx.coroutines.runBlocking
 import okhttp3.OkHttpClient
 import okhttp3.Protocol
 import okhttp3.Response
 import okhttp3.ResponseBody.Companion.toResponseBody
+import org.junit.After
 import org.junit.Assert.*
+import org.junit.Before
 import org.junit.Rule
 import org.junit.Test
 import org.junit.runner.RunWith
@@ -48,10 +58,23 @@ class SongVideoPlayerTest {
     }.build())
     private val track = Track("source", "song.mp3", streamUrl = "/api/jobs/source/stream/song.mp3")
     private val stream = "/api/jobs/source/video/song.mp3?v=2"
+    private lateinit var cache: AudioCache
+    private val leases = mutableListOf<AudioCache.Handle>()
+
+    @Before fun setup() {
+        cache = AudioCache(compose.activity).apply { setAccount(account) }
+    }
+
+    @After fun cleanup() {
+        leases.forEach { it.close() }
+        cache.setAccount(null)
+    }
+
+    private fun lease() = cache.acquire(account, api.playbackCalls(account)).also { leases.add(it) }
 
     @Test fun videoIsMutedAndTracksPauseBufferingSpeedAndSeeksWithinTheDriftThreshold() {
         compose.runOnUiThread {
-            val video = createSongVideoPlayer(compose.activity, api, account, stream)
+            val video = createSongVideoPlayer(compose.activity, lease(), account, stream)
             try {
                 assertEquals(0f, video.volume)
                 assertTrue(video.trackSelectionParameters.disabledTrackTypes.contains(C.TRACK_TYPE_AUDIO))
@@ -83,7 +106,7 @@ class SongVideoPlayerTest {
     @Test fun synchronizationReadsTheLiveAudioClockAndNeverReplacesOrRestartsTheQueue() {
         compose.runOnUiThread {
             val audio = ExoPlayer.Builder(compose.activity).build()
-            val video = createSongVideoPlayer(compose.activity, api, account, stream)
+            val video = createSongVideoPlayer(compose.activity, lease(), account, stream)
             val next = track.copy(name = "next.mp3", streamUrl = "/api/jobs/source/stream/next.mp3")
             try {
                 audio.setMediaItems(listOf(track.toMediaItem(api), next.toMediaItem(api)))
@@ -121,7 +144,7 @@ class SongVideoPlayerTest {
         compose.setContent {
             CompositionLocalProvider(LocalLifecycleOwner provides owner) {
                 MaterialTheme {
-                    if (visible) SongVideoPlayer(PlaybackState(track = track), api, currentAccount, stream, null,
+                    if (visible) SongVideoPlayer(PlaybackState(track = track), api, currentAccount, stream, null, cache,
                         Modifier.size(300.dp, 180.dp))
                 }
             }
@@ -132,7 +155,10 @@ class SongVideoPlayerTest {
         compose.runOnIdle { owner.registry.currentState = Lifecycle.State.RESUMED }
         val resumed = compose.runOnIdle { playerView().player as ExoPlayer }
         assertNotSame(first, resumed)
-        compose.runOnIdle { currentAccount = account.copy(user = User("other")) }
+        compose.runOnIdle {
+            currentAccount = account.copy(user = User("other"))
+            cache.setAccount(currentAccount)
+        }
         compose.runOnIdle { assertTrue(resumed.isReleased) }
         val replacement = compose.runOnIdle { playerView().player as ExoPlayer }
         compose.runOnIdle { visible = false }
@@ -144,10 +170,71 @@ class SongVideoPlayerTest {
         compose.runOnUiThread {
             listOf("https://other.example/api/video", "http://music.example/api/video", "/app-login").forEach {
                 assertThrows(IllegalArgumentException::class.java) {
-                    createSongVideoPlayer(compose.activity, api, account, it)
+                    createSongVideoPlayer(compose.activity, lease(), account, it)
                 }
             }
         }
+    }
+
+    @Test fun linkedVideoFillsTheSharedCacheAndReopensWithoutNetworkRequests() {
+        val samples = 8_000
+        val bytes = ByteBuffer.allocate(44 + samples * 2).order(ByteOrder.LITTLE_ENDIAN).apply {
+            put("RIFF".toByteArray()); putInt(capacity() - 8); put("WAVEfmt ".toByteArray())
+            putInt(16); putShort(1); putShort(1); putInt(8_000); putInt(16_000)
+            putShort(2); putShort(16); put("data".toByteArray()); putInt(samples * 2)
+        }.array()
+        val requests = AtomicInteger()
+        val videoApi = ServerApi({ account }, {}, OkHttpClient.Builder().addInterceptor { chain ->
+            requests.incrementAndGet()
+            val start = chain.request().header("Range")?.removePrefix("bytes=")?.substringBefore('-')?.toInt() ?: 0
+            Response.Builder().request(chain.request()).protocol(Protocol.HTTP_1_1)
+                .code(if (start == 0) 200 else 206).message("Video")
+                .header("Content-Type", "audio/wav")
+                .apply { if (start > 0) header("Content-Range", "bytes $start-${bytes.lastIndex}/${bytes.size}") }
+                .body(bytes.copyOfRange(start, bytes.size).toResponseBody()).build()
+        }.build())
+        var visible by mutableStateOf(true)
+        compose.setContent {
+            MaterialTheme {
+                if (visible) SongVideoPlayer(PlaybackState(track = track, playing = true), videoApi, account,
+                    stream, null, cache, Modifier.size(300.dp, 180.dp))
+            }
+        }
+        compose.waitUntil(10_000) { runBlocking { cache.usedBytes() } == bytes.size.toLong() }
+        compose.runOnIdle { visible = false }
+        compose.onNodeWithTag("linked-song-video").assertDoesNotExist()
+        compose.waitUntil(5_000) {
+            File(compose.activity.noBackupFilesDir, "audio").listFiles().orEmpty()
+                .all { !SimpleCache.isCacheFolderLocked(it) }
+        }
+        val downloads = requests.get()
+        assertTrue(downloads > 0)
+        cache = AudioCache(compose.activity).apply { setAccount(account) }
+        val shared = lease()
+        val source = shared.factory.createDataSource()
+        try {
+            source.open(DataSpec.Builder().setUri(account.origin + stream).build())
+            val cached = ByteArrayOutputStream()
+            val buffer = ByteArray(1024)
+            while (true) {
+                val count = source.read(buffer, 0, buffer.size)
+                if (count == C.RESULT_END_OF_INPUT) break
+                cached.write(buffer, 0, count)
+            }
+            assertArrayEquals(bytes, cached.toByteArray())
+        } finally {
+            source.close()
+            shared.close()
+        }
+        compose.runOnIdle { visible = true }
+        compose.waitUntil(10_000) {
+            compose.runOnIdle {
+                val video = playerView().player
+                video?.playbackState == Player.STATE_READY || video?.playbackState == Player.STATE_ENDED
+            }
+        }
+        compose.runOnIdle { assertNull(playerView().player!!.playerError) }
+        assertEquals(downloads, requests.get())
     }
 
     private fun playerView(): PlayerView =
