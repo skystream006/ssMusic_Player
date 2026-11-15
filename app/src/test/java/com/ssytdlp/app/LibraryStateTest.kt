@@ -5,6 +5,8 @@ import com.ssytdlp.app.core.FilePrivacy
 import com.ssytdlp.app.core.Library
 import com.ssytdlp.app.core.LibraryEntry
 import com.ssytdlp.app.core.LibraryPlaylist
+import com.ssytdlp.app.core.LinkedVideo
+import com.ssytdlp.app.core.SongVideo
 import com.ssytdlp.app.core.SongMetadata
 import com.ssytdlp.app.core.Track
 import com.ssytdlp.app.core.TrackPage
@@ -17,6 +19,25 @@ class LibraryStateTest {
     private val track = Track(jobId = "source", name = "folder/song.mp3")
     private val sent = Transcription(status = "sent")
     private val done = Transcription(status = "transcribed", lyricsIncluded = true)
+
+    @Test fun `linked videos refresh stale queue snapshots and clear removed sources across pages`() {
+        val source = "https://www.youtube.com/watch?v=abcdefghijk"
+        val queued = track.copy(videoUrl = source, linkedVideo = LinkedVideo(source, "queued"))
+        val ready = SongVideo(source, LinkedVideo(source, "completed", streamUrl = "/api/jobs/source/video/song.mp3?v=2"))
+        val initial = LibraryState().withAllTracks(TrackPage(files = listOf(queued)))
+        val saved = initial.withSongVideo(queued, ready)
+        assertTrue(saved.songVideo(queued).available)
+        assertEquals(ready.linkedVideo, saved.tracks.files.single().linkedVideo)
+        val otherPage = saved.withTrackPage(TrackPage(files = listOf(Track("other", track.name))))
+        assertEquals(ready, otherPage.songVideo(queued))
+        assertFalse(otherPage.songVideo(Track("other", track.name)).available)
+        val refreshed = otherPage.withSongVideos(listOf(track.copy(jobId = "", videoUrl = source,
+            linkedVideo = ready.linkedVideo)), track.jobId)
+        assertEquals(ready, refreshed.songVideo(queued))
+        assertFalse(refreshed.withSongVideos(listOf(track)).songVideo(queued).available)
+        assertNull(refreshed.withTrackPage(TrackPage(files = listOf(track))).songVideo(queued).videoUrl)
+        assertFalse(refreshed.withReplacedFile(track).songVideo(queued).available)
+    }
 
     @Test fun `all supported sizes paginate complete sorted results without dropping or repeating tracks`() {
         val files = (0 until 1205).map {

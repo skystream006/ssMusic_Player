@@ -1,0 +1,160 @@
+package com.ssytdlp.app
+
+import android.content.Context
+import androidx.compose.foundation.background
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
+import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
+import androidx.compose.runtime.*
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.unit.dp
+import androidx.compose.ui.viewinterop.AndroidView
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.compose.LocalLifecycleOwner
+import androidx.lifecycle.compose.currentStateAsState
+import androidx.media3.common.C
+import androidx.media3.common.MediaItem
+import androidx.media3.common.PlaybackException
+import androidx.media3.common.Player
+import androidx.media3.common.util.UnstableApi
+import androidx.media3.datasource.okhttp.OkHttpDataSource
+import androidx.media3.exoplayer.ExoPlayer
+import androidx.media3.exoplayer.source.DefaultMediaSourceFactory
+import androidx.media3.ui.PlayerView
+import com.ssytdlp.app.core.Account
+import com.ssytdlp.app.core.ServerResource
+import kotlin.math.abs
+
+internal enum class PlayerDisplay(val label: String) {
+    ALBUM_ART("Album art"), AUDIO_VISUALIZER("Audio visualizer"), VIDEO("Song video");
+
+    companion object {
+        fun fromPreference(value: String?, legacyVisualizer: Boolean = false): PlayerDisplay =
+            entries.firstOrNull { it.name == value }
+                ?: if (legacyVisualizer) AUDIO_VISUALIZER else ALBUM_ART
+    }
+}
+
+internal fun synchronizeSongVideo(video: Player, state: PlaybackState, audio: Player? = null, forceSeek: Boolean = false) {
+    video.volume = 0f
+    if (video.playerError != null || audio != null && audio.currentMediaItem?.asTrack()?.key != state.track?.key) {
+        video.pause()
+        return
+    }
+    val position = (audio?.currentPosition ?: state.position).coerceAtLeast(0)
+    val playing = audio?.isPlaying ?: state.playing
+    val buffering = audio?.let { it.playbackState == Player.STATE_BUFFERING } ?: state.buffering
+    val speed = audio?.playbackParameters?.speed ?: state.speed
+    if (video.playbackParameters.speed != speed) video.setPlaybackSpeed(speed)
+    val end = video.duration.takeIf { it > 0 } ?: Long.MAX_VALUE
+    val target = position.coerceAtMost(end)
+    if (video.currentPosition != target && (forceSeek || !playing || abs(video.currentPosition - target) > 200)) {
+        video.seekTo(target)
+    }
+    video.playWhenReady = playing && !buffering && state.error == null && position < end
+}
+
+@androidx.annotation.OptIn(UnstableApi::class)
+internal fun createSongVideoPlayer(context: Context, api: ServerApi, account: Account, streamUrl: String): ExoPlayer {
+    val url = ServerResource.resolve(account.origin, streamUrl)
+    return ExoPlayer.Builder(context)
+        .setMediaSourceFactory(DefaultMediaSourceFactory(OkHttpDataSource.Factory(api.playbackCalls(account))))
+        .build().apply {
+            volume = 0f
+            trackSelectionParameters = trackSelectionParameters.buildUpon()
+                .setTrackTypeDisabled(C.TRACK_TYPE_AUDIO, true).build()
+            setMediaItem(MediaItem.fromUri(url))
+        }
+}
+
+@androidx.annotation.OptIn(UnstableApi::class)
+@Composable
+internal fun SongVideoPlayer(state: PlaybackState, api: ServerApi?, account: Account?, streamUrl: String,
+    audio: Player?, modifier: Modifier = Modifier) {
+    if (api == null || account == null) {
+        Box(modifier, contentAlignment = Alignment.Center) { Text("Sign in to watch the song video.") }
+        return
+    }
+    val context = LocalContext.current
+    val lifecycle by LocalLifecycleOwner.current.lifecycle.currentStateAsState()
+    val resumed = lifecycle.isAtLeast(Lifecycle.State.RESUMED)
+    val owner = remember(account.origin, account.user.id, account.session) { account }
+    val trackKey = state.track?.key
+    val latestState by rememberUpdatedState(state)
+    var player by remember(api, owner, trackKey, streamUrl) { mutableStateOf<ExoPlayer?>(null) }
+    var error by remember(api, owner, trackKey, streamUrl) { mutableStateOf<String?>(null) }
+    var buffering by remember(api, owner, trackKey, streamUrl) { mutableStateOf(true) }
+    var attempt by remember(api, owner, trackKey, streamUrl) { mutableIntStateOf(0) }
+    DisposableEffect(context, api, owner, trackKey, streamUrl, audio, resumed, attempt) {
+        if (!resumed) onDispose {}
+        else {
+            error = null
+            buffering = true
+            val instance = try {
+                createSongVideoPlayer(context, api, owner, streamUrl)
+            } catch (failure: IllegalArgumentException) {
+                DebugLog.event(DebugEvent.PLAYBACK_FAILURE, error = failure)
+                error = "The server returned an invalid song video stream. Song audio is unchanged."
+                null
+            }
+            val audioListener = object : Player.Listener {
+                override fun onEvents(player: Player, events: Player.Events) {
+                    instance?.let {
+                        synchronizeSongVideo(it, latestState, audio, events.contains(Player.EVENT_POSITION_DISCONTINUITY))
+                    }
+                }
+            }
+            val videoListener = object : Player.Listener {
+                override fun onPlaybackStateChanged(playbackState: Int) {
+                    buffering = playbackState == Player.STATE_BUFFERING
+                    if (playbackState == Player.STATE_READY) instance?.let { synchronizeSongVideo(it, latestState, audio) }
+                }
+                override fun onPlayerError(failure: PlaybackException) {
+                    DebugLog.event(DebugEvent.PLAYBACK_FAILURE, status = failure.errorCode, error = failure)
+                    error = "The song video could not be played. Song audio is unchanged."
+                    instance?.pause()
+                }
+            }
+            player = instance
+            instance?.let {
+                it.addListener(videoListener)
+                audio?.addListener(audioListener)
+                synchronizeSongVideo(it, latestState, audio, forceSeek = true)
+                it.prepare()
+            }
+            onDispose {
+                audio?.removeListener(audioListener)
+                instance?.removeListener(videoListener)
+                player = null
+                instance?.release()
+            }
+        }
+    }
+    SideEffect { player?.let { synchronizeSongVideo(it, state, audio) } }
+    Box(modifier.background(Color.Black).testTag("linked-song-video")
+        .semantics { contentDescription = "Video for ${state.track?.displayTitle.orEmpty()}" },
+        contentAlignment = Alignment.Center) {
+        AndroidView(factory = { PlayerView(it).apply { useController = false } },
+            update = { it.player = player }, onRelease = { it.player = null },
+            modifier = Modifier.matchParentSize())
+        if (resumed && buffering && error == null) CircularProgressIndicator(Modifier.size(32.dp))
+        error?.let {
+            Column(Modifier.background(MaterialTheme.colorScheme.surface).padding(12.dp),
+                horizontalAlignment = Alignment.CenterHorizontally) {
+                Text(it, color = MaterialTheme.colorScheme.error)
+                TextButton(onClick = { attempt++ }) { Text("Retry video") }
+            }
+        }
+    }
+}

@@ -6,6 +6,7 @@ import com.ssytdlp.app.core.ApiJson
 import com.ssytdlp.app.core.Job
 import com.ssytdlp.app.core.Library
 import com.ssytdlp.app.core.Session
+import com.ssytdlp.app.core.SongVideo
 import com.ssytdlp.app.core.Track
 import com.ssytdlp.app.core.TrackPage
 import com.ssytdlp.app.core.TrackSort
@@ -36,6 +37,27 @@ import org.junit.Before
 import org.junit.Test
 
 class ServerApiTest {
+    @Test fun `song video status encodes nested songs and shared owners and retains scoped streams`() = runBlocking {
+        val track = Track("job /?#", "[NoVocals]/a & b.mp3", libraryOwnerId = "owner /?&")
+        server.enqueue(MockResponse().setBody("""{"videoUrl":"https://www.youtube.com/watch?v=abcdefghijk",
+            "linkedVideo":{"sourceUrl":"https://www.youtube.com/watch?v=abcdefghijk","status":"completed",
+            "streamUrl":"/api/jobs/job/video/song.mp3?v=2&userId=owner"}}"""))
+        val result = ApiJson.decodeFromJsonElement<SongVideo>(api.request(songVideoPath(track)))
+        val request = server.takeRequest(2, TimeUnit.SECONDS)!!
+        assertEquals(listOf("api", "jobs", track.jobId, "files", track.name, "video"), request.requestUrl!!.pathSegments)
+        assertEquals(track.libraryOwnerId, request.requestUrl!!.queryParameter("userId"))
+        assertEquals(listOf("Bearer", token).joinToString(" "), request.getHeader("Authorization"))
+        assertTrue(result.available)
+        assertEquals("/api/jobs/job/video/song.mp3?v=2&userId=owner", result.linkedVideo!!.streamUrl)
+        val owner = account!!
+        val calls = api.playbackCalls(owner)
+        account = owner.copy(user = User("other"))
+        assertThrows(IOException::class.java) {
+            calls.newCall(Request.Builder().url(api.url(result.linkedVideo!!.streamUrl!!)).build()).execute()
+        }
+        assertEquals(1, server.requestCount)
+    }
+
     @Test fun `playlist links encode the media identity and optional shared library owner`() = runBlocking {
         val track = com.ssytdlp.app.core.Track("job /?#", "[NoVocals]/a & b.mp3", libraryOwnerId = "owner /?&")
         for (file in listOf(track, track.copy(libraryOwnerId = null))) {

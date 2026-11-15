@@ -186,7 +186,7 @@ queue, playlist, folder, and download-job menus.
 | --- | --- |
 | Library | All Music, server-side search, configurable local pages (50 tracks by default) with name/rating sorting across the complete selection, folder navigation, playlist counts, linked tracks, cached 192px AVIF audio/video thumbnails in Library and Queue (including Android 8+, with legacy JPEG/PNG/WebP support) |
 | Organization | Create/rename/remove/move folders, create empty playlists, move playlists, add/move/remove song memberships, drag to reorder songs within an unfiltered playlist page |
-| Playback | Authenticated audio/video streams, persistent mini-player, full player, seek, next/previous, queue editing, shuffle, repeat, instrumental companions |
+| Playback | Authenticated audio/video streams, song-linked video downloads, album art/visualizer/video display selection, persistent mini-player, full player, seek, next/previous, queue editing, shuffle, repeat, instrumental companions |
 | Lyrics and tags | Album artwork, expandable full-screen SYLT/USLT lyrics, timestamp-highlighted seekable SYLT lyrics, plain USLT lyrics, editing both lyric formats and MP3 tags/ratings, transcription requests and locking |
 | Jobs | Add audio/video YouTube jobs, metadata-only jobs, status polling, search, owner filter, rerun, rename, delete, contributors, add existing files to playlists, save ZIPs |
 | Import | Android document picker for media files or iTunes XML + ZIP; server-local XML + ZIP imports; server upload limits enforced while streaming |
@@ -226,6 +226,24 @@ Queue, Now Playing, or the mini-player to see its playlist memberships. Tap a
 playlist to open it on the server in your browser. Shared-library ownership and
 visibility are resolved by the server; this requires
 `GET /api/library/playlist-links` support.
+
+For audio songs with a saved video URL, the owning user can choose **Download song
+video** in Library, Queue, Now Playing, or the mini-player. Confirm **Download
+video** to queue it on the server; it stays linked to the song without adding
+playlist or queue entries. The dialog shows progress and errors, and failed or
+stopped downloads can be retried. **Jobs > Stop download** stops a pending linked
+video, including videos for imported songs. Shared accounts and other library
+viewers cannot start downloads.
+
+On the Player tab, select **Album art**, **Visualizer** (audio visualizer), or
+**Video**. Video is enabled after the linked download completes. It stays muted
+and follows the song's play/pause, seeking, and speed without replacing or
+restarting the audio. Video playback is released when hidden or backgrounded;
+the existing audio service keeps playing. Shared-library videos retain the
+server's access controls. Display and visualizer-style choices persist on this
+device; selecting Video falls back to album art for songs without a ready video.
+This requires the server's `/api/jobs/:id/files/:name/video` and
+`/api/jobs/:id/video/:name` endpoints introduced in the linked-video update.
 
 The mini-player has the same **More song actions** menu beside its progress slider,
 including Replace File, Share Media, and read-only metadata for shared accounts
@@ -421,10 +439,10 @@ expand **Server**, then select **Jobs** to add downloads or manage server jobs.
 In **Now Playing**, the Player, Lyrics, and Queue tabs retain all playback controls.
 The header shows the current song name on every tab, with its playlist or queue
 underneath; long song names scroll without crowding the three-dot menu.
-On the audio **Player** tab, use the **Audio visualizer** switch to replace album
-artwork with visuals driven by the decoded music. While enabled, the dropdown
+On the audio **Player** tab, select **Visualizer** to replace album
+artwork with visuals driven by the decoded music. While selected, the dropdown
 offers **Waveform**, **Amplitude bars**, and **Radial pulse**. Switching back
-restores the artwork and hides the dropdown. Your choices are saved on this device
+to **Album art** restores the artwork and hides the dropdown. Your choices are saved on this device
 across navigation, song changes, rotation, and app restarts; video playback keeps
 its video display.
 Visuals stop animating when paused, buffering, or in the background, and respect

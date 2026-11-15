@@ -5,6 +5,54 @@ import org.junit.Assert.*
 import org.junit.Test
 
 class ModelsTest {
+    @Test fun `song video responses retain status stream revisions and nullable legacy fields`() {
+        val url = "https://www.youtube.com/watch?v=abcdefghijk"
+        val linked = """{"sourceUrl":"$url","status":"completed","updatedAt":"2026-11-15",
+            "streamUrl":"/api/jobs/job/video/song.mp3?v=2026-11-15&userId=owner","error":null}"""
+        val page = ApiJson.decodeFromString<TrackPage>("""{"files":[
+            {"jobId":"job","name":"song.mp3","videoUrl":"$url","linkedVideo":$linked},
+            {"name":"legacy.mp3"}
+        ]}""")
+        val track = page.files.first()
+        val video = ApiJson.decodeFromString<SongVideo>("""{"videoUrl":"$url","linkedVideo":$linked}""")
+        val metadata = ApiJson.decodeFromString<SongMetadata>("""{"videoUrl":"$url","linkedVideo":$linked}""")
+        assertEquals(track.linkedVideo, metadata.linkedVideo)
+        assertEquals(SongVideo(track.videoUrl, track.linkedVideo), video)
+        assertTrue(video.available)
+        assertEquals(track, ApiJson.decodeFromString<Track>(ApiJson.encodeToString(track)))
+        assertNull(page.files.last().videoUrl)
+        assertNull(page.files.last().linkedVideo)
+        assertNull(ApiJson.decodeFromString<SongMetadata>("{}").linkedVideo)
+        listOf("queued", "running", "failed", "stopped").forEach { status ->
+            val pending = video.copy(linkedVideo = video.linkedVideo!!.copy(status = status))
+            assertFalse(pending.available)
+            assertEquals(status in listOf("queued", "running"), pending.linkedVideo!!.active)
+        }
+        assertFalse(video.copy(linkedVideo = video.linkedVideo!!.copy(streamUrl = null)).available)
+        assertFalse(ApiJson.decodeFromString<SongVideo>("""{"videoUrl":null,"linkedVideo":null}""").available)
+        assertThrows(kotlinx.serialization.SerializationException::class.java) { ApiJson.decodeFromString<SongVideo>("{}") }
+        val job = ApiJson.decodeFromString<Job>("""{"id":"job","source":"files","status":"running","videoDownloadName":"song.mp3"}""")
+        assertEquals("song.mp3", job.videoDownloadName)
+        assertTrue(job.active)
+    }
+
+    @Test fun `only audio song owners with a saved source may download linked videos`() {
+        val owner = User("owner")
+        val job = Job("source", initiatedBy = owner, contributors = listOf(User("contributor")))
+        val track = Track(job.id, "song.mp3", videoUrl = "https://www.youtube.com/watch?v=abcdefghijk", sourceJob = job)
+        assertTrue(track.canDownloadVideo(owner))
+        assertTrue(track.canDownloadVideo(owner.copy(role = "admin")))
+        assertTrue(track.copy(libraryOwnerId = owner.id).canDownloadVideo(owner))
+        listOf(null, User(""), User("other"), User("contributor"), User("admin", role = "admin"),
+            owner.copy(role = "SHARED")).forEach { assertFalse(track.canDownloadVideo(it)) }
+        assertFalse(track.copy(videoUrl = null).canDownloadVideo(owner))
+        assertFalse(track.copy(videoUrl = " ").canDownloadVideo(owner))
+        assertFalse(track.copy(mediaType = "video").canDownloadVideo(owner))
+        assertFalse(track.copy(libraryOwnerId = "other").canDownloadVideo(owner))
+        assertFalse(track.canDownloadVideo(owner, job.copy(id = "other")))
+        assertFalse(track.copy(sourceJob = null).canDownloadVideo(owner))
+    }
+
     @Test fun `track shared library ownership survives serialization and defaults absent for old servers`() {
         val track = ApiJson.decodeFromString<Track>(
             """{"jobId":"source","name":"song.mp3","libraryOwnerId":"owner"}""")
