@@ -425,12 +425,15 @@ the saved state; a removed playlist falls back to All Music.
 The current track is also cached on this device, with a background download filling
 its remaining bytes once playback starts (not the rest of the queue). Reopening
 reuses those bytes, including seeks; interrupted downloads fetch only missing
-ranges. Settings → Server → Offline cache size sets this device's
-persistent audio cache limit: 32 (default), 64, 128, 256, or 512 MiB, or 1 or 2 GiB.
+ranges. Linked song videos use the same persistent cache, filling only the
+selected video once playback starts. Their downloads stop when the video display
+closes or the app goes into the background; reopening reuses cached ranges.
+Settings → Server → Offline cache size sets this device's
+shared audio/video cache limit: 32 (default), 64, 128, 256, or 512 MiB, or 1 or 2 GiB.
 The setting shows the current account's used cache space out of the selected limit,
-and updates while Settings is visible as audio is cached or evicted.
+and updates while Settings is visible as media is cached or evicted.
 The choice persists across restarts and takes effect without restarting playback;
-reducing it immediately evicts least recently used audio. It is isolated by server
+reducing it immediately evicts least recently used media. It is isolated by server
 and account and cleared on sign-out,
 session expiry, or account/server changes. Cache failures fall back to streaming.
 Successful file replacements and metadata/lyrics edits invalidate the affected
