@@ -1287,6 +1287,50 @@ class NowPlayingScreenTest {
     }
 
     @Config(qualifiers = "w320dp-h800dp")
+    @Test fun metadataDialogShowsFreshVideoUrlAndFallsBackToTheKnownSongLink() {
+        compose.mainClock.autoAdvance = false
+        val known = "https://www.youtube.com/watch?v=abcdefghijk"
+        val fresh = "https://www.youtube.com/watch?v=lmnopqrstuv"
+        val track = Track("source", "song.mp3", videoUrl = known)
+        val response = java.util.concurrent.atomic.AtomicReference(
+            SongMetadata(title = "Fetched song", canEdit = true, videoUrl = fresh))
+        val requests = metadataResponses { 200 to ApiJson.encodeToString(response.get()) }
+        val account = ReflectionHelpers.getField<MutableStateFlow<Account?>>(model.sessions, "mutableAccount")
+        val library = ReflectionHelpers.getField<MutableState<LibraryState>>(model, "library\$delegate")
+        val open = mutableStateOf(true)
+        compose.runOnIdle {
+            account.value = Account("https://music.example", User("owner"), Session("test", "2099-01-01T00:00:00Z"))
+            library.value = LibraryState(library = Library(jobs = listOf(Job("source", initiatedBy = User("owner")))))
+                .withTrackPage(TrackPage(files = listOf(track)))
+        }
+        compose.setContent { MusicTheme { if (open.value) MetadataDialog(model, track) { open.value = false } } }
+        for (url in listOf(fresh, known)) {
+            compose.waitUntil(5_000) {
+                compose.runOnIdle { Snapshot.sendApplyNotifications() }
+                compose.mainClock.advanceTimeByFrame()
+                compose.onAllNodesWithText(url, substring = true).fetchSemanticsNodes().isNotEmpty()
+            }
+            compose.onNodeWithText("Video URL").performScrollTo().assertTextContains(url)
+                .assert(hasSetTextAction().not())
+            compose.onNodeWithText("Cancel").performClick()
+            compose.runOnIdle { Snapshot.sendApplyNotifications() }
+            compose.mainClock.advanceTimeByFrame()
+            compose.onNode(isDialog()).assertDoesNotExist()
+            if (url == fresh) {
+                compose.runOnIdle {
+                    response.set(response.get().copy(videoUrl = null))
+                    open.value = true
+                    Snapshot.sendApplyNotifications()
+                }
+            }
+        }
+        compose.runOnIdle {
+            assertEquals(2, requests.size)
+            assertTrue(requests.all { it.method == "GET" && it.url.encodedPath == songPath(track, "lyrics") })
+        }
+    }
+
+    @Config(qualifiers = "w320dp-h800dp")
     @Test fun metadataDialogHonorsServerEditingPermissionForLocalOwner() {
         compose.mainClock.autoAdvance = false
         val track = Track(jobId = "source", name = "song.mp3")

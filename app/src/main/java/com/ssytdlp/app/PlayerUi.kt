@@ -1095,7 +1095,8 @@ fun MetadataDialog(model: MusicViewModel, track: Track, ratingOnly: Boolean = fa
     } == true && value?.canEdit != false
     LaunchedEffect(track.key, account) {
         try {
-            value = ApiJson.decodeFromJsonElement(model.api.request(songPath(track, "lyrics")))
+            val metadata = ApiJson.decodeFromJsonElement<SongMetadata>(model.api.request(songPath(track, "lyrics")))
+            value = metadata.copy(videoUrl = metadata.videoUrl ?: model.library.songVideo(track).videoUrl)
             originalLock = value?.transcriptionLocked == true
         }
         catch (failure: Exception) { if (failure is kotlinx.coroutines.CancellationException) throw failure; error = failure.message }
@@ -1136,6 +1137,9 @@ fun MetadataDialog(value: SongMetadata?, onValueChange: (SongMetadata) -> Unit, 
                     OutlinedTextField(song.album, { if (canEdit) onValueChange(song.copy(album = it.take(500))) }, readOnly = !canEdit, label = { Text("Album") })
                     OutlinedTextField(song.genre, { if (canEdit) onValueChange(song.copy(genre = it.take(500))) }, readOnly = !canEdit, label = { Text("Genre") })
                     OutlinedTextField(song.year, { if (canEdit) onValueChange(song.copy(year = it.take(4))) }, readOnly = !canEdit, label = { Text("Year") })
+                    song.videoUrl?.takeIf { it.isNotBlank() }?.let { url ->
+                        OutlinedTextField(url, {}, readOnly = true, label = { Text("Video URL") })
+                    }
                 }
                 Text("Rating: ${song.rating} / 5")
                 if (canEdit) Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceEvenly) {

@@ -235,6 +235,10 @@ stopped downloads can be retried. **Jobs > Stop download** stops a pending linke
 video, including videos for imported songs. Shared accounts and other library
 viewers cannot start downloads.
 
+The full song metadata dialog shows the saved **Video URL** as read-only,
+selectable information when available, including in the shared-account viewer.
+It is omitted from rating-only dialogs and is not changed by metadata saves.
+
 On the Player tab, select **Album art**, **Visualizer** (audio visualizer), or
 **Video**. Video is enabled after the linked download completes. It stays muted
 and follows the song's play/pause, seeking, and speed without replacing or
