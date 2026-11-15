@@ -6,6 +6,7 @@ import android.security.keystore.KeyProperties
 import android.util.Base64
 import com.ssytdlp.app.core.Account
 import com.ssytdlp.app.core.ApiJson
+import com.ssytdlp.app.core.AuthProtocol
 import com.ssytdlp.app.core.PendingLogin
 import com.ssytdlp.app.core.User
 import java.security.KeyStore
@@ -29,6 +30,11 @@ class SessionStore(context: Context) {
         runCatching { ApiJson.decodeFromString<Account>(it) }.getOrNull()
     }?.takeIf { runCatching { Instant.parse(it.session.expiresAt).isAfter(Instant.now()) }.getOrDefault(false) })
     val account = mutableAccount.asStateFlow()
+    private val mutableLanPlayback = MutableStateFlow(read("lan_playback")?.let {
+        runCatching { ApiJson.decodeFromString<LanPlaybackConfig>(it) }.getOrNull()
+    }?.takeIf { it.belongsTo(mutableAccount.value) })
+    internal val lanPlayback = mutableLanPlayback.asStateFlow()
+    internal val wifiNetwork = WifiNetwork(context)
     val playback = PlaybackStore(context).apply { setAccount(mutableAccount.value) }
     internal val artworkCache = MetadataArtworkCache().apply { setAccount(mutableAccount.value) }
     internal val audioCache = AudioCache(context, maxBytes = offlineCacheSize.value.bytes, onSessionExpired = { clear(it) })
@@ -45,12 +51,46 @@ class SessionStore(context: Context) {
         @Synchronized set(value) { write("pending", value?.let { ApiJson.encodeToString(it) }) }
 
     @Synchronized fun save(account: Account) {
+        val previous = mutableAccount.value
+        if (previous?.origin != account.origin || previous.user.id != account.user.id ||
+            previous.session.token != account.session.token) setLanPlayback(null)
         write("account", ApiJson.encodeToString(account))
         pending = null
         playback.setAccount(account)
         artworkCache.setAccount(account)
         audioCache.setAccount(account)
         mutableAccount.value = account
+    }
+
+    @Synchronized internal fun configureLanPlayback(input: String) {
+        val primary = checkNotNull(account.value) { "Sign in before configuring LAN playback." }
+        val trimmed = input.trim()
+        val origin = trimmed.takeIf { it.isNotEmpty() }?.let {
+            AuthProtocol.normalizeOrigin(if ("://" in it) it else "https://$it")
+        }
+        require(origin != primary.origin) { "Use a different LAN hostname from the primary server." }
+        if (origin == mutableLanPlayback.value?.origin) return
+        pending = null
+        setLanPlayback(origin?.let { LanPlaybackConfig(primary.origin, primary.user.id, it) })
+    }
+
+    @Synchronized internal fun saveLanAccount(expected: Account, config: LanPlaybackConfig, lan: Account) {
+        val primary = account.value
+        check(primary?.origin == expected.origin && primary.user.id == expected.user.id &&
+            primary.session.token == expected.session.token && mutableLanPlayback.value == config &&
+            lan.origin == config.origin) { "The LAN configuration or primary account changed. Sign in again." }
+        setLanPlayback(config.copy(account = lan))
+    }
+
+    @Synchronized internal fun clearLanSession(expectedToken: String? = null) {
+        val config = mutableLanPlayback.value ?: return
+        if (expectedToken != null && config.account?.session?.token != expectedToken) return
+        setLanPlayback(config.copy(account = null))
+    }
+
+    private fun setLanPlayback(config: LanPlaybackConfig?) {
+        write("lan_playback", config?.let { ApiJson.encodeToString(it) })
+        mutableLanPlayback.value = config
     }
 
     @Synchronized fun updateUser(expected: Account, user: User): Boolean {
@@ -66,6 +106,7 @@ class SessionStore(context: Context) {
     @Synchronized fun clear(expectedToken: String? = null) {
         if (expectedToken != null && mutableAccount.value?.session?.token != expectedToken) return
         write("account", null)
+        setLanPlayback(null)
         pending = null
         playback.setAccount(null)
         artworkCache.setAccount(null)

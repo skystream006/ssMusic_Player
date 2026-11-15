@@ -43,12 +43,15 @@ class ServerApi(
     private val currentAccount: () -> Account?,
     private val clearAccount: (String) -> Unit,
     client: OkHttpClient = OkHttpClient(),
-    private val uiActivity: UiActivityGate? = null
+    private val uiActivity: UiActivityGate? = null,
+    private val lanPlaybackRouter: okhttp3.Interceptor? = null
 ) {
-    private class RequestOwner(val account: Account)
+    internal class RequestOwner(val account: Account)
 
     constructor(sessions: SessionStore, uiActivity: UiActivityGate? = null) :
-        this({ sessions.account.value }, { sessions.clear(it) }, uiActivity = uiActivity) {
+        this({ sessions.account.value }, { sessions.clear(it) }, uiActivity = uiActivity,
+            lanPlaybackRouter = LanPlaybackRouter({ sessions.account.value }, { sessions.lanPlayback.value },
+                sessions.wifiNetwork::current, { sessions.clearLanSession(it) })) {
         trackArtworkCache.observeAccount(sessions.account)
     }
 
@@ -88,12 +91,16 @@ class ServerApi(
         response
     }.build()
 
+    private val playbackClient = authenticatedClient.newBuilder().apply {
+        lanPlaybackRouter?.let(::addInterceptor)
+    }.build()
+
     fun url(path: String): String = ServerResource.resolve(
         currentAccount()?.origin ?: throw ApiException(401, "Sign in with your passkey."), path
     )
 
     internal fun playbackCalls(owner: Account): Call.Factory = Call.Factory { request ->
-        authenticatedClient.newCall(request.newBuilder()
+        playbackClient.newCall(request.newBuilder()
             .tag(RequestOwner::class.java, RequestOwner(owner)).build())
     }
 
