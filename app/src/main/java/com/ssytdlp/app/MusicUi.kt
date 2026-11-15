@@ -72,7 +72,7 @@ fun MusicTheme(preferences: Preferences = Preferences(), waveAppearance: Boolean
         "pink" -> Color(0xFFBF3D78)
         else -> Color(0xFF227452)
     }
-    val dark = preferences.mode == "dark" || (preferences.mode == null && theme in listOf("midnight", "black"))
+    val dark = preferences.isDarkAppearance
     val colors = if (waveAppearance) darkColorScheme(
         primary = Color(0xFF68DEFF), onPrimary = Color(0xFF00212D),
         primaryContainer = Color(0xFF1049A2), onPrimaryContainer = Color(0xFFF0F6FF),

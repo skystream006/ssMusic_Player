@@ -5,6 +5,22 @@ repository. Android 8.0 (API 26) or newer; targets Android 16 (API 36). The serv
 still owns media storage, yt-dlp downloads, transcoding, transcription, and
 backups. This is not a WebView wrapper or a replacement server.
 
+## Appearance and launcher icons
+
+The launcher icon keeps the original SS/music-note design. **Settings > Appearance >
+Server theme** selects matching Midnight, Royal Purple, Gold, Green, Pink, or Black
+artwork, with a light or dark background matching **Dark appearance**. Blue Wave
+uses the original blue icon. Icons also follow preferences loaded from the server;
+Android retains the selected launcher entry across restarts.
+
+Some launchers cache icons, so a change may take a few seconds to appear. Switching
+launcher entries, including the first upgrade to theme-aware icons, may require
+re-adding an existing home-screen shortcut on some launchers. No additional
+permission is required, and changing the icon does not stop playback.
+
+To regenerate the twelve variants from the bundled icon, install Pillow in a
+Python virtual environment and run `python scripts/render-launcher-icons.py`.
+
 ## Build and Install
 
 Open this folder as a project in Android Studio, select a Java 17 Gradle JDK,

@@ -104,7 +104,7 @@ fun SettingsScreen(model: MusicViewModel, download: (String, String) -> Unit, on
                 }
                 Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
                     Text("Dark appearance", Modifier.weight(1f))
-                    Switch(model.preferences.mode == "dark" || (model.preferences.mode == null && theme in listOf("midnight", "black")),
+                    Switch(model.preferences.isDarkAppearance,
                         { model.setTheme(mode = if (it) "dark" else "light") }, enabled = !model.busy)
                 }
             }
