@@ -1332,7 +1332,7 @@ class MusicUiTest {
 
     @Test fun ratingDialogSetsAndClearsRatingWithoutChangingOtherMetadata() {
         val original = SongMetadata(title = "Song", artist = "Artist", album = "Album", genre = "Pop",
-            year = "2026", uslt = "Lyrics")
+            year = "2026", uslt = "Lyrics", videoUrl = "https://www.youtube.com/watch?v=abcdefghijk")
         val value = mutableStateOf(original)
         val open = mutableStateOf(true)
         var saved: SongMetadata? = null
@@ -1344,6 +1344,7 @@ class MusicUiTest {
         }
         compose.onNodeWithText("Rate song").assertIsDisplayed()
         compose.onNodeWithText("Title").assertDoesNotExist()
+        compose.onNodeWithText("Video URL").assertDoesNotExist()
         compose.onNodeWithText("Rating: 0 / 5").assertIsDisplayed()
         compose.onNodeWithContentDescription("4 stars").performClick().assertIsOn()
         compose.onNodeWithText("Rating: 4 / 5").assertIsDisplayed()
@@ -1415,6 +1416,7 @@ class MusicUiTest {
         }.toByteArray()
         val value = mutableStateOf(SongMetadata(title = "Song", artist = "Artist", album = "Album",
             genre = "Pop", year = "2026", rating = 3, transcriptionLocked = true,
+            videoUrl = "https://www.youtube.com/watch?v=abcdefghijk",
             artwork = "data:image/png;base64," + android.util.Base64.encodeToString(image, android.util.Base64.NO_WRAP)))
         val open = mutableStateOf(true)
         var changes = 0
@@ -1432,7 +1434,8 @@ class MusicUiTest {
             compose.onAllNodesWithContentDescription("Album artwork").fetchSemanticsNodes().isNotEmpty()
         }
         compose.onNodeWithContentDescription("Album artwork").assertIsDisplayed()
-        listOf("Title" to "Song", "Artist" to "Artist", "Album" to "Album", "Genre" to "Pop", "Year" to "2026")
+        listOf("Title" to "Song", "Artist" to "Artist", "Album" to "Album", "Genre" to "Pop", "Year" to "2026",
+            "Video URL" to requireNotNull(value.value.videoUrl))
             .forEach { (label, text) ->
                 compose.onNodeWithText(label).performScrollTo().assertTextContains(text)
             }
@@ -1468,7 +1471,8 @@ class MusicUiTest {
     @Config(qualifiers = "w320dp-h800dp")
     @Test fun metadataEditorRetainsFieldRatingLockAndSaveActions() {
         compose.mainClock.autoAdvance = false
-        val original = SongMetadata(title = "Song", artist = "Artist", album = "Album", genre = "Pop", year = "2026")
+        val original = SongMetadata(title = "Song", artist = "Artist", album = "Album", genre = "Pop", year = "2026",
+            videoUrl = "https://www.youtube.com/watch?v=abcdefghijk")
         val value = mutableStateOf(original)
         var saved: SongMetadata? = null
         compose.setContent {
@@ -1479,6 +1483,8 @@ class MusicUiTest {
         compose.onNodeWithText("Title").performTextReplacement("Updated")
         compose.runOnIdle { Snapshot.sendApplyNotifications() }
         compose.mainClock.advanceTimeByFrame()
+        compose.onNodeWithText("Video URL").performScrollTo()
+            .assertTextContains(requireNotNull(original.videoUrl)).assert(hasSetTextAction().not())
         compose.onNodeWithContentDescription("Lock transcription").performClick()
         compose.runOnIdle { Snapshot.sendApplyNotifications() }
         compose.mainClock.advanceTimeByFrame()
@@ -1490,6 +1496,14 @@ class MusicUiTest {
             assertEquals(original.copy(title = "Updated", rating = 4, transcriptionLocked = true), saved)
         }
         compose.onNodeWithText("Cancel").assertIsEnabled()
+        for (url in listOf(null, "", " ")) {
+            compose.runOnIdle {
+                value.value = value.value.copy(videoUrl = url)
+                Snapshot.sendApplyNotifications()
+            }
+            compose.mainClock.advanceTimeByFrame()
+            compose.onNodeWithText("Video URL").assertDoesNotExist()
+        }
     }
 
     @Test

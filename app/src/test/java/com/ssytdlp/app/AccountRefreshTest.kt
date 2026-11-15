@@ -18,10 +18,12 @@ import com.ssytdlp.app.core.ApiJson
 import com.ssytdlp.app.core.Job
 import com.ssytdlp.app.core.Library
 import com.ssytdlp.app.core.LibraryEntry
+import com.ssytdlp.app.core.LinkedVideo
 import com.ssytdlp.app.core.LyricLine
 import com.ssytdlp.app.core.Preferences
 import com.ssytdlp.app.core.Session
 import com.ssytdlp.app.core.SongMetadata
+import com.ssytdlp.app.core.SongVideo
 import com.ssytdlp.app.core.Track
 import com.ssytdlp.app.core.TrackPage
 import com.ssytdlp.app.core.TrackSort
@@ -43,6 +45,8 @@ import java.util.concurrent.atomic.AtomicReference
 import java.util.concurrent.atomic.AtomicInteger
 import javax.crypto.KeyGenerator
 import kotlinx.coroutines.cancel
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.async
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.runBlocking
 import kotlinx.serialization.encodeToString
@@ -145,6 +149,143 @@ class AccountRefreshTest {
         } finally {
             settings.edit().remove("items_per_page").commit()
         }
+    }
+
+    @Test fun linkedVideoDownloadsUseTheSongEndpointAndRetryFailuresWithoutChangingTheQueue() {
+        val source = "https://www.youtube.com/watch?v=abcdefghijk"
+        val job = Job("source /?#", initiatedBy = account.user)
+        val track = Track(job.id, "folder/song #+.mp3", videoUrl = source, sourceJob = job)
+        val video = AtomicReference(SongVideo(source, null))
+        val model = startModel(track = track) { request ->
+            when (request.requestUrl!!.encodedPath) {
+                songVideoPath(track) -> {
+                    if (request.method == "POST") video.set(SongVideo(source, LinkedVideo(source, "queued")))
+                    MockResponse().setResponseCode(if (request.method == "POST") 202 else 200)
+                        .setBody(ApiJson.encodeToString(video.get()))
+                }
+                songPath(track, "lyrics") -> metadataResponse(SongMetadata(videoUrl = source))
+                else -> null
+            }
+        }
+        val before = PlaybackState(track = track, queue = listOf(track, Track("other", "next.mp3")), position = 42_000)
+        setPlayback(model, before)
+        waitFor { model.metadata != null }
+        drainRequests()
+        perform(model) { model.downloadSongVideo(track) }
+        val post = drainRequests().single()
+        assertEquals("POST", post.method)
+        assertEquals(songVideoPath(track), post.path)
+        assertEquals(listOf("Bearer", account.session.token).joinToString(" "), post.getHeader("Authorization"))
+        assertEquals("{}", post.body.readUtf8())
+        assertTrue(model.library.songVideo(track).linkedVideo!!.active)
+        perform(model) { model.downloadSongVideo(track) }
+        assertTrue(model.notice!!.contains("already running"))
+        assertTrue(drainRequests().isEmpty())
+        video.set(SongVideo(source, LinkedVideo(source, "failed", error = "Download failed")))
+        runBlocking { model.refreshSongVideo(track) }
+        assertEquals("Download failed", model.library.songVideo(track).linkedVideo!!.error)
+        drainRequests()
+        perform(model) { model.downloadSongVideo(track) }
+        assertEquals("POST", drainRequests().single().method)
+        video.set(SongVideo(source, LinkedVideo(source, "completed", streamUrl = "/api/jobs/source/video/song.mp3?v=2")))
+        runBlocking { model.refreshSongVideo(track) }
+        assertTrue(model.library.songVideo(track).available)
+        assertEquals(before, model.playback.state.value)
+    }
+
+    @Test fun songVideoDialogConfirmsTheDownloadTracksProgressAndRetriesFailures() {
+        val source = "https://www.youtube.com/watch?v=abcdefghijk"
+        val job = Job("source", initiatedBy = account.user)
+        val track = Track(job.id, "song.mp3", videoUrl = source, sourceJob = job)
+        val video = AtomicReference(SongVideo(null, null))
+        val posts = AtomicInteger()
+        val model = startModel(track = track) { request ->
+            if (request.requestUrl!!.encodedPath != songVideoPath(track)) null
+            else {
+                if (request.method == "POST") {
+                    posts.incrementAndGet()
+                    video.set(SongVideo(source, LinkedVideo(source, "queued")))
+                }
+                MockResponse().setResponseCode(if (request.method == "POST") 202 else 200)
+                    .setBody(ApiJson.encodeToString(video.get()))
+            }
+        }
+        var closed = false
+        compose.setContent { MusicTheme { SongVideoDialog(model, track) { closed = true } } }
+        compose.onNodeWithText("Download video").assertIsEnabled().performClick()
+        waitFor { model.library.songVideo(track).linkedVideo?.active == true && model.pendingSongs.isEmpty() }
+        compose.onNodeWithText("Video download queued. You can close this dialog.").assertIsDisplayed()
+        compose.onNodeWithText("Download video").assertIsNotEnabled()
+        compose.onNodeWithText("Close").assertIsEnabled()
+        assertEquals(1, posts.get())
+        video.set(SongVideo(source, LinkedVideo(source, "failed", error = "Download failed")))
+        waitFor { model.library.songVideo(track).linkedVideo?.status == "failed" }
+        compose.onNodeWithText("Download failed").assertIsDisplayed()
+        compose.onNodeWithText("Retry download").assertIsEnabled().performClick()
+        waitFor { posts.get() == 2 && model.library.songVideo(track).linkedVideo?.active == true }
+        video.set(SongVideo(source, LinkedVideo(source, "completed", streamUrl = "/api/jobs/source/video/song.mp3?v=2")))
+        waitFor { model.library.songVideo(track).available }
+        compose.onNodeWithText("Video ready. Select Video in the player.").assertIsDisplayed()
+        compose.onNodeWithText("Download video").assertDoesNotExist()
+        compose.onNodeWithText("Close").performClick()
+        assertTrue(closed)
+    }
+
+    @Test fun videoStatusWithoutACatalogSourcePreservesTheUrlDiscoveredInSongTags() = runBlocking {
+        val source = "https://www.youtube.com/watch?v=abcdefghijk"
+        val track = Track("source", "song.mp3", videoUrl = source,
+            sourceJob = Job("source", initiatedBy = account.user))
+        val model = startModel(track = track) { request ->
+            if (request.requestUrl!!.encodedPath != songVideoPath(track)) null
+            else MockResponse().setBody(ApiJson.encodeToString(
+                if (request.method == "GET") SongVideo(null, null) else SongVideo(source, LinkedVideo(source, "queued"))))
+        }
+        model.refreshSongVideo(track)
+        assertTrue(model.canDownloadSongVideo(track))
+        assertEquals(source, model.library.songVideo(track).videoUrl)
+        drainRequests()
+        perform(model) { model.downloadSongVideo(track) }
+        assertEquals("POST", drainRequests().single().method)
+        assertTrue(model.library.songVideo(track).linkedVideo!!.active)
+    }
+
+    @Test fun staleVideoStatusCannotUndoADownloadAndDeniedOrMalformedDownloadsStayExplicit() = runBlocking {
+        val source = "https://www.youtube.com/watch?v=abcdefghijk"
+        val job = Job("source", initiatedBy = account.user)
+        val track = Track(job.id, "song.mp3", videoUrl = source, sourceJob = job)
+        val readStarted = CountDownLatch(1)
+        var postStatus = 202
+        var postBody = ApiJson.encodeToString(SongVideo(source, LinkedVideo(source, "queued")))
+        val model = startModel(track = track) { request ->
+            if (request.requestUrl!!.encodedPath != songVideoPath(track)) null
+            else if (request.method == "GET") {
+                readStarted.countDown()
+                MockResponse().setBody(ApiJson.encodeToString(SongVideo(source, null)))
+                    .setBodyDelay(1, TimeUnit.SECONDS)
+            } else MockResponse().setResponseCode(postStatus).setBody(postBody)
+        }
+        drainRequests()
+        val stale = async(Dispatchers.IO) { model.refreshSongVideo(track) }
+        assertTrue(readStarted.await(5, TimeUnit.SECONDS))
+        perform(model) { model.downloadSongVideo(track) }
+        stale.await()
+        assertTrue(model.library.songVideo(track).linkedVideo!!.active)
+        for ((status, body) in listOf(403 to """{"error":"Only the owner may download"}""", 200 to "{}")) {
+            compose.runOnUiThread {
+                ReflectionHelpers.getField<androidx.compose.runtime.MutableState<LibraryState>>(model, "library\$delegate")
+                    .value = model.library.withSongVideo(track, SongVideo(source, null))
+            }
+            postStatus = status
+            postBody = body
+            perform(model) { model.downloadSongVideo(track) }
+            assertNotNull(model.notice)
+            assertFalse(model.notice!!.contains("queued"))
+            assertFalse(model.library.songVideo(track).available)
+            assertNull(model.library.songVideo(track).linkedVideo)
+        }
+        sessions.clear()
+        waitFor { model.library.tracks.files.isEmpty() }
+        assertTrue(model.library.songVideos.isEmpty())
     }
 
     @Test fun playingAJobWithOnlyNoVocalsReportsNoPlayableOriginals() {

@@ -70,7 +70,6 @@ import androidx.compose.ui.window.DialogProperties
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.media3.common.Player
 import androidx.media3.common.util.UnstableApi
-import androidx.media3.session.MediaController
 import androidx.media3.ui.PlayerView
 import com.ssytdlp.app.core.*
 import kotlinx.coroutines.delay
@@ -208,6 +207,9 @@ fun NowPlayingScreen(model: MusicViewModel, state: PlaybackState, onBack: () -> 
     }
     var preferUslt by rememberSaveable(state.track?.key) { mutableStateOf(false) }
     val metadata = model.metadata
+    state.track?.takeIf { it.mediaType == "audio" && !model.library.songVideo(it).videoUrl.isNullOrBlank() }?.let { track ->
+        SongVideoPolling(model, track) { if (it != null) model.message(it) }
+    }
     val hasSylt = metadata?.sylt?.isNotEmpty() == true
     val hasUslt = !metadata?.uslt.isNullOrBlank()
     val showUslt = hasUslt && (preferUslt || !hasSylt)
@@ -279,7 +281,8 @@ fun NowPlayingScreen(model: MusicViewModel, state: PlaybackState, onBack: () -> 
                         when (visibleTab) {
                             0 -> PlayerArtwork(state, model.metadata, Modifier.weight(1f), model.playback.controller,
                                 artworkOffset = { artworkOffset }, transcription = model.library.transcription(state.track),
-                                showVisualizer = model.audioVisualizerEnabled, onShowVisualizer = model::chooseAudioVisualizer,
+                                display = model.playerDisplay, onDisplay = model::choosePlayerDisplay,
+                                songVideo = model.library.songVideo(state.track), api = model.api, account = account,
                                 visualizerStyle = model.audioVisualizerStyle, onVisualizerStyle = model::chooseAudioVisualizerStyle,
                                 rating = if (landscape) rating else ({})) {
                                 model.playback.play(listOfNotNull(state.track?.noVocalsVersion))
@@ -362,6 +365,7 @@ private fun SongActionsMenu(model: MusicViewModel, track: Track?, download: (Str
     var sharingTrack by remember { mutableStateOf<Track?>(null) }
     var linkedTrack by remember(account?.origin, account?.user?.id, account?.session) { mutableStateOf<Track?>(null) }
     var replacingTrack by remember(account?.origin, account?.user?.id, account?.user?.role) { mutableStateOf<Track?>(null) }
+    var videoTrack by remember(account?.origin, account?.user?.id, account?.session) { mutableStateOf<Track?>(null) }
     track?.let { track ->
         val job = model.library.library.jobs.find { it.id == track.jobId }
             ?: model.jobs.find { it.id == track.jobId }
@@ -378,6 +382,7 @@ private fun SongActionsMenu(model: MusicViewModel, track: Track?, download: (Str
         Box {
             ToolButton(Icons.Rounded.MoreVert, "More song actions", modifier = Modifier.size(48.dp)) { moreActions = true }
             DropdownMenu(expanded = moreActions, onDismissRequest = { moreActions = false }) {
+                SongVideoMenuItem(model, track) { moreActions = false; videoTrack = track }
                 if (editLyrics != null) {
                     DropdownMenuItem(text = { Text("Edit lyrics") }, enabled = !model.songBusy(track),
                         leadingIcon = { Icon(Icons.Rounded.EditNote, null) }, onClick = {
@@ -426,6 +431,7 @@ private fun SongActionsMenu(model: MusicViewModel, track: Track?, download: (Str
     }
     editingTrack?.let { track -> MetadataDialog(model, track) { editingTrack = null } }
     linkedTrack?.let { track -> PlaylistLinksDialog(model, track) { linkedTrack = null } }
+    videoTrack?.let { track -> SongVideoDialog(model, track) { videoTrack = null } }
     sharingTrack?.let { track ->
         val job = model.library.library.jobs.find { it.id == track.jobId } ?: model.jobs.find { it.id == track.jobId }
         val canShare = track.mediaType == "audio" && account?.user?.let { user ->
@@ -478,24 +484,42 @@ internal fun Modifier.playerTrackSwipes(enabled: Boolean, nextEnabled: Boolean,
 @androidx.annotation.OptIn(UnstableApi::class)
 @Composable
 internal fun PlayerArtwork(state: PlaybackState, metadata: SongMetadata?, modifier: Modifier = Modifier,
-    controller: MediaController? = null, artworkOffset: () -> Float = { 0f },
-    transcription: Transcription? = null, showVisualizer: Boolean = false,
-    onShowVisualizer: (Boolean) -> Unit = {}, visualizerStyle: AudioVisualizerStyle = AudioVisualizerStyle.WAVEFORM,
+    controller: Player? = null, artworkOffset: () -> Float = { 0f },
+    transcription: Transcription? = null, display: PlayerDisplay = PlayerDisplay.ALBUM_ART,
+    onDisplay: (PlayerDisplay) -> Unit = {}, songVideo: SongVideo = SongVideo(state.track?.videoUrl, state.track?.linkedVideo),
+    api: ServerApi? = null, account: Account? = null, visualizerStyle: AudioVisualizerStyle = AudioVisualizerStyle.WAVEFORM,
     onVisualizerStyle: (AudioVisualizerStyle) -> Unit = {}, rating: @Composable () -> Unit = {},
     onInstrumental: () -> Unit = {}) {
     val track = state.track
     val landscape = isLandscape()
+    val visibleDisplay = if (display == PlayerDisplay.VIDEO && !songVideo.available) PlayerDisplay.ALBUM_ART else display
+    val watchingVideo = track?.mediaType == "video" || visibleDisplay == PlayerDisplay.VIDEO
     val options: @Composable () -> Unit = {
         if (track != null && track.mediaType != "video") {
-            Row(Modifier.widthIn(max = 320.dp).fillMaxWidth()
-                .semantics { contentDescription = "Audio visualizer" }
-                .toggleable(value = showVisualizer, role = Role.Switch, onValueChange = onShowVisualizer)
-                .padding(bottom = 8.dp), verticalAlignment = Alignment.CenterVertically) {
-                Text(if (showVisualizer) "Audio visualizer" else "Album artwork", Modifier.weight(1f),
-                    style = MaterialTheme.typography.labelLarge)
-                Switch(checked = showVisualizer, onCheckedChange = null)
+            SingleChoiceSegmentedButtonRow(Modifier.widthIn(max = 380.dp).fillMaxWidth().padding(bottom = 8.dp)
+                .semantics { contentDescription = "Player display" }) {
+                PlayerDisplay.entries.forEachIndexed { index, option ->
+                    SegmentedButton(selected = visibleDisplay == option, onClick = { onDisplay(option) },
+                        enabled = option != PlayerDisplay.VIDEO || songVideo.available,
+                        shape = SegmentedButtonDefaults.itemShape(index, PlayerDisplay.entries.size),
+                        modifier = Modifier.semantics { contentDescription = option.label }, icon = {}) {
+                        Text(when (option) {
+                            PlayerDisplay.ALBUM_ART -> "Album art"
+                            PlayerDisplay.AUDIO_VISUALIZER -> "Visualizer"
+                            PlayerDisplay.VIDEO -> "Video"
+                        }, maxLines = 1, overflow = TextOverflow.Ellipsis, style = MaterialTheme.typography.labelMedium)
+                    }
+                }
             }
-            if (showVisualizer) {
+            if (!songVideo.available && !songVideo.videoUrl.isNullOrBlank()) {
+                Text(when (songVideo.linkedVideo?.status) {
+                    "queued" -> "Video download queued."
+                    "running" -> "Downloading song video..."
+                    else -> "Video becomes available after the song's owner downloads it."
+                }, Modifier.padding(bottom = 8.dp), style = MaterialTheme.typography.bodySmall,
+                    textAlign = TextAlign.Center)
+            }
+            if (visibleDisplay == PlayerDisplay.AUDIO_VISUALIZER) {
                 var expanded by remember { mutableStateOf(false) }
                 Box(Modifier.padding(bottom = 12.dp)) {
                     OutlinedButton(onClick = { expanded = true },
@@ -520,7 +544,9 @@ internal fun PlayerArtwork(state: PlaybackState, metadata: SongMetadata?, modifi
             update = { it.player = controller }, onRelease = { it.player = null }, modifier = visualModifier)
         else {
             val artworkModifier = visualModifier.absoluteOffset { IntOffset(artworkOffset().roundToInt(), 0) }
-            if (showVisualizer && track != null) key(track.key) {
+            if (visibleDisplay == PlayerDisplay.VIDEO && songVideo.available) {
+                SongVideoPlayer(state, api, account, requireNotNull(songVideo.linkedVideo?.streamUrl), controller, artworkModifier)
+            } else if (visibleDisplay == PlayerDisplay.AUDIO_VISUALIZER && track != null) key(track.key) {
                 PlaybackAudioVisualizer(state.playing && !state.buffering && state.error == null,
                     visualizerStyle, artworkModifier)
             } else AlbumArtwork(metadata?.artwork, artworkModifier)
@@ -562,7 +588,7 @@ internal fun PlayerArtwork(state: PlaybackState, metadata: SongMetadata?, modifi
     } else Column(modifier.fillMaxWidth().verticalScroll(rememberScrollState()).padding(horizontal = 28.dp, vertical = 24.dp),
         horizontalAlignment = Alignment.CenterHorizontally) {
         options()
-        visual(if (track?.mediaType == "video") Modifier.fillMaxWidth().aspectRatio(16f / 9f)
+        visual(if (watchingVideo) Modifier.fillMaxWidth().aspectRatio(16f / 9f)
             else Modifier.widthIn(max = 320.dp).fillMaxWidth().aspectRatio(1f))
         Spacer(Modifier.height(28.dp))
         details()
@@ -873,6 +899,9 @@ fun TrackMenu(model: MusicViewModel, track: Track, index: Int, onRemoveFromQueue
     var playlistLinks by remember(track.key, track.libraryOwnerId, account?.origin, user?.id, account?.session) {
         mutableStateOf(false)
     }
+    var videoDownload by remember(track.key, track.libraryOwnerId, account?.origin, user?.id, account?.session) {
+        mutableStateOf(false)
+    }
     val canTransfer = user?.isShared == false && track.playlistId != null
     var transfer by remember(canTransfer) { mutableStateOf<String?>(null) }
     val canModify = user != null && !user.isShared &&
@@ -890,6 +919,7 @@ fun TrackMenu(model: MusicViewModel, track: Track, index: Int, onRemoveFromQueue
                 DropdownMenuItem(text = { Text("Add to playlist") }, enabled = !model.songBusy(track), leadingIcon = { Icon(Icons.Rounded.LibraryAdd, null) }, onClick = { open = false; transfer = "link" })
             }
             if (!inQueue) DropdownMenuItem(text = { Text("Add to queue") }, leadingIcon = { Icon(Icons.AutoMirrored.Rounded.PlaylistAdd, null) }, onClick = { open = false; model.playback.enqueue(track) })
+            SongVideoMenuItem(model, track) { open = false; videoDownload = true }
             if (canEdit) {
                 DropdownMenuItem(text = { Text("Edit song / rating") }, enabled = !model.songBusy(track), leadingIcon = { Icon(Icons.Rounded.Edit, null) }, onClick = { open = false; edit = true })
             }
@@ -921,6 +951,7 @@ fun TrackMenu(model: MusicViewModel, track: Track, index: Int, onRemoveFromQueue
     }
     if (edit) MetadataDialog(model, track) { edit = false }
     if (playlistLinks) PlaylistLinksDialog(model, track) { playlistLinks = false }
+    if (videoDownload) SongVideoDialog(model, track) { videoDownload = false }
     if (share && canModify && track.mediaType == "audio") ShareMediaDialog(model, track) { share = false }
     if (canReplace && replace) ReplaceFileDialog(model, track) { replace = false }
     if (transcribe) TranscribeDialog(model, track) { transcribe = false }
@@ -1064,7 +1095,8 @@ fun MetadataDialog(model: MusicViewModel, track: Track, ratingOnly: Boolean = fa
     } == true && value?.canEdit != false
     LaunchedEffect(track.key, account) {
         try {
-            value = ApiJson.decodeFromJsonElement(model.api.request(songPath(track, "lyrics")))
+            val metadata = ApiJson.decodeFromJsonElement<SongMetadata>(model.api.request(songPath(track, "lyrics")))
+            value = metadata.copy(videoUrl = metadata.videoUrl ?: model.library.songVideo(track).videoUrl)
             originalLock = value?.transcriptionLocked == true
         }
         catch (failure: Exception) { if (failure is kotlinx.coroutines.CancellationException) throw failure; error = failure.message }
@@ -1105,6 +1137,9 @@ fun MetadataDialog(value: SongMetadata?, onValueChange: (SongMetadata) -> Unit, 
                     OutlinedTextField(song.album, { if (canEdit) onValueChange(song.copy(album = it.take(500))) }, readOnly = !canEdit, label = { Text("Album") })
                     OutlinedTextField(song.genre, { if (canEdit) onValueChange(song.copy(genre = it.take(500))) }, readOnly = !canEdit, label = { Text("Genre") })
                     OutlinedTextField(song.year, { if (canEdit) onValueChange(song.copy(year = it.take(4))) }, readOnly = !canEdit, label = { Text("Year") })
+                    song.videoUrl?.takeIf { it.isNotBlank() }?.let { url ->
+                        OutlinedTextField(url, {}, readOnly = true, label = { Text("Video URL") })
+                    }
                 }
                 Text("Rating: ${song.rating} / 5")
                 if (canEdit) Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceEvenly) {

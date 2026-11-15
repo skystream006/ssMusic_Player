@@ -66,7 +66,8 @@ class BackgroundApiTest {
         listOf("/api/jobs", "/api/jobs/job", "/api/health", "/api/library/tracks",
             "/api/preferences", "/api/auth/me", "/api/jobs/job/download-all",
             "/api/jobs/job/transcribe/song.mp3", "/api/jobs/job/files/song.mp3/metadata",
-            "/api/jobs/job/files/song.mp3/replace", "/api/jobs/job/artwork/song.mp3").forEach {
+            "/api/jobs/job/files/song.mp3/replace", "/api/jobs/job/artwork/song.mp3",
+            "/api/jobs/job/files/song.mp3/video", "/api/jobs/job/video/song.mp3").forEach {
             assertFalse(it, isBackgroundPlaybackRequest("GET", it))
         }
     }
@@ -87,6 +88,18 @@ class BackgroundApiTest {
         gate.activityResumed(activity)
         withTimeout(5_000) { poll.await() }
         assertEquals("/api/health", server.takeRequest(2, TimeUnit.SECONDS)!!.path)
+    }
+
+    @Test fun `linked video status waits for foreground rather than using the audio playback exemption`() = runBlocking {
+        val path = "/api/jobs/job/files/song.mp3/video"
+        server.enqueue(MockResponse().setBody("""{"videoUrl":null,"linkedVideo":null}"""))
+        val poll = async(Dispatchers.IO, start = CoroutineStart.UNDISPATCHED) { api.request(path) }
+        assertNull(server.takeRequest(150, TimeUnit.MILLISECONDS))
+        assertFalse(poll.isCompleted)
+        gate.activityResumed(activity)
+        withTimeout(5_000) { poll.await() }
+        assertEquals(path, server.takeRequest(2, TimeUnit.SECONDS)!!.path)
+        assertEquals(1, server.requestCount)
     }
 
     @Test fun `speculative lyrics explicitly require foreground and cancel without replay on pause`() = runBlocking {

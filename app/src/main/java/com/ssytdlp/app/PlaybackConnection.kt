@@ -21,7 +21,8 @@ data class PlaybackState(
     val connected: Boolean = false, val track: Track? = null, val queue: List<Track> = emptyList(),
     val index: Int = 0, val playing: Boolean = false, val buffering: Boolean = false,
     val position: Long = 0, val duration: Long = 0, val shuffle: Boolean = false,
-    val repeat: Int = Player.REPEAT_MODE_OFF, val error: String? = null
+    val repeat: Int = Player.REPEAT_MODE_OFF, val error: String? = null,
+    val speed: Float = 1f
 )
 
 class PlaybackConnection(
@@ -146,7 +147,8 @@ class PlaybackConnection(
             (0 until player.mediaItemCount).mapNotNull { player.getMediaItemAt(it).asTrack() },
             player.currentMediaItemIndex, player.isPlaying, player.playbackState == Player.STATE_BUFFERING,
             player.currentPosition.coerceAtLeast(0), player.duration.coerceAtLeast(0), player.shuffleModeEnabled,
-            player.repeatMode, if (player.playerError != null) mutableState.value.error else null)
+            player.repeatMode, if (player.playerError != null) mutableState.value.error else null,
+            player.playbackParameters.speed)
     }
 }
 

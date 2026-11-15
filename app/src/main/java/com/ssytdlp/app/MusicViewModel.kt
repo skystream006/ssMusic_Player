@@ -41,6 +41,7 @@ data class LibraryState(
     val ratings: Map<String, Int> = emptyMap(),
     val transcriptionLocks: Map<String, Boolean> = emptyMap(),
     val artworkUrls: Map<String, String?> = emptyMap(),
+    val songVideos: Map<String, SongVideo> = emptyMap(),
     val filePrivacy: Map<String, Boolean> = emptyMap(),
     val privacyJobs: Map<String, Job> = emptyMap(),
     private val privacyFileJobs: Map<String, Job> = emptyMap()
@@ -80,6 +81,24 @@ data class LibraryState(
 
     fun rating(track: Track): Int = ratings[track.key] ?: track.rating
 
+    fun songVideo(track: Track): SongVideo = songVideos[track.key] ?: SongVideo(track.videoUrl, track.linkedVideo)
+
+    fun withSongVideos(files: List<Track>, jobId: String? = null): LibraryState {
+        val all = files.flatMap { file ->
+            val track = if (jobId == null) file else file.copy(jobId = jobId)
+            listOfNotNull(track, track.noVocalsVersion?.copy(jobId = track.jobId))
+        }
+        return copy(songVideos = songVideos + all.associate { it.key to SongVideo(it.videoUrl, it.linkedVideo) })
+    }
+
+    fun withSongVideo(track: Track, value: SongVideo): LibraryState {
+        fun update(file: Track): Track = if (file.key == track.key)
+            file.copy(videoUrl = value.videoUrl, linkedVideo = value.linkedVideo)
+        else file.copy(noVocalsVersion = file.noVocalsVersion?.let(::update))
+        return copy(songVideos = songVideos + (track.key to value),
+            tracks = tracks.copy(files = tracks.files.map(::update)))
+    }
+
     val totalPages: Int
         get() = if (allPagesLoaded) ((tracks.files.size + pageSize.items - 1) / pageSize.items).coerceAtLeast(1)
             else tracks.totalPages.coerceAtLeast(1)
@@ -104,7 +123,7 @@ data class LibraryState(
 
     fun transcriptionLocked(track: Track): Boolean = transcriptionLocks[track.key] ?: track.transcriptionLocked
 
-    fun withTrackPage(result: TrackPage): LibraryState = withPrivacyFiles(result.files).copy(
+    fun withTrackPage(result: TrackPage): LibraryState = withPrivacyFiles(result.files).withSongVideos(result.files).copy(
         tracks = result, page = result.page, allPagesLoaded = false,
         ratings = ratings + result.files.associate { it.key to it.rating },
         artworkUrls = artworkUrls + result.files.associate { it.key to it.artworkUrl },
@@ -134,6 +153,7 @@ data class LibraryState(
         tracks = tracks.copy(files = tracks.files.map { it.withReplacedFile(file) }),
         ratings = ratings + (file.key to file.rating),
         artworkUrls = artworkUrls + (file.key to file.artworkUrl),
+        songVideos = songVideos + (file.key to SongVideo(file.videoUrl, file.linkedVideo)),
         transcriptionLocks = transcriptionLocks + (file.key to file.transcriptionLocked),
         pendingTranscriptions = pendingTranscriptions - file.key,
         transcriptions = transcriptions + (file.key to null))
@@ -201,8 +221,9 @@ class MusicViewModel @JvmOverloads constructor(application: Application, private
     var edgeLightingStyle by mutableStateOf(EdgeLightingStyle.fromPreference(
         application.getSharedPreferences("settings", 0).getString("edge_lighting_style", null)))
         private set
-    internal var audioVisualizerEnabled by mutableStateOf(
-        application.getSharedPreferences("settings", 0).getBoolean("audio_visualizer", false))
+    internal var playerDisplay by mutableStateOf(PlayerDisplay.fromPreference(
+        application.getSharedPreferences("settings", 0).getString("player_display", null),
+        application.getSharedPreferences("settings", 0).getBoolean("audio_visualizer", false)))
         private set
     internal var audioVisualizerStyle by mutableStateOf(AudioVisualizerStyle.fromPreference(
         application.getSharedPreferences("settings", 0).getString("audio_visualizer_style", null)))
@@ -327,6 +348,10 @@ class MusicViewModel @JvmOverloads constructor(application: Application, private
                         if (cached != null) DebugLog.event(DebugEvent.METADATA_CACHE_HIT)
                         else metadataCache.put(selection.owner, selection.identity, result)
                         ownedMetadata.publish(selection.owner, result)
+                        val track = requireNotNull(load.track)
+                        if (track.key !in library.songVideos) {
+                            library = library.withSongVideo(track, SongVideo(result.videoUrl, result.linkedVideo))
+                        }
                         metadataError = null
                         metadataReady.value = selection
                     } catch (error: Exception) {
@@ -608,6 +633,7 @@ class MusicViewModel @JvmOverloads constructor(application: Application, private
                     if (sessions.account.value == account && generation == transcriptionGeneration) {
                         acceptTranscriptions(job, tracks)
                         if (privacyFiles != null) library = library.withPrivacyFiles(privacyFiles.files, job)
+                            .withSongVideos(privacyFiles.files, job.id)
                     }
                 }
             }
@@ -661,6 +687,7 @@ class MusicViewModel @JvmOverloads constructor(application: Application, private
     fun jobAction(job: Job, action: String) = launchAction {
         when (action) {
             "rerun" -> api.request("/api/jobs/${encode(job.id)}/rerun", "POST")
+            "stop" -> api.request("/api/jobs/${encode(job.id)}/stop", "POST")
             "delete" -> api.request("/api/jobs/${encode(job.id)}", "DELETE")
             "link" -> api.request("/api/library/links", "POST", json("jobId" to job.id))
         }
@@ -1034,6 +1061,45 @@ class MusicViewModel @JvmOverloads constructor(application: Application, private
         onSuccess()
     }
 
+    internal fun canDownloadSongVideo(track: Track): Boolean =
+        track.copy(videoUrl = library.songVideo(track).videoUrl).canDownloadVideo(
+            sessions.account.value?.user, privacyJob(track))
+
+    internal suspend fun refreshSongVideo(track: Track) {
+        val account = requireNotNull(sessions.account.value) { "Sign in to load the song video." }
+        val generation = transcriptionGeneration
+        val result = ApiJson.decodeFromJsonElement<SongVideo>(api.request(songVideoPath(track)))
+        currentCoroutineContext().ensureActive()
+        if (sameAccount(account) && generation == transcriptionGeneration) {
+            // Status only reads the catalog; song lists can also discover URLs in embedded tags.
+            library = library.withSongVideo(track, result.copy(videoUrl = result.videoUrl ?: library.songVideo(track).videoUrl))
+        }
+    }
+
+    internal fun downloadSongVideo(track: Track) = launchSongAction(track, validate = {
+        require(canDownloadSongVideo(track)) { "Only the song's owner can download its video." }
+        require(privacyJob(track)?.active != true && library.songVideo(track).linkedVideo?.active != true) {
+            "A download is already running for this job. Wait for it to finish or stop it in Jobs."
+        }
+    }) {
+        require(canDownloadSongVideo(track)) { "Only the song's owner can download its video." }
+        require(privacyJob(track)?.active != true && library.songVideo(track).linkedVideo?.active != true) {
+            "A download is already running for this job. Wait for it to finish or stop it in Jobs."
+        }
+        val result = ApiJson.decodeFromJsonElement<SongVideo>(api.request(songVideoPath(track), "POST"))
+        val linkedVideo = result.linkedVideo
+        require(!result.videoUrl.isNullOrBlank() && linkedVideo != null) {
+            "The server did not return a linked-video download. Refresh before retrying."
+        }
+        library = library.withSongVideo(track, result)
+        commitSongChange(track)
+        require(result.available || linkedVideo.active) {
+            linkedVideo.error ?: "The video download did not start. Refresh before retrying."
+        }
+        message(if (result.available) "Video ready. Select Video in the player."
+            else "Video download queued. You can close the dialog.")
+    }
+
     fun replaceFile(track: Track, uri: Uri, onSuccess: () -> Unit) = launchSongAction(track) {
         val account = sessions.account.value
         require(canReplaceFile(account?.user,
@@ -1128,9 +1194,10 @@ class MusicViewModel @JvmOverloads constructor(application: Application, private
         getApplication<Application>().getSharedPreferences("settings", 0).edit().putString("edge_lighting_style", style.name).apply()
     }
 
-    internal fun chooseAudioVisualizer(enabled: Boolean) {
-        audioVisualizerEnabled = enabled
-        getApplication<Application>().getSharedPreferences("settings", 0).edit().putBoolean("audio_visualizer", enabled).apply()
+    internal fun choosePlayerDisplay(display: PlayerDisplay) {
+        playerDisplay = display
+        getApplication<Application>().getSharedPreferences("settings", 0).edit()
+            .putString("player_display", display.name).remove("audio_visualizer").apply()
     }
 
     internal fun chooseAudioVisualizerStyle(style: AudioVisualizerStyle) {

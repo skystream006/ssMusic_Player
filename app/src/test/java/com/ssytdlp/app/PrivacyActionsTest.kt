@@ -528,7 +528,8 @@ class PrivacyActionsTest {
         }
         for (user in listOf(owner, contributor, User("admin", role = "admin"), User("reader"))) {
             compose.runOnIdle { account.value = testAccount(user) }
-            for (source in listOf(job, job.copy(status = "running"), job.copy(source = "files"))) {
+            for (source in listOf(job, job.copy(status = "running"), job.copy(source = "files"),
+                job.copy(source = "files", status = "running", videoDownloadName = track.name))) {
                 compose.runOnIdle { currentJob.value = source }
                 openMenu("Download options")
                 val expected = mutableListOf("Play files", "Save ZIP")
@@ -540,6 +541,7 @@ class PrivacyActionsTest {
                         expected += "Delete job and files"
                         if (source.source !in listOf("files", "itunes")) expected += "Rerun download"
                     }
+                    if (source.active && source.videoDownloadName != null) expected += "Stop download"
                 }
                 assertMenuOrder(expected.sortedWith(String.CASE_INSENSITIVE_ORDER))
                 compose.onNodeWithText("Play files").assertIsNotEnabled()

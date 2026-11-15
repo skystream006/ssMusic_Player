@@ -107,6 +107,11 @@ fun JobMenu(model: MusicViewModel, job: Job, requestNotifications: () -> Unit, d
             if (job.isMember(user)) {
                 DropdownMenuItem(text = { Text("Show in library") }, leadingIcon = { Icon(Icons.Rounded.LibraryAdd, null) }, onClick = { open = false; model.jobAction(job, "link") })
             }
+            if (job.active && job.videoDownloadName != null && !user.isShared && job.canModify(user) &&
+                (!job.isPrivate || job.initiatedBy?.id == user.id)) {
+                DropdownMenuItem(text = { Text("Stop download") }, leadingIcon = { Icon(Icons.Rounded.Stop, null) },
+                    onClick = { open = false; model.jobAction(job, "stop") })
+            }
         }
     }
     if (deleting) ConfirmDialog("Delete this job?", "All of its media files and library links will be deleted for every user. This cannot be undone.", { deleting = false }) { model.jobAction(job, "delete"); deleting = false }

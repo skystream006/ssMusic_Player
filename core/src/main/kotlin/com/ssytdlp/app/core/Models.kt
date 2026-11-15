@@ -73,11 +73,28 @@ data class Track(
     val noVocalsVersion: Track? = null, val transcription: Transcription? = null,
     val transcriptionLocked: Boolean = false, val artworkUrl: String? = null,
     @SerialName("private") val isPrivate: Boolean = false, val sourceJob: Job? = null,
-    val libraryOwnerId: String? = null
+    val libraryOwnerId: String? = null,
+    val videoUrl: String? = null, val linkedVideo: LinkedVideo? = null
 ) {
     val key: String get() = ApiJson.encodeToString(listOf(jobId, name))
     val displayTitle: String get() = title.ifBlank { name.substringAfterLast('/').substringBeforeLast('.') }
     val displayArtist: String get() = artist.ifBlank { "Unknown artist" }
+    fun canDownloadVideo(user: User?, job: Job? = sourceJob): Boolean =
+        mediaType == "audio" && !videoUrl.isNullOrBlank() && job != null && job.id == jobId &&
+            ownsMedia(user, job.initiatedBy) && (libraryOwnerId == null || libraryOwnerId == user?.id)
+}
+
+@Serializable
+data class LinkedVideo(
+    val sourceUrl: String, val status: String, val requestedAt: String? = null,
+    val updatedAt: String? = null, val error: String? = null, val streamUrl: String? = null
+) {
+    val active: Boolean get() = status == "queued" || status == "running"
+}
+
+@Serializable
+data class SongVideo(val videoUrl: String?, val linkedVideo: LinkedVideo?) {
+    val available: Boolean get() = linkedVideo != null && linkedVideo.status == "completed" && !linkedVideo.streamUrl.isNullOrBlank()
 }
 
 @Serializable
@@ -94,7 +111,8 @@ data class SongMetadata(
     val title: String = "", val artist: String = "", val album: String = "", val genre: String = "",
     val year: String = "", val rating: Int = 0, val artwork: String? = null,
     val sylt: List<LyricLine> = emptyList(), val uslt: String = "",
-    val transcriptionLocked: Boolean = false, val canEdit: Boolean = false
+    val transcriptionLocked: Boolean = false, val canEdit: Boolean = false,
+    val videoUrl: String? = null, val linkedVideo: LinkedVideo? = null
 )
 
 @Serializable
@@ -104,7 +122,8 @@ data class Job(
     val initiatedBy: User? = null, val contributors: List<User> = emptyList(), val updatedAt: String = "",
     val isPlaylist: Boolean = true,
     val transcriptions: Map<String, Transcription> = emptyMap(),
-    @SerialName("private") val isPrivate: Boolean = false, val privateFiles: List<String>? = null
+    @SerialName("private") val isPrivate: Boolean = false, val privateFiles: List<String>? = null,
+    val videoDownloadName: String? = null
 ) {
     val active: Boolean get() = status == "queued" || status == "running"
     fun canModify(user: User) = user.role == "admin" || isMember(user)

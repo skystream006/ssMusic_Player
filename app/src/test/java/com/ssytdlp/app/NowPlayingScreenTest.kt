@@ -20,6 +20,7 @@ import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Text
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.key
 import androidx.compose.runtime.MutableState
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.snapshots.Snapshot
@@ -50,9 +51,11 @@ import com.ssytdlp.app.core.User
 import com.ssytdlp.app.core.TrackPage
 import com.ssytdlp.app.core.Job
 import com.ssytdlp.app.core.Library
+import com.ssytdlp.app.core.LinkedVideo
 import com.ssytdlp.app.core.LyricLine
 import com.ssytdlp.app.core.Preferences
 import com.ssytdlp.app.core.SongMetadata
+import com.ssytdlp.app.core.SongVideo
 import com.ssytdlp.app.core.Transcription
 import java.security.Provider
 import java.security.Security
@@ -247,17 +250,19 @@ class NowPlayingScreenTest {
         compose.onNodeWithContentDescription("Refresh").assertIsEnabled()
     }
 
-    @Test fun visualizerSwitchAndDropdownRetainSelectionWithoutChangingPlayback() {
+    @Test fun playerDisplayAndStylesRetainSelectionWithoutChangingPlayback() {
         val track = Track(jobId = "preview", name = "song.mp3")
         val playback = PlaybackState(track = track, queue = listOf(track), position = 42_000)
         val visible = mutableStateOf(true)
         val restoration = StateRestorationTester(compose)
         restoration.setContent { MusicTheme { if (visible.value) NowPlayingScreen(model, playback) { _, _ -> } } }
         compose.onNodeWithText("Player").performClick()
-        compose.onNodeWithContentDescription("Audio visualizer").assertIsOff()
+        compose.onNodeWithContentDescription("Audio visualizer").assertIsNotSelected()
+        compose.onNodeWithContentDescription("Album art").assertIsSelected()
+        compose.onNodeWithContentDescription("Song video").assertIsNotEnabled()
         compose.onNodeWithContentDescription("Album artwork unavailable").assertIsDisplayed()
         compose.onNodeWithContentDescription("Visualizer style").assertDoesNotExist()
-        compose.onNodeWithContentDescription("Audio visualizer").performClick().assertIsOn()
+        compose.onNodeWithContentDescription("Audio visualizer").performClick().assertIsSelected()
         compose.onNodeWithContentDescription("Album artwork unavailable").assertDoesNotExist()
         AudioVisualizerStyle.entries.forEach { style ->
             compose.onNodeWithContentDescription("Visualizer style").performClick()
@@ -267,7 +272,7 @@ class NowPlayingScreenTest {
             compose.onNodeWithContentDescription("Playback position").assertIsDisplayed()
         }
         restoration.emulateSavedInstanceStateRestore()
-        compose.onNodeWithContentDescription("Audio visualizer").assertIsOn()
+        compose.onNodeWithContentDescription("Audio visualizer").assertIsSelected()
         compose.onNodeWithContentDescription("Radial pulse audio visualizer").assertIsDisplayed()
         listOf("Lyrics", "Queue").forEach { tab ->
             compose.onNodeWithText(tab).performClick()
@@ -276,7 +281,8 @@ class NowPlayingScreenTest {
             compose.onNodeWithText("Player").performClick()
             compose.onNodeWithContentDescription("Radial pulse audio visualizer").assertIsDisplayed()
         }
-        compose.onNodeWithContentDescription("Audio visualizer").performClick().assertIsOff()
+        compose.onNodeWithContentDescription("Album art").performClick().assertIsSelected()
+        compose.onNodeWithContentDescription("Audio visualizer").assertIsNotSelected()
         compose.onNodeWithContentDescription("Visualizer style").assertDoesNotExist()
         compose.onNodeWithContentDescription("Album artwork unavailable").assertIsDisplayed()
         compose.onNodeWithContentDescription("Audio visualizer").performClick()
@@ -285,31 +291,43 @@ class NowPlayingScreenTest {
         compose.onNodeWithContentDescription("Radial pulse audio visualizer").assertDoesNotExist()
         compose.runOnIdle { visible.value = true }
         compose.onNodeWithText("Player").performClick()
-        compose.onNodeWithContentDescription("Audio visualizer").assertIsOn()
+        compose.onNodeWithContentDescription("Audio visualizer").assertIsSelected()
         compose.onNodeWithContentDescription("Radial pulse audio visualizer").assertIsDisplayed()
         compose.onNodeWithText("0:42").assertIsDisplayed()
     }
 
-    @Test fun visualizerPreferencesSurviveModelRecreationAndUnknownStylesFallBack() {
+    @Test fun playerDisplayPreferencesPersistMigrateTheOldSwitchAndRejectUnknownStyles() {
         val application = model.getApplication<MusicApplication>()
         val preferences = application.getSharedPreferences("settings", 0)
         compose.runOnIdle {
-            assertEquals(false, model.audioVisualizerEnabled)
+            assertEquals(PlayerDisplay.ALBUM_ART, model.playerDisplay)
             assertEquals(AudioVisualizerStyle.WAVEFORM, model.audioVisualizerStyle)
-            model.chooseAudioVisualizer(true)
+            model.choosePlayerDisplay(PlayerDisplay.AUDIO_VISUALIZER)
             model.chooseAudioVisualizerStyle(AudioVisualizerStyle.RADIAL)
             val restored = MusicViewModel(application, connectPlayback = false)
             models.put("restored-visualizer", restored)
-            assertTrue(restored.audioVisualizerEnabled)
+            assertEquals(PlayerDisplay.AUDIO_VISUALIZER, restored.playerDisplay)
             assertEquals(AudioVisualizerStyle.RADIAL, restored.audioVisualizerStyle)
-            restored.chooseAudioVisualizer(false)
+            restored.choosePlayerDisplay(PlayerDisplay.ALBUM_ART)
             val artwork = MusicViewModel(application, connectPlayback = false)
             models.put("restored-artwork", artwork)
-            assertEquals(false, artwork.audioVisualizerEnabled)
+            assertEquals(PlayerDisplay.ALBUM_ART, artwork.playerDisplay)
             assertEquals(AudioVisualizerStyle.RADIAL, artwork.audioVisualizerStyle)
-            preferences.edit().putString("audio_visualizer_style", "unknown").commit()
+            artwork.choosePlayerDisplay(PlayerDisplay.VIDEO)
+            val video = MusicViewModel(application, connectPlayback = false)
+            models.put("restored-video", video)
+            assertEquals(PlayerDisplay.VIDEO, video.playerDisplay)
+            preferences.edit().remove("player_display").putBoolean("audio_visualizer", true).commit()
+            val migrated = MusicViewModel(application, connectPlayback = false)
+            models.put("migrated-visualizer", migrated)
+            assertEquals(PlayerDisplay.AUDIO_VISUALIZER, migrated.playerDisplay)
+            migrated.choosePlayerDisplay(PlayerDisplay.ALBUM_ART)
+            assertEquals(false, preferences.contains("audio_visualizer"))
+            preferences.edit().putString("player_display", "unknown")
+                .putString("audio_visualizer_style", "unknown").commit()
             val fallback = MusicViewModel(application, connectPlayback = false)
             models.put("fallback-visualizer", fallback)
+            assertEquals(PlayerDisplay.ALBUM_ART, fallback.playerDisplay)
             assertEquals(AudioVisualizerStyle.WAVEFORM, fallback.audioVisualizerStyle)
         }
     }
@@ -349,7 +367,97 @@ class NowPlayingScreenTest {
         compose.onNodeWithContentDescription("Waveform audio visualizer").assertDoesNotExist()
         update(playback.value.copy(track = track, playing = false))
         assertVisualizerState("Idle")
-        compose.onNodeWithContentDescription("Audio visualizer").assertIsOn()
+        compose.onNodeWithContentDescription("Audio visualizer").assertIsSelected()
+    }
+
+    @Test fun songVideoDisplayRequiresACompletedStreamAndFallsBackForTheNextSong() {
+        val source = "https://www.youtube.com/watch?v=abcdefghijk"
+        val track = Track("source", "song.mp3", videoUrl = source, linkedVideo = LinkedVideo(source, "queued"))
+        val state = mutableStateOf(PlaybackState(track = track, queue = listOf(track), position = 42_000))
+        val account = ReflectionHelpers.getField<MutableStateFlow<Account?>>(model.sessions, "mutableAccount")
+        val library = ReflectionHelpers.getField<MutableState<LibraryState>>(model, "library\$delegate")
+        val response = java.util.concurrent.atomic.AtomicReference(SongVideo(source, track.linkedVideo))
+        metadataResponses { request ->
+            if (request.url.encodedPath == songVideoPath(track)) 200 to ApiJson.encodeToString(response.get())
+            else 404 to """{"error":"Video unavailable"}"""
+        }
+        compose.runOnIdle {
+            account.value = Account("https://music.example", User("owner"), Session("test", "2099-01-01T00:00:00Z"))
+            library.value = LibraryState().withTrackPage(TrackPage(files = listOf(track)))
+        }
+        compose.setContent { MusicTheme { NowPlayingScreen(model, state.value) { _, _ -> } } }
+        compose.onNodeWithText("Player").performClick()
+        compose.onNodeWithContentDescription("Song video").assertIsNotEnabled()
+        compose.onNodeWithContentDescription("Album art").assertIsSelected()
+        val ready = SongVideo(source, LinkedVideo(source, "completed", streamUrl = "/api/jobs/source/video/song.mp3?v=2"))
+        compose.runOnIdle {
+            response.set(ready)
+            library.value = library.value.withSongVideo(track, ready)
+        }
+        compose.onNodeWithContentDescription("Song video").assertIsEnabled().performClick().assertIsSelected()
+        compose.onNodeWithTag("linked-song-video").assertIsDisplayed()
+        compose.onNodeWithText("0:42").assertIsDisplayed()
+        compose.runOnIdle { state.value = state.value.copy(track = Track("source", "next.mp3")) }
+        compose.onNodeWithContentDescription("Song video").assertIsNotEnabled()
+        compose.onNodeWithContentDescription("Album art").assertIsSelected()
+        compose.onNodeWithTag("linked-song-video").assertDoesNotExist()
+        compose.onNodeWithContentDescription("Album artwork unavailable").assertIsDisplayed()
+        compose.runOnIdle {
+            assertEquals(PlayerDisplay.VIDEO, model.playerDisplay)
+            assertEquals(listOf(track), state.value.queue)
+            assertEquals(42_000L, state.value.position)
+        }
+    }
+
+    @Test fun downloadSongVideoIsOwnerOnlyInLibraryQueuePlayerAndDockMenus() {
+        val source = "https://www.youtube.com/watch?v=abcdefghijk"
+        val track = mutableStateOf(Track("source", "song.mp3", videoUrl = source))
+        val surface = mutableStateOf("Library")
+        val account = ReflectionHelpers.getField<MutableStateFlow<Account?>>(model.sessions, "mutableAccount")
+        val library = ReflectionHelpers.getField<MutableState<LibraryState>>(model, "library\$delegate")
+        val requests = metadataResponses { 200 to ApiJson.encodeToString(SongVideo(source, null)) }
+        compose.runOnIdle {
+            account.value = Account("https://music.example", User("owner"), Session("test", "2099-01-01T00:00:00Z"))
+            library.value = LibraryState(library = Library(jobs = listOf(Job("source", initiatedBy = User("owner"),
+                contributors = listOf(User("contributor"))))))
+        }
+        compose.setContent {
+            MusicTheme {
+                key(surface.value) {
+                    when (surface.value) {
+                        "Library" -> TrackMenu(model, track.value, 0) { _, _ -> }
+                        "Queue" -> TrackMenu(model, track.value, 0, onRemoveFromQueue = {}) { _, _ -> }
+                        "Player" -> NowPlayingScreen(model, PlaybackState(track = track.value)) { _, _ -> }
+                        else -> PlayerDock(PlaybackState(track = track.value), model, {}, {}) { _, _ -> }
+                    }
+                }
+            }
+        }
+        for (location in listOf("Library", "Queue", "Player", "Dock")) {
+            compose.runOnIdle { surface.value = location }
+            for (user in listOf(User("owner"), User("contributor"), User("admin", role = "admin"), User("owner", role = "Shared"))) {
+                compose.runOnIdle { account.value = account.value!!.copy(user = user) }
+                if (location in listOf("Library", "Queue"))
+                    compose.onNodeWithContentDescription("Options for song").performClick()
+                else openSongActions()
+                if (user.id == "owner" && !user.isShared) songAction("Download song video").assertIsEnabled()
+                else compose.onNodeWithText("Download song video").assertDoesNotExist()
+                compose.runOnIdle {
+                    val popup = songActionsWindow()
+                    popup.dispatchKeyEvent(KeyEvent(KeyEvent.ACTION_DOWN, KeyEvent.KEYCODE_BACK))
+                    popup.dispatchKeyEvent(KeyEvent(KeyEvent.ACTION_UP, KeyEvent.KEYCODE_BACK))
+                }
+                waitForPopupDismissal()
+            }
+        }
+        compose.runOnIdle {
+            account.value = account.value!!.copy(user = User("owner"))
+            track.value = track.value.copy(videoUrl = null)
+            library.value = library.value.withSongVideo(track.value, SongVideo(null, null))
+        }
+        openSongActions()
+        compose.onNodeWithText("Download song video").assertDoesNotExist()
+        compose.runOnIdle { assertTrue(requests.all { it.method == "GET" }) }
     }
 
     @Test fun nowPlayingActionsRespectEditingPermissionsAndBusyStateAcrossTabs() {
@@ -1172,6 +1280,50 @@ class NowPlayingScreenTest {
         compose.onNodeWithText("Save").assertDoesNotExist()
         compose.onNode(hasSetTextAction()).assertDoesNotExist()
         compose.onNodeWithText("Close").assertIsEnabled()
+        compose.runOnIdle {
+            assertEquals(2, requests.size)
+            assertTrue(requests.all { it.method == "GET" && it.url.encodedPath == songPath(track, "lyrics") })
+        }
+    }
+
+    @Config(qualifiers = "w320dp-h800dp")
+    @Test fun metadataDialogShowsFreshVideoUrlAndFallsBackToTheKnownSongLink() {
+        compose.mainClock.autoAdvance = false
+        val known = "https://www.youtube.com/watch?v=abcdefghijk"
+        val fresh = "https://www.youtube.com/watch?v=lmnopqrstuv"
+        val track = Track("source", "song.mp3", videoUrl = known)
+        val response = java.util.concurrent.atomic.AtomicReference(
+            SongMetadata(title = "Fetched song", canEdit = true, videoUrl = fresh))
+        val requests = metadataResponses { 200 to ApiJson.encodeToString(response.get()) }
+        val account = ReflectionHelpers.getField<MutableStateFlow<Account?>>(model.sessions, "mutableAccount")
+        val library = ReflectionHelpers.getField<MutableState<LibraryState>>(model, "library\$delegate")
+        val open = mutableStateOf(true)
+        compose.runOnIdle {
+            account.value = Account("https://music.example", User("owner"), Session("test", "2099-01-01T00:00:00Z"))
+            library.value = LibraryState(library = Library(jobs = listOf(Job("source", initiatedBy = User("owner")))))
+                .withTrackPage(TrackPage(files = listOf(track)))
+        }
+        compose.setContent { MusicTheme { if (open.value) MetadataDialog(model, track) { open.value = false } } }
+        for (url in listOf(fresh, known)) {
+            compose.waitUntil(5_000) {
+                compose.runOnIdle { Snapshot.sendApplyNotifications() }
+                compose.mainClock.advanceTimeByFrame()
+                compose.onAllNodesWithText(url, substring = true).fetchSemanticsNodes().isNotEmpty()
+            }
+            compose.onNodeWithText("Video URL").performScrollTo().assertTextContains(url)
+                .assert(hasSetTextAction().not())
+            compose.onNodeWithText("Cancel").performClick()
+            compose.runOnIdle { Snapshot.sendApplyNotifications() }
+            compose.mainClock.advanceTimeByFrame()
+            compose.onNode(isDialog()).assertDoesNotExist()
+            if (url == fresh) {
+                compose.runOnIdle {
+                    response.set(response.get().copy(videoUrl = null))
+                    open.value = true
+                    Snapshot.sendApplyNotifications()
+                }
+            }
+        }
         compose.runOnIdle {
             assertEquals(2, requests.size)
             assertTrue(requests.all { it.method == "GET" && it.url.encodedPath == songPath(track, "lyrics") })
@@ -2011,7 +2163,8 @@ class NowPlayingScreenTest {
     }
 
     private fun assertSolidPlayerSurfaces(lyricsVisible: Boolean = true, surface: () -> Color) {
-        val tabs = compose.onNode(SemanticsMatcher.keyIsDefined(SemanticsProperties.SelectableGroup))
+        val tabs = compose.onNode(SemanticsMatcher.keyIsDefined(SemanticsProperties.SelectableGroup) and
+            hasAnyDescendant(hasText("Player")))
             .fetchSemanticsNode().boundsInRoot
         val transport = compose.onNodeWithContentDescription("Playback position").fetchSemanticsNode().boundsInRoot
         compose.runOnIdle {
