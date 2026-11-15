@@ -43,6 +43,7 @@ import java.util.Date
 import java.util.concurrent.TimeUnit
 import java.util.concurrent.atomic.AtomicReference
 import java.util.concurrent.atomic.AtomicInteger
+import java.util.concurrent.atomic.AtomicBoolean
 import javax.crypto.KeyGenerator
 import kotlinx.coroutines.cancel
 import kotlinx.coroutines.Dispatchers
@@ -458,6 +459,53 @@ class AccountRefreshTest {
         perform(model) { model.setTheme(theme = "pink") }
         assertEquals(Preferences("pink", "dark"), model.preferences)
         assertNull(model.notice)
+    }
+
+    @Test fun launcherFollowsLoadedAndSavedAppearanceWithoutApplyingFailedThemeChanges() {
+        val settings = context.getSharedPreferences("settings", Context.MODE_PRIVATE)
+        settings.edit().putBoolean("wave_appearance", false).commit()
+        val saved = AtomicReference(Preferences("midnight"))
+        val rejectSave = AtomicBoolean(false)
+        try {
+            val model = startModel { request ->
+                if (request.requestUrl!!.encodedPath != "/api/preferences") null
+                else if (request.method == "PUT" && rejectSave.get()) MockResponse().setResponseCode(500)
+                else {
+                    if (request.method == "PUT") saved.set(ApiJson.decodeFromString(request.body.clone().readUtf8()))
+                    MockResponse().setBody(ApiJson.encodeToString(saved.get()))
+                }
+            }
+            fun assertIcon(alias: String) {
+                val intent = android.content.Intent(android.content.Intent.ACTION_MAIN)
+                    .addCategory(android.content.Intent.CATEGORY_LAUNCHER).setPackage(context.packageName)
+                assertEquals("${context.packageName}.$alias",
+                    context.packageManager.queryIntentActivities(intent, 0).single().activityInfo.name)
+            }
+            assertIcon("LauncherMidnightDark")
+            perform(model) { model.setTheme(theme = "royal-purple") }
+            assertEquals(Preferences("royal-purple", "dark"), model.preferences)
+            assertIcon("LauncherRoyalPurpleDark")
+            perform(model) { model.setTheme(theme = "pink", mode = "light") }
+            assertIcon("LauncherPinkLight")
+
+            rejectSave.set(true)
+            perform(model) { model.setTheme(theme = "green", mode = "dark") }
+            assertNotNull(model.notice)
+            assertEquals(Preferences("pink", "light"), model.preferences)
+            assertIcon("LauncherPinkLight")
+            rejectSave.set(false)
+
+            compose.runOnUiThread { model.chooseWaveAppearance(true) }
+            assertIcon("LauncherDefault")
+            compose.runOnUiThread { model.chooseWaveAppearance(false) }
+            assertIcon("LauncherPinkLight")
+            val recreated = createModel(collectSession = true, connectPlayback = false)
+            waitFor { recreated.preferences == saved.get() && !recreated.library.loading }
+            assertIcon("LauncherPinkLight")
+            assertNull(recreated.notice)
+        } finally {
+            settings.edit().remove("wave_appearance").commit()
+        }
     }
 
     @Test fun userRefreshPreservesSessionAndPlaybackAndSurvivesReload() {

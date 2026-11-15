@@ -315,6 +315,7 @@ class MusicViewModel @JvmOverloads constructor(application: Application, private
                     runAction {
                         if (!refreshAccount()) return@runAction
                         preferences = ApiJson.decodeFromJsonElement(api.request("/api/preferences"))
+                        updateLauncherIcon()
                         loadLibrary()
                         refreshTracks()
                         refreshHealth()
@@ -1164,14 +1165,27 @@ class MusicViewModel @JvmOverloads constructor(application: Application, private
         }
     }
 
-    fun setTheme(theme: String = preferences.effectiveTheme, mode: String = preferences.mode ?: "light") = launchAction {
+    fun setTheme(theme: String = preferences.effectiveTheme,
+        mode: String = if (preferences.isDarkAppearance) "dark" else "light") = launchAction {
         val effectiveTheme = Preferences(theme = theme).effectiveTheme
         preferences = ApiJson.decodeFromJsonElement(api.request("/api/preferences", "PUT", json("theme" to effectiveTheme, "mode" to mode)))
+        updateLauncherIcon()
     }
 
     fun chooseWaveAppearance(enabled: Boolean) {
         waveAppearance = enabled
         getApplication<Application>().getSharedPreferences("settings", 0).edit().putBoolean("wave_appearance", enabled).apply()
+        updateLauncherIcon()
+    }
+
+    private fun updateLauncherIcon() {
+        try {
+            LauncherIcon.update(app, preferences, waveAppearance)
+        } catch (error: SecurityException) {
+            message("Unable to update the app icon: ${error.message ?: "Android rejected the icon change."}")
+        } catch (error: IllegalArgumentException) {
+            message("Unable to update the app icon: ${error.message ?: "Android rejected the icon change."}")
+        }
     }
 
     fun chooseSkins(enabled: Boolean) {
