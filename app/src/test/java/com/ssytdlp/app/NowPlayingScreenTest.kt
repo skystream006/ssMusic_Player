@@ -409,7 +409,7 @@ class NowPlayingScreenTest {
         }
     }
 
-    @Test fun downloadSongVideoIsOwnerOnlyInLibraryQueuePlayerAndDockMenus() {
+    @Test fun retrieveSongVideoIsOwnerOnlyInLibraryQueuePlayerAndDockMenus() {
         val source = "https://www.youtube.com/watch?v=abcdefghijk"
         val track = mutableStateOf(Track("source", "song.mp3", videoUrl = source))
         val surface = mutableStateOf("Library")
@@ -440,8 +440,8 @@ class NowPlayingScreenTest {
                 if (location in listOf("Library", "Queue"))
                     compose.onNodeWithContentDescription("Options for song").performClick()
                 else openSongActions()
-                if (user.id == "owner" && !user.isShared) songAction("Download song video").assertIsEnabled()
-                else compose.onNodeWithText("Download song video").assertDoesNotExist()
+                if (user.id == "owner" && !user.isShared) songAction("Retrieve song video").assertIsEnabled()
+                else compose.onNodeWithText("Retrieve song video").assertDoesNotExist()
                 compose.runOnIdle {
                     val popup = songActionsWindow()
                     popup.dispatchKeyEvent(KeyEvent(KeyEvent.ACTION_DOWN, KeyEvent.KEYCODE_BACK))
@@ -456,7 +456,7 @@ class NowPlayingScreenTest {
             library.value = library.value.withSongVideo(track.value, SongVideo(null, null))
         }
         openSongActions()
-        compose.onNodeWithText("Download song video").assertDoesNotExist()
+        compose.onNodeWithText("Retrieve song video").assertDoesNotExist()
         compose.runOnIdle { assertTrue(requests.all { it.method == "GET" }) }
     }
 
