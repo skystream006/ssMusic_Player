@@ -30,7 +30,7 @@ internal fun songVideoPath(track: Track): String =
 @Composable
 internal fun SongVideoMenuItem(model: MusicViewModel, track: Track, open: () -> Unit) {
     if (model.canDownloadSongVideo(track)) {
-        DropdownMenuItem(text = { Text("Download song video") },
+        DropdownMenuItem(text = { Text("Retrieve song video") },
             leadingIcon = { Icon(Icons.Rounded.VideoLibrary, null) },
             enabled = !model.songBusy(track), onClick = open)
     }
@@ -73,7 +73,7 @@ internal fun SongVideoDialog(model: MusicViewModel, track: Track, dismiss: () ->
         val busy = model.songBusy(track)
         var error by remember { mutableStateOf<String?>(null) }
         SongVideoPolling(model, track) { error = it }
-        AlertDialog(onDismissRequest = { if (!busy) dismiss() }, title = { Text("Download song video") }, text = {
+        AlertDialog(onDismissRequest = { if (!busy) dismiss() }, title = { Text("Retrieve song video") }, text = {
             Column(Modifier.verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(12.dp)) {
                 Text(track.displayTitle)
                 Text("The video is saved with this song, not added to a playlist or the playback queue.")
