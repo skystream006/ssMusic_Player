@@ -50,6 +50,7 @@ class AudioCacheTest {
     private lateinit var account: Account
     private lateinit var cache: AudioCache
     private lateinit var client: OkHttpClient
+    private lateinit var serverTls: HandshakeCertificates
     private val leases = mutableListOf<AudioCache.Handle>()
     private val bytes = ByteArray(4096) { (it % 251).toByte() }
     private val root get() = File(context.noBackupFilesDir, "audio")
@@ -60,7 +61,7 @@ class AudioCacheTest {
         root.deleteRecursively()
         val certificate = HeldCertificate.Builder().commonName("localhost")
             .addSubjectAlternativeName("localhost").build()
-        val serverTls = HandshakeCertificates.Builder().heldCertificate(certificate).build()
+        serverTls = HandshakeCertificates.Builder().heldCertificate(certificate).build()
         val clientTls = HandshakeCertificates.Builder().addTrustedCertificate(certificate.certificate).build()
         client = OkHttpClient.Builder()
             .sslSocketFactory(clientTls.sslSocketFactory(), clientTls.trustManager).build()
@@ -112,6 +113,37 @@ class AudioCacheTest {
             return output.toByteArray()
         } finally {
             source.close()
+        }
+    }
+
+    @Test fun `LAN filled audio survives switching to primary and still honors canonical invalidation`() = runBlocking {
+        MockWebServer().use { lan ->
+            lan.useHttps(serverTls.sslSocketFactory(), false)
+            lan.enqueue(MockResponse().setBody(Buffer().write(bytes)))
+            lan.start()
+            val owner = account.copy(origin = server.url("/").newBuilder().host("localhost").build().toString().trimEnd('/'))
+            val origin = lan.url("/").newBuilder().host("localhost").build().toString().trimEnd('/')
+            val config = LanPlaybackConfig(owner.origin, owner.user.id, origin,
+                owner.copy(origin = origin, session = owner.session.copy(token = "lan-session")))
+            var network: Long? = 1L
+            val api = ServerApi({ owner }, {}, client,
+                lanPlaybackRouter = LanPlaybackRouter({ owner }, { config }, { network }, {}))
+            cache.setAccount(owner)
+            val uri = Uri.parse(api.url("/api/stream/song"))
+            val handle = lease(owner, api.playbackCalls(owner))
+            withTimeout(5_000) { requireNotNull(handle.cacheCurrent(uri)).join() }
+            assertArrayEquals(bytes, read(handle, uri))
+            assertEquals(1, lan.requestCount)
+            assertEquals(0, server.requestCount)
+            handle.close()
+            network = null
+            val restored = lease(owner, api.playbackCalls(owner))
+            assertArrayEquals(bytes, read(restored, uri))
+            assertEquals(0, server.requestCount)
+            cache.invalidate(owner, "/api/stream/song")
+            assertArrayEquals(bytes, read(restored, uri))
+            assertEquals(1, server.requestCount)
+            assertEquals(1, lan.requestCount)
         }
     }
 

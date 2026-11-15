@@ -249,6 +249,10 @@ class MusicViewModel @JvmOverloads constructor(application: Application, private
     private var playlistReloadRequired = false
     var signingIn by mutableStateOf(false)
         private set
+    internal var lanLoginPending by mutableStateOf(sessions.pending?.let {
+        it.origin == sessions.lanPlayback.value?.origin
+    } == true)
+        private set
     var backup by mutableStateOf<JsonObject?>(null)
         private set
     var health by mutableStateOf<JsonObject?>(null)
@@ -483,16 +487,47 @@ class MusicViewModel @JvmOverloads constructor(application: Application, private
         } catch (error: Exception) { message(error.message ?: "Unable to start sign-in."); null }
     }
 
-    fun cancelLogin() { sessions.pending = null }
+    fun cancelLogin() { sessions.pending = null; lanLoginPending = false }
+
+    internal fun beginLanLogin(): String? = try {
+        check(!signingIn) { "A sign-in is already in progress." }
+        val config = checkNotNull(sessions.lanPlayback.value) { "Save a LAN hostname first." }
+        val pending = AppServer.beginLogin(config.origin)
+        sessions.pending = pending
+        lanLoginPending = true
+        AuthProtocol.loginUrl(pending)
+    } catch (error: Exception) { message(error.message ?: "Unable to start LAN sign-in."); null }
+
+    internal fun configureLanPlayback(input: String): Boolean = try {
+        check(!signingIn) { "Wait for sign-in to finish." }
+        sessions.configureLanPlayback(input)
+        lanLoginPending = sessions.pending?.let { it.origin == sessions.lanPlayback.value?.origin } == true
+        true
+    } catch (error: Exception) { message(error.message ?: "Unable to save LAN playback settings."); false }
+
+    internal fun forgetLanLogin() {
+        try {
+            check(!signingIn) { "Wait for sign-in to finish." }
+            sessions.pending = null
+            lanLoginPending = false
+            sessions.clearLanSession()
+            message("LAN sign-in removed from this device. Playback will use the primary server.")
+        } catch (error: Exception) { message(error.message ?: "Unable to forget LAN sign-in.") }
+    }
 
     fun callback(uri: String) {
         if (signingIn) return
+        val primary = sessions.account.value
+        val lanConfig = sessions.lanPlayback.value?.takeIf {
+            primary != null && sessions.pending?.origin == it.origin
+        }
         val authorization = try {
-            val origin = requireNotNull(serverOrigin.value) { "Configure the server before signing in." }
+            val origin = lanConfig?.origin ?: requireNotNull(serverOrigin.value) { "Configure the server before signing in." }
             AppServer.acceptCallback(uri, sessions.pending, origin)
         }
         catch (error: Exception) { message(error.message ?: "Invalid sign-in callback."); return }
         sessions.pending = null
+        lanLoginPending = false
         signingIn = true
         viewModelScope.launch {
             try {
@@ -504,7 +539,11 @@ class MusicViewModel @JvmOverloads constructor(application: Application, private
                 require(java.time.Instant.parse(response.session.expiresAt).isAfter(java.time.Instant.now())) {
                     "The server returned an expired session."
                 }
-                sessions.save(Account(authorization.origin, response.user, response.session))
+                val account = Account(authorization.origin, response.user, response.session)
+                if (lanConfig != null && primary != null) {
+                    sessions.saveLanAccount(primary, lanConfig, account)
+                    message("LAN playback signed in. Wi-Fi playback will prefer the LAN server.")
+                } else sessions.save(account)
             } catch (error: Exception) {
                 if (error is CancellationException) throw error
                 message(error.message ?: "Sign-in failed. Please try again.")

@@ -51,6 +51,7 @@ fun SettingsScreen(model: MusicViewModel, download: (String, String) -> Unit, on
     val lifecycle = LocalLifecycleOwner.current.lifecycle
     val currentAccount by model.sessions.account.collectAsStateWithLifecycle()
     val offlineCacheSize by model.sessions.offlineCacheSize.collectAsStateWithLifecycle()
+    val lanPlayback by model.sessions.lanPlayback.collectAsStateWithLifecycle()
     val account = currentAccount ?: return
     val offlineCacheUsed by produceState<Long?>(null, lifecycle, account.origin, account.user.id, offlineCacheSize) {
         lifecycle.repeatOnLifecycle(Lifecycle.State.RESUMED) {
@@ -148,6 +149,17 @@ fun SettingsScreen(model: MusicViewModel, download: (String, String) -> Unit, on
         DeviceSettings()
         HorizontalDivider()
         CollapsibleSettingsSection("Server", defaultExpanded = false) {
+            LanPlaybackSetting(lanPlayback?.origin, lanPlayback?.account?.user?.name, model.signingIn,
+                model::configureLanPlayback, onSignIn = {
+                    model.beginLanLogin()?.let { url ->
+                        try { CustomTabsIntent.Builder().build().launchUrl(context, Uri.parse(url)) }
+                        catch (_: Exception) {
+                            model.cancelLogin()
+                            model.message("Install a browser with passkey support to sign in.")
+                        }
+                    }
+                }, onForget = model::forgetLanLogin,
+                pending = model.lanLoginPending, onCancel = model::cancelLogin)
             ItemsPerPageSetting(model.library.pageSize, model::choosePageSize)
             OfflineCacheSetting(offlineCacheSize, offlineCacheUsed, model.sessions::chooseOfflineCacheSize)
             if (showJobsAndBackup) JobsSetting(onJobs)
@@ -169,6 +181,71 @@ fun SettingsScreen(model: MusicViewModel, download: (String, String) -> Unit, on
     })
     if (logout) ConfirmDialog("Sign out?", "Playback will stop and this device's server session will be revoked.", { logout = false }) { logout = false; model.logout() }
     if (schedule && showJobsAndBackup) BackupScheduleDialog(model) { schedule = false }
+}
+
+@Composable
+internal fun LanPlaybackSetting(
+    origin: String?,
+    signedInName: String?,
+    signingIn: Boolean,
+    onSave: (String) -> Boolean,
+    onSignIn: () -> Unit,
+    onForget: () -> Unit,
+    pending: Boolean,
+    onCancel: () -> Unit
+) {
+    var editing by rememberSaveable { mutableStateOf(false) }
+    var input by rememberSaveable(origin) { mutableStateOf(origin.orEmpty()) }
+    var error by rememberSaveable { mutableStateOf<String?>(null) }
+    ListItem(headlineContent = { Text("LAN-first playback") },
+        supportingContent = { Text(origin ?: "Not configured") },
+        trailingContent = { Icon(Icons.AutoMirrored.Rounded.KeyboardArrowRight, null) },
+        modifier = Modifier.clickable(enabled = !signingIn, role = Role.Button) {
+            input = origin.orEmpty()
+            error = null
+            editing = true
+        })
+    if (origin != null) {
+        Text(if (signedInName != null) "LAN signed in as ${signedInName.ifBlank { "listener" }}."
+            else "Sign in on the LAN hostname with its own passkey to enable LAN playback.",
+            style = MaterialTheme.typography.bodySmall)
+        FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            TextButton(onClick = onSignIn, enabled = !signingIn) {
+                Text(if (signingIn) "Signing in..." else if (signedInName == null) "Sign in to LAN" else "Renew LAN sign-in")
+            }
+            if (signedInName != null) TextButton(onClick = onForget, enabled = !signingIn) { Text("Forget LAN sign-in") }
+        }
+        if (pending && !signingIn) TextButton(onClick = onCancel) { Text("Cancel LAN sign-in") }
+    }
+    if (editing) {
+        AlertDialog(onDismissRequest = { editing = false }, title = { Text("LAN-first playback") },
+            text = {
+                Column(Modifier.verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                    Text("On Wi-Fi, try this server for audio and song video, then fall back to the primary server. " +
+                        "Library requests and primary sign-in are unchanged. Both servers must expose the same media paths.")
+                    OutlinedTextField(input, { input = it; error = null }, label = { Text("LAN HTTPS hostname") },
+                        placeholder = { Text("https://music.home.example:8443") },
+                        singleLine = true, isError = error != null, modifier = Modifier.fillMaxWidth())
+                    Text("Use trusted HTTPS and a hostname registered for the LAN passkey, not a raw IP. " +
+                        "Save, then sign in separately on that hostname. Leave blank to disable.",
+                        style = MaterialTheme.typography.bodySmall)
+                    error?.let { Text(it, color = MaterialTheme.colorScheme.error) }
+                }
+            },
+            confirmButton = {
+                TextButton(onClick = {
+                    try {
+                        if (input.isNotBlank()) {
+                            val trimmed = input.trim()
+                            com.ssytdlp.app.core.AuthProtocol.normalizeOrigin(
+                                if ("://" in trimmed) trimmed else "https://$trimmed")
+                        }
+                        if (onSave(input)) editing = false
+                    } catch (failure: IllegalArgumentException) { error = failure.message }
+                }) { Text("Save") }
+            },
+            dismissButton = { TextButton(onClick = { editing = false }) { Text("Cancel") } })
+    }
 }
 
 @Composable

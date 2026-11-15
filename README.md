@@ -135,6 +135,39 @@ cannot fix a signing-key mismatch.
 
 ## Connect and Sign In
 
+### LAN-first playback
+
+After primary sign-in, open **Settings > Server > LAN-first playback** and save
+the LAN HTTPS hostname (an optional port is supported). Then select **Sign in to
+LAN** and authenticate in the browser using the passkey registered on that LAN
+hostname. This is a separate session: the primary server's token is never sent
+to the LAN server, and LAN sign-in does not replace the primary account.
+
+On Wi-Fi, audio, song video, and the current-track audio cache fill try the LAN
+server first. The media request itself checks reachability with a 1.5-second
+connection timeout and a 3-second read timeout. Unreachable servers, rejected
+requests, and interrupted LAN streams fall back to the primary server; failed
+LAN routes are skipped for 30 seconds. Media3 retries interrupted streams at
+their playback offset. A different active Wi-Fi network or LAN configuration
+is reconsidered immediately. Cellular and VPN connections use the primary
+server. Library, artwork, lyrics, uploads, and other API operations continue
+using the primary address and session.
+
+Both addresses must serve the same library with compatible media paths and
+permissions. Use a hostname with a trusted HTTPS certificate (system-trusted or
+trusted through an installed user CA); HTTP, raw IP addresses for passkey
+sign-in, and TLS verification bypasses are not supported. The LAN hostname
+must resolve to the server's LAN address on your Wi-Fi.
+
+The LAN address and session are encrypted on-device and bound to the primary
+account. An expired or rejected LAN session disables LAN playback until you
+sign in to LAN again, without signing out the primary account. **Forget LAN
+sign-in** removes only the local LAN credentials; leaving the hostname blank
+disables the feature. Changing the LAN hostname discards its previous session,
+and signing out of the primary account removes the LAN configuration too.
+
+### Primary server sign-in
+
 1. Start the existing ssYTDLP server. Its API and `/app-login` must be available
    on the same HTTPS origin, without an additional reverse-proxy login wall.
 2. On first launch, enter your server's hostname (for example

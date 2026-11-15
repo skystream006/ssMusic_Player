@@ -74,6 +74,44 @@ class SettingsUiTest {
 
     @Test
     @Config(qualifiers = "w320dp-h480dp")
+    fun lanPlaybackSettingsValidateRestoreAndExposeSeparateSignIn() {
+        val origin = mutableStateOf<String?>(null)
+        var saved: String? = null
+        var signIns = 0
+        val restoration = StateRestorationTester(compose)
+        restoration.setContent {
+            MusicTheme {
+                LanPlaybackSetting(origin.value, null, false, {
+                    saved = it
+                    origin.value = it.takeIf(String::isNotBlank)
+                    true
+                }, { signIns++ }, {}, false, {})
+            }
+        }
+        compose.onNodeWithText("LAN-first playback").performClick()
+        compose.onNodeWithText("LAN HTTPS hostname").performTextInput("http://music.home.example")
+        compose.onNodeWithText("Save").performClick()
+        compose.onNode(isDialog()).assertIsDisplayed()
+        compose.runOnIdle { assertEquals(null, saved) }
+        compose.onNodeWithText("LAN HTTPS hostname").performTextReplacement("https://music.home.example")
+        restoration.emulateSavedInstanceStateRestore()
+        compose.onNodeWithText("https://music.home.example").assertExists()
+        compose.onNodeWithText("Save").performClick()
+        compose.onNode(isDialog()).assertDoesNotExist()
+        compose.onNodeWithText("Sign in to LAN").performClick()
+        compose.runOnIdle {
+            assertEquals("https://music.home.example", saved)
+            assertEquals(1, signIns)
+        }
+        compose.onNodeWithText("LAN-first playback").performClick()
+        compose.onNodeWithText("LAN HTTPS hostname").performTextClearance()
+        compose.onNodeWithText("Save").performClick()
+        compose.onNodeWithText("Not configured").assertIsDisplayed()
+        compose.onNodeWithText("Sign in to LAN").assertDoesNotExist()
+    }
+
+    @Test
+    @Config(qualifiers = "w320dp-h480dp")
     fun itemsPerPagePickerShowsAllChoicesAndRestoresWithLargeText() {
         val size = mutableStateOf(LibraryPageSize.DEFAULT)
         val restoration = StateRestorationTester(compose)

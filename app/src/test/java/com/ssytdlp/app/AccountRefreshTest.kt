@@ -15,6 +15,8 @@ import androidx.lifecycle.viewModelScope
 import androidx.test.core.app.ApplicationProvider
 import com.ssytdlp.app.core.Account
 import com.ssytdlp.app.core.ApiJson
+import com.ssytdlp.app.core.AuthProtocol
+import com.ssytdlp.app.core.LoginResponse
 import com.ssytdlp.app.core.Job
 import com.ssytdlp.app.core.Library
 import com.ssytdlp.app.core.LibraryEntry
@@ -86,6 +88,7 @@ class AccountRefreshTest {
     private lateinit var application: MusicApplication
     private lateinit var server: MockWebServer
     private lateinit var account: Account
+    private lateinit var serverTls: HandshakeCertificates
     private val sessions get() = application.sessions
 
     @Before fun setup() {
@@ -93,7 +96,7 @@ class AccountRefreshTest {
         context.getSharedPreferences("private_session", Context.MODE_PRIVATE).edit().clear().commit()
         context.getSharedPreferences("playback", Context.MODE_PRIVATE).edit().clear().commit()
         val certificate = HeldCertificate.Builder().commonName("localhost").addSubjectAlternativeName("localhost").build()
-        val serverTls = HandshakeCertificates.Builder().heldCertificate(certificate).build()
+        serverTls = HandshakeCertificates.Builder().heldCertificate(certificate).build()
         val clientTls = HandshakeCertificates.Builder().addTrustedCertificate(certificate.certificate).build()
         val loopback = InetAddress.getByName("127.0.0.1")
         server = MockWebServer().apply { useHttps(serverTls.sslSocketFactory(), false); start(loopback, 0) }
@@ -125,6 +128,115 @@ class AccountRefreshTest {
 
         @JvmStatic @AfterClass fun removeKeyStore() {
             Security.removeProvider(provider.name)
+        }
+    }
+
+    @Test fun lanConfigurationAndSeparateSessionPersistEncryptedWithoutReplacingPrimary() {
+        sessions.save(account)
+        sessions.configureLanPlayback("music.lan.example:8443")
+        val config = sessions.lanPlayback.value!!
+        val lan = Account(config.origin, User("lan-listener", "LAN Listener"),
+            Session("L".repeat(43), "2099-01-01T00:00:00Z"))
+        sessions.saveLanAccount(account, config, lan)
+        val restored = SessionStore(context)
+        assertEquals(account, restored.account.value)
+        assertEquals(config.copy(account = lan), restored.lanPlayback.value)
+        val stored = context.getSharedPreferences("private_session", Context.MODE_PRIVATE).getString("lan_playback", "")!!
+        assertFalse(stored.contains(lan.session.token))
+        assertFalse(stored.contains(config.origin))
+        restored.clearLanSession("stale-token")
+        assertEquals(lan, restored.lanPlayback.value!!.account)
+        restored.clearLanSession(lan.session.token)
+        assertNull(restored.lanPlayback.value!!.account)
+        assertEquals(account, restored.account.value)
+        restored.clear()
+        assertNull(SessionStore(context).lanPlayback.value)
+    }
+
+    @Test fun changingLANHostnameOrPrimarySessionRejectsLateLANSignIns() {
+        sessions.save(account)
+        sessions.configureLanPlayback("first.lan.example")
+        val config = sessions.lanPlayback.value!!
+        val lan = account.copy(origin = config.origin)
+        sessions.saveLanAccount(account, config, lan)
+        sessions.configureLanPlayback("second.lan.example")
+        assertNull(sessions.lanPlayback.value!!.account)
+        assertThrows(IllegalStateException::class.java) { sessions.saveLanAccount(account, config, lan) }
+        for (invalid in listOf("http://music.lan.example", "https://192.168.1.5", "https://music.lan.example/api/")) {
+            assertThrows(IllegalArgumentException::class.java) { sessions.configureLanPlayback(invalid) }
+        }
+        sessions.save(account.copy(session = account.session.copy(token = "N".repeat(43))))
+        assertNull(sessions.lanPlayback.value)
+        assertThrows(IllegalStateException::class.java) { sessions.saveLanAccount(account, config, lan) }
+    }
+
+    @Test fun LANPasskeyCallbackUsesSavedHostnameAndSeparateSessionWithoutReloadingPrimaryLibrary() {
+        val model = startModel()
+        drainRequests()
+        application.serverConfig.set(account.origin)
+        val library = model.library
+        MockWebServer().use { lan ->
+            lan.useHttps(serverTls.sslSocketFactory(), false)
+            lan.start(InetAddress.getByName("127.0.0.1"), 0)
+            val origin = lan.url("/").newBuilder().host("localhost").build().toString().trimEnd('/')
+            lateinit var login: String
+            compose.runOnUiThread {
+                assertTrue(model.configureLanPlayback(origin))
+                login = model.beginLanLogin()!!
+            }
+            assertTrue(login.startsWith("$origin/app-login?"))
+            assertTrue(model.lanLoginPending)
+            val pending = sessions.pending!!
+            assertEquals(AuthProtocol.challenge(pending.verifier), Uri.parse(login).getQueryParameter("code_challenge"))
+            val code = "C".repeat(43)
+            compose.runOnUiThread {
+                model.callback("${AuthProtocol.REDIRECT_URI}?code=$code&state=${"X".repeat(43)}")
+            }
+            assertEquals(0, lan.requestCount)
+            assertEquals(account, sessions.account.value)
+            val response = LoginResponse(User("lan-user", "LAN Listener"),
+                Session("L".repeat(43), "2099-01-01T00:00:00Z"))
+            lan.enqueue(MockResponse().setBody(ApiJson.encodeToString(response)))
+            compose.runOnUiThread {
+                model.callback("${AuthProtocol.REDIRECT_URI}?code=$code&state=${pending.state}")
+            }
+            waitFor { !model.signingIn && sessions.lanPlayback.value?.account != null }
+            val request = lan.takeRequest(2, TimeUnit.SECONDS)!!
+            assertEquals("/api/auth/app/token", request.path)
+            assertNull(request.getHeader("Authorization"))
+            val body = ApiJson.parseToJsonElement(request.body.readUtf8()).jsonObject
+            assertEquals(json("code" to code, "codeVerifier" to pending.verifier,
+                "redirectUri" to AuthProtocol.REDIRECT_URI), body)
+            assertEquals(account, sessions.account.value)
+            assertEquals(response.session, sessions.lanPlayback.value!!.account!!.session)
+            assertFalse(model.lanLoginPending)
+            assertEquals(library, model.library)
+            assertTrue(drainRequests().isEmpty())
+        }
+    }
+
+    @Test fun failedLANPasskeyExchangeKeepsPrimarySignedInAndDoesNotSaveLANSession() {
+        val model = startModel()
+        drainRequests()
+        application.serverConfig.set(account.origin)
+        MockWebServer().use { lan ->
+            lan.useHttps(serverTls.sslSocketFactory(), false)
+            lan.start(InetAddress.getByName("127.0.0.1"), 0)
+            val origin = lan.url("/").newBuilder().host("localhost").build().toString().trimEnd('/')
+            compose.runOnUiThread {
+                model.configureLanPlayback(origin)
+                model.beginLanLogin()
+            }
+            val pending = sessions.pending!!
+            lan.enqueue(MockResponse().setResponseCode(401).setBody("""{"error":"LAN passkey exchange expired."}"""))
+            compose.runOnUiThread {
+                model.callback("${AuthProtocol.REDIRECT_URI}?code=${"C".repeat(43)}&state=${pending.state}")
+            }
+            waitFor { !model.signingIn }
+            assertEquals(account, sessions.account.value)
+            assertNull(sessions.lanPlayback.value!!.account)
+            assertEquals("LAN passkey exchange expired.", model.notice)
+            assertTrue(drainRequests().isEmpty())
         }
     }
 

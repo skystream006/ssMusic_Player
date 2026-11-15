@@ -53,7 +53,9 @@ class MusicApplication : Application() {
             serverConfig.origin.value == null && accountOrigin != null -> serverConfig.set(accountOrigin)
             accountOrigin != null && accountOrigin != serverConfig.origin.value -> sessions.clear()
         }
-        if (sessions.pending?.origin?.let { it != serverConfig.origin.value } == true) sessions.pending = null
+        if (sessions.pending?.origin?.let {
+            it != serverConfig.origin.value && it != sessions.lanPlayback.value?.origin
+        } == true) sessions.pending = null
         api = ServerApi(sessions, uiActivity)
     }
 
