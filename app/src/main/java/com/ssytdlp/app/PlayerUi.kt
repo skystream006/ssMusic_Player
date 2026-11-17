@@ -903,7 +903,7 @@ fun TrackMenu(model: MusicViewModel, track: Track, index: Int, onRemoveFromQueue
     expanded: Boolean? = null, onExpandedChange: (Boolean) -> Unit = {},
     download: (String, String) -> Unit) {
     val inQueue = onRemoveFromQueue != null
-    var internalOpen by remember(track.key) { mutableStateOf(false) }
+    var internalOpen by remember { mutableStateOf(false) }
     val open = expanded ?: internalOpen
     fun setOpen(value: Boolean) {
         internalOpen = value
