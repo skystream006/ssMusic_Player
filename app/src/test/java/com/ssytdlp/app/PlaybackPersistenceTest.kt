@@ -181,6 +181,53 @@ class PlaybackPersistenceTest {
         assertEquals(instrumental, player.currentMediaItem!!.asTrack())
     }
 
+    @Test fun `play next inserts after the playing duplicate preserves playback and persists explicit order`() {
+        attach()
+        val queue = listOf(first, second, first, second)
+        player.setMediaItems(queue.map { it.toMediaItem(api) }, 2, 42_000)
+        player.playWhenReady = true
+        player.shuffleModeEnabled = true
+        val next = first.copy(name = "[NoVocals]/first.mp3")
+
+        assertTrue(player.insertNext(next, api))
+        flushEvents()
+
+        val expected = listOf(first, second, first, next, second)
+        assertTrue(player.matchesQueue(expected))
+        assertEquals(2, player.currentMediaItemIndex)
+        assertEquals(42_000L, player.currentPosition)
+        assertTrue(player.playWhenReady)
+        assertFalse(player.shuffleModeEnabled)
+        assertEquals(expected, store.playback(account)!!.queue)
+        player.seekToNextMediaItem()
+        assertEquals(next, player.currentMediaItem!!.asTrack())
+    }
+
+    @Test fun `play next supports empty queues the last item and repeated additions without starting playback`() {
+        assertTrue(player.insertNext(first, api))
+        assertTrue(player.matchesQueue(listOf(first)))
+        assertFalse(player.playWhenReady)
+        assertTrue(player.insertNext(second, api))
+        assertTrue(player.insertNext(first, api))
+        assertTrue(player.matchesQueue(listOf(first, first, second)))
+        player.seekTo(2, 12_345)
+        assertTrue(player.insertNext(second, api))
+        assertTrue(player.matchesQueue(listOf(first, first, second, second)))
+        assertEquals(2, player.currentMediaItemIndex)
+        assertEquals(12_345L, player.currentPosition)
+        assertFalse(player.playWhenReady)
+    }
+
+    @Test fun `play next rejects unplayable tracks without changing queue position or shuffle`() {
+        player.setMediaItems(listOf(first.toMediaItem(api)), 0, 12_345)
+        player.shuffleModeEnabled = true
+        assertFalse(player.insertNext(second.copy(isPlayable = false), api))
+        assertFalse(player.insertNext(second.copy(streamUrl = null), api))
+        assertTrue(player.matchesQueue(listOf(first)))
+        assertEquals(12_345L, player.currentPosition)
+        assertTrue(player.shuffleModeEnabled)
+    }
+
     @Test fun `seek queue edits transitions and playback modes are saved by player events`() {
         attach()
         player.setMediaItems(listOf(first, second).map { it.toMediaItem(api) }, 1, 32_100)

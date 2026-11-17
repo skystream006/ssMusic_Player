@@ -12,6 +12,7 @@ import androidx.browser.customtabs.CustomTabsIntent
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyListState
@@ -337,13 +338,20 @@ fun LibraryScreen(model: MusicViewModel, playback: PlaybackState, onPlay: (Int) 
     browsing: LibraryBrowsingState) {
     val account by model.sessions.account.collectAsStateWithLifecycle()
     var ratingTrack by remember { mutableStateOf<Track?>(null) }
+    var menuTrack by remember(model.library.tracks, account?.origin, account?.user?.id, account?.session) {
+        mutableStateOf<String?>(null)
+    }
     val songs: @Composable () -> Unit = {
         LibraryContent(model.library, playback, onPlay = onPlay, onPage = model::page,
             browsing = browsing, onSort = model::sortLibrary,
             artwork = { rememberTrackArtwork(it, model.api, account) },
             onReorder = if (model.busy || model.pendingSongs.isNotEmpty() || model.recoveringSongOrder || account?.user?.isShared != false) null
                 else { track, target, after -> model.reorder(track, target, after) },
-            onRating = { ratingTrack = it }) { track, index -> TrackMenu(model, track, index, download = download) }
+            onRating = { ratingTrack = it },
+            onLongClick = { track, _ -> if (!model.busy) menuTrack = track.key }) { track, index ->
+                TrackMenu(model, track, index, expanded = menuTrack == track.key,
+                    onExpandedChange = { menuTrack = if (it) track.key else null }, download = download)
+            }
     }
     if (isLandscape()) Row(Modifier.fillMaxSize()) {
         LibraryBrowserPane(model, Modifier.weight(0.35f).fillMaxHeight().testTag("library-playlists-pane"), browsing)
@@ -384,6 +392,7 @@ fun LibraryContent(state: LibraryState, playback: PlaybackState, onPlay: (Int) -
     browsing: LibraryBrowsingState = rememberLibraryBrowsingState(state),
     onReorder: ((Track, Track, Boolean) -> Unit)? = null,
     onSort: ((TrackSort) -> Unit)? = null,
+    onLongClick: ((Track, Int) -> Unit)? = null,
     trackActions: @Composable (Track, Int) -> Unit) {
     val files = remember(state.tracks.files, state.sort, state.ratings, state.allPagesLoaded, state.currentPage, state.pageSize) {
         state.orderedTracks
@@ -413,7 +422,8 @@ fun LibraryContent(state: LibraryState, playback: PlaybackState, onPlay: (Int) -
             artwork = { artwork(track.copy(artworkUrl = state.artworkUrl(track))) },
             dragHandle = if (state.selectedId != null && track.playlistId == state.selectedId && state.search.isEmpty())
                 ({ SongDragHandle(reorder, track.key, track.displayTitle, enabled = canReorder) }) else null,
-            onRatingClick = { onRating(track) }, onClick = { onPlay(index) }) {
+            onRatingClick = { onRating(track) },
+            onLongClick = onLongClick?.let { { it(track, index) } }, onClick = { onPlay(index) }) {
             trackActions(track, index)
         }
       }
@@ -607,15 +617,18 @@ fun EntryMenu(model: MusicViewModel, entry: LibraryEntry) {
     }
 }
 
+@OptIn(androidx.compose.foundation.ExperimentalFoundationApi::class)
 @Composable
 fun TrackRow(track: Track, active: Boolean = false, enabled: Boolean = true, transcription: Transcription? = null,
     artwork: @Composable () -> ImageBitmap? = { null },
     dragHandle: (@Composable () -> Unit)? = null,
-    onRatingClick: () -> Unit = {}, onClick: () -> Unit, trailing: @Composable () -> Unit = {}) {
+    onRatingClick: () -> Unit = {}, onLongClick: (() -> Unit)? = null,
+    onClick: () -> Unit, trailing: @Composable () -> Unit = {}) {
     BoxWithConstraints(Modifier.fillMaxWidth()) {
         val compact = maxWidth < if (dragHandle == null) 240.dp else 360.dp
         Row(Modifier.fillMaxWidth().background(if (active) MaterialTheme.colorScheme.primary.copy(alpha = 0.08f) else Color.Transparent)
-            .clickable(enabled = enabled, onClick = onClick).heightIn(min = 78.dp)
+            .combinedClickable(enabled = enabled, onLongClickLabel = "Song options",
+                onLongClick = onLongClick, onClick = onClick).heightIn(min = 78.dp)
             .padding(start = if (compact) 8.dp else 20.dp, end = 8.dp, top = 10.dp, bottom = 10.dp),
             verticalAlignment = Alignment.CenterVertically) {
             if (!compact) TrackArtwork(track, active, artwork())

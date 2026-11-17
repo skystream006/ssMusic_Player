@@ -99,6 +99,12 @@ class PlaybackConnection(
             if (player.playbackState == Player.STATE_IDLE) player.prepare()
         }
     }
+    fun playNext(track: Track) {
+        controller?.let { player ->
+            if (!player.insertNext(track, api)) return
+            if (player.playbackState == Player.STATE_IDLE) player.prepare()
+        }
+    }
     fun toggle() { controller?.let { if (it.isPlaying) it.pause() else { if (it.playerError != null || it.playbackState == Player.STATE_IDLE) it.prepare(); it.play() } } }
     fun seek(position: Long) { controller?.seekTo(position.coerceAtLeast(0)) }
     fun next() { controller?.seekToNextMediaItem() }
@@ -168,6 +174,15 @@ internal fun Player.setPlaybackQueue(tracks: List<Track>, index: Int, api: Serve
 
 internal fun Player.matchesQueue(queue: List<Track>): Boolean =
     mediaItemCount == queue.size && queue.indices.all { getMediaItemAt(it).asTrack() == queue[it] }
+
+internal fun Player.insertNext(track: Track, api: ServerApi): Boolean {
+    if (!track.isPlayable || track.streamUrl == null) return false
+    // Explicit queue placement takes precedence over Media3's separate shuffle order.
+    shuffleModeEnabled = false
+    val index = if (mediaItemCount == 0) 0 else currentMediaItemIndex + 1
+    addMediaItem(index, track.toMediaItem(api))
+    return true
+}
 
 internal fun Player.moveQueueItem(from: Int, to: Int, expectedQueue: List<Track>): Boolean {
     if (from == to || from !in expectedQueue.indices || to !in expectedQueue.indices || !matchesQueue(expectedQueue)) return false
