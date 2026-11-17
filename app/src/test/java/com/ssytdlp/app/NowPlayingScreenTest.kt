@@ -129,6 +129,81 @@ class NowPlayingScreenTest {
         compose.onAllNodes(isSongHeading).assertCountEquals(0)
     }
 
+    @Test fun holdingLibraryAndQueueRowsOpensTheirExistingMenusWithoutPlaying() {
+        val track = Track("source", "song.mp3", streamUrl = "/api/stream/song.mp3")
+        val library = ReflectionHelpers.getField<MutableState<LibraryState>>(model, "library\$delegate")
+        val queue = mutableStateOf(false)
+        var played = -1
+        compose.runOnIdle {
+            model.viewModelScope.cancel()
+            library.value = LibraryState(tracks = TrackPage(files = listOf(track)))
+        }
+        compose.setContent {
+            MusicTheme {
+                if (queue.value) NowPlayingScreen(model,
+                    PlaybackState(connected = true, track = track, queue = listOf(track, track))) { _, _ -> }
+                else LibraryScreen(model, PlaybackState(connected = true), { played = it }, { _, _ -> })
+            }
+        }
+        compose.onNodeWithText("song").performTouchInput { longClick() }
+        compose.onNodeWithText("Play Next").assertIsDisplayed()
+        compose.onNodeWithText("Add to queue").assertIsDisplayed()
+        compose.onNodeWithText("Save file").performClick()
+        compose.onNode(isPopup()).assertDoesNotExist()
+        compose.runOnIdle {
+            assertEquals(-1, played)
+            queue.value = true
+        }
+        compose.onNodeWithText("Queue").performClick()
+        compose.onNodeWithTag("queue-row-1").performTouchInput { longClick(Offset(40f, centerY)) }
+        compose.onNodeWithText("Play Next").assertIsDisplayed()
+        compose.onNodeWithText("Remove from queue").assertIsDisplayed()
+        compose.onNodeWithText("Add to queue").assertDoesNotExist()
+        compose.onNodeWithText("Save file").performClick()
+        compose.onNode(isPopup()).assertDoesNotExist()
+        compose.onAllNodesWithContentDescription("Options for song")[1].performClick()
+        compose.onNodeWithText("Play Next").assertIsDisplayed()
+        compose.onNodeWithText("Remove from queue").assertIsDisplayed()
+    }
+
+    @Test fun playNextIsAvailableInAllSongMenusAndDisabledForDisconnectedOrUnplayableTracks() {
+        val track = mutableStateOf(Track("source", "song.mp3", streamUrl = "/api/stream/song.mp3"))
+        val location = mutableStateOf("Library")
+        val playback = ReflectionHelpers.getField<MutableStateFlow<PlaybackState>>(model.playback, "mutableState")
+        compose.runOnIdle { playback.value = PlaybackState(connected = true) }
+        compose.setContent {
+            MusicTheme {
+                key(location.value) {
+                    when (location.value) {
+                        "Library" -> TrackMenu(model, track.value, 0) { _, _ -> }
+                        "Queue" -> TrackMenu(model, track.value, 0, onRemoveFromQueue = {}) { _, _ -> }
+                        "Player" -> NowPlayingScreen(model, PlaybackState(track = track.value)) { _, _ -> }
+                        else -> PlayerDock(PlaybackState(track = track.value), model, {}, {}) { _, _ -> }
+                    }
+                }
+            }
+        }
+        for (surface in listOf("Library", "Queue", "Player", "Dock")) {
+            compose.runOnIdle { location.value = surface }
+            if (surface in listOf("Library", "Queue"))
+                compose.onNodeWithContentDescription("Options for song").performClick()
+            else openSongActions()
+            compose.onNodeWithText("Play Next").assertIsEnabled()
+            compose.runOnIdle { playback.value = PlaybackState() }
+            compose.onNodeWithText("Play Next").assertIsNotEnabled()
+            compose.runOnIdle {
+                playback.value = PlaybackState(connected = true)
+                track.value = track.value.copy(isPlayable = false)
+            }
+            compose.onNodeWithText("Play Next").assertIsNotEnabled()
+            compose.runOnIdle { track.value = track.value.copy(isPlayable = true, streamUrl = null) }
+            compose.onNodeWithText("Play Next").assertIsNotEnabled()
+            compose.runOnIdle { track.value = track.value.copy(streamUrl = "/api/stream/song.mp3") }
+            compose.onNodeWithText("Play Next").performClick()
+            compose.onNode(isPopup()).assertDoesNotExist()
+        }
+    }
+
     @Test fun headerShowsCurrentSongAndFilenameFallbackAcrossTabs() {
         val track = Track("preview", "song.mp3", title = "Blue hour", playlistTitle = "Night Sessions")
         val fallback = Track("preview", "folder/Quiet signal.mp3", title = " ")
@@ -1524,7 +1599,8 @@ class NowPlayingScreenTest {
             songAction(it).assertIsDisplayed().assertIsEnabled().assertHasClickAction()
         }
         songAction("Linked Playlists").assertIsDisplayed().assertIsEnabled().assertHasClickAction()
-        compose.onAllNodes(hasClickAction() and hasAnyAncestor(isPopup())).assertCountEquals(actions.size + 1)
+        songAction("Play Next").assertIsDisplayed().assertIsNotEnabled()
+        compose.onAllNodes(hasClickAction() and hasAnyAncestor(isPopup())).assertCountEquals(actions.size + 2)
         compose.runOnIdle { busy.value = true }
         actions.forEach { songAction(it).assertIsNotEnabled() }
         songAction("Linked Playlists").assertIsEnabled()

@@ -44,6 +44,7 @@ internal fun QueueContent(state: PlaybackState, library: LibraryState, modifier:
     onSelect: (Int) -> Unit, onMove: (Int, Int) -> Unit, onRemove: (Int) -> Unit,
     onRating: (Track) -> Unit = {}, artwork: @Composable (Track) -> ImageBitmap? = { null },
     onSort: ((TrackSort) -> Unit)? = null,
+    onLongClick: ((Track, Int) -> Unit)? = null,
     page: MutableIntState = rememberQueuePage(state, library.pageSize),
     trackActions: @Composable (Track, Int) -> Unit = { _, _ -> }) {
     val pageSize = library.pageSize.items
@@ -86,7 +87,8 @@ internal fun QueueContent(state: PlaybackState, library: LibraryState, modifier:
                                 enabled = state.connected, transcription = library.transcription(track),
                                 artwork = { artwork(track.copy(artworkUrl = library.artworkUrl(track))) },
                                 dragHandle = { SongDragHandle(reorder, key, track.displayTitle, enabled = state.connected) },
-                                onRatingClick = { onRating(track) }, onClick = { onSelect(index) }) {
+                                onRatingClick = { onRating(track) },
+                                onLongClick = onLongClick?.let { { it(track, index) } }, onClick = { onSelect(index) }) {
                                 trackActions(track, index)
                             }
                         }

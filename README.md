@@ -135,6 +135,14 @@ cannot fix a signing-key mismatch.
 
 ## Connect and Sign In
 
+### Queue actions
+
+Choose **Play Next** from a song's three-dot menu to insert a new copy immediately
+after the currently playing item, without restarting playback. An empty queue
+receives the song as its first item. This explicit ordering turns shuffle off;
+**Add to queue** still appends at the end. Hold a song row in Library or Queue to
+open the same three-dot menu, or tap the row to play it.
+
 ### LAN-first playback
 
 After primary sign-in, open **Settings > Server > LAN-first playback** and save

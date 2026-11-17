@@ -202,6 +202,9 @@ fun NowPlayingScreen(model: MusicViewModel, state: PlaybackState, onBack: () -> 
     val visibleTab = if (landscape && tab == 2) 0 else tab
     var ratingTrack by remember { mutableStateOf<Track?>(null) }
     val account by model.sessions.account.collectAsStateWithLifecycle()
+    var menuIndex by remember(state.queue, account?.origin, account?.user?.id, account?.session) {
+        mutableStateOf<Int?>(null)
+    }
     var editingLyrics by remember(visibleTab, state.track == null, account?.origin, account?.user?.id, account?.session) {
         mutableStateOf<Triple<Track, SongMetadata, Boolean>?>(null)
     }
@@ -228,8 +231,11 @@ fun NowPlayingScreen(model: MusicViewModel, state: PlaybackState, onBack: () -> 
             onSort = if (landscape) null else ({ model.playback.sort(it, model.library, state.queue) }),
             page = queuePage,
             onRating = { ratingTrack = it },
+            onLongClick = { _, index -> if (!model.busy) menuIndex = index },
             artwork = { rememberTrackArtwork(it, model.api, account) }) { queued, index ->
-            TrackMenu(model, queued, index, onRemoveFromQueue = { model.playback.remove(index, state.queue) }, download = download)
+            TrackMenu(model, queued, index, onRemoveFromQueue = { model.playback.remove(index, state.queue) },
+                expanded = menuIndex == index, onExpandedChange = { menuIndex = if (it) index else null },
+                download = download)
         }
     }
     CompositionLocalProvider(LocalContentColor provides MaterialTheme.colorScheme.onBackground) {
@@ -383,6 +389,7 @@ private fun SongActionsMenu(model: MusicViewModel, track: Track?, download: (Str
         Box {
             ToolButton(Icons.Rounded.MoreVert, "More song actions", modifier = Modifier.size(48.dp)) { moreActions = true }
             DropdownMenu(expanded = moreActions, onDismissRequest = { moreActions = false }) {
+                PlayNextMenuItem(model, track) { moreActions = false }
                 SongVideoMenuItem(model, track) { moreActions = false; videoTrack = track }
                 if (editLyrics != null) {
                     DropdownMenuItem(text = { Text("Edit lyrics") }, enabled = !model.songBusy(track),
@@ -891,9 +898,15 @@ private class ArtworkDisplayTiming(val started: Long = System.nanoTime(), var dr
 
 @Composable
 fun TrackMenu(model: MusicViewModel, track: Track, index: Int, onRemoveFromQueue: (() -> Unit)? = null,
+    expanded: Boolean? = null, onExpandedChange: (Boolean) -> Unit = {},
     download: (String, String) -> Unit) {
     val inQueue = onRemoveFromQueue != null
-    var open by remember { mutableStateOf(false) }
+    var internalOpen by remember(track.key) { mutableStateOf(false) }
+    val open = expanded ?: internalOpen
+    fun setOpen(value: Boolean) {
+        internalOpen = value
+        onExpandedChange(value)
+    }
     var edit by remember { mutableStateOf(false) }
     var remove by remember { mutableStateOf(false) }
     var share by remember { mutableStateOf(false) }
@@ -916,39 +929,40 @@ fun TrackMenu(model: MusicViewModel, track: Track, index: Int, onRemoveFromQueue
     var replace by remember(canReplace, track.key, account?.origin, user?.id) { mutableStateOf(false) }
     var transcribe by remember(canModify, track.key) { mutableStateOf(false) }
     Box {
-        ToolButton(Icons.Rounded.MoreVert, "Options for ${track.displayTitle}", enabled = !model.busy) { open = true }
-        DropdownMenu(open, { open = false }) {
+        ToolButton(Icons.Rounded.MoreVert, "Options for ${track.displayTitle}", enabled = !model.busy) { setOpen(true) }
+        DropdownMenu(open, { setOpen(false) }) {
+            PlayNextMenuItem(model, track) { setOpen(false) }
             if (canTransfer) {
-                DropdownMenuItem(text = { Text("Add to playlist") }, enabled = !model.songBusy(track), leadingIcon = { Icon(Icons.Rounded.LibraryAdd, null) }, onClick = { open = false; transfer = "link" })
+                DropdownMenuItem(text = { Text("Add to playlist") }, enabled = !model.songBusy(track), leadingIcon = { Icon(Icons.Rounded.LibraryAdd, null) }, onClick = { setOpen(false); transfer = "link" })
             }
-            if (!inQueue) DropdownMenuItem(text = { Text("Add to queue") }, leadingIcon = { Icon(Icons.AutoMirrored.Rounded.PlaylistAdd, null) }, onClick = { open = false; model.playback.enqueue(track) })
-            SongVideoMenuItem(model, track) { open = false; videoDownload = true }
+            if (!inQueue) DropdownMenuItem(text = { Text("Add to queue") }, leadingIcon = { Icon(Icons.AutoMirrored.Rounded.PlaylistAdd, null) }, onClick = { setOpen(false); model.playback.enqueue(track) })
+            SongVideoMenuItem(model, track) { setOpen(false); videoDownload = true }
             if (canEdit) {
-                DropdownMenuItem(text = { Text("Edit song / rating") }, enabled = !model.songBusy(track), leadingIcon = { Icon(Icons.Rounded.Edit, null) }, onClick = { open = false; edit = true })
+                DropdownMenuItem(text = { Text("Edit song / rating") }, enabled = !model.songBusy(track), leadingIcon = { Icon(Icons.Rounded.Edit, null) }, onClick = { setOpen(false); edit = true })
             }
             if (track.canShowPlaylistLinks) DropdownMenuItem(text = { Text("Linked Playlists") },
                 leadingIcon = { Icon(Icons.AutoMirrored.Rounded.QueueMusic, null) },
-                onClick = { open = false; playlistLinks = true })
-            if (!inheritedPrivacy) SongPrivacyMenuItem(model, track) { open = false }
-            if (canTransfer && !inQueue) DropdownMenuItem(text = { Text("Move to playlist") }, enabled = !model.songBusy(track), leadingIcon = { Icon(Icons.AutoMirrored.Rounded.DriveFileMove, null) }, onClick = { open = false; transfer = "move" })
-            if (inheritedPrivacy) SongPrivacyMenuItem(model, track) { open = false }
-            if (!inQueue && canModify && track.playlistId != null) DropdownMenuItem(text = { Text("Remove from playlist") }, enabled = !model.songBusy(track), leadingIcon = { Icon(Icons.Rounded.DeleteOutline, null) }, onClick = { open = false; remove = true })
+                onClick = { setOpen(false); playlistLinks = true })
+            if (!inheritedPrivacy) SongPrivacyMenuItem(model, track) { setOpen(false) }
+            if (canTransfer && !inQueue) DropdownMenuItem(text = { Text("Move to playlist") }, enabled = !model.songBusy(track), leadingIcon = { Icon(Icons.AutoMirrored.Rounded.DriveFileMove, null) }, onClick = { setOpen(false); transfer = "move" })
+            if (inheritedPrivacy) SongPrivacyMenuItem(model, track) { setOpen(false) }
+            if (!inQueue && canModify && track.playlistId != null) DropdownMenuItem(text = { Text("Remove from playlist") }, enabled = !model.songBusy(track), leadingIcon = { Icon(Icons.Rounded.DeleteOutline, null) }, onClick = { setOpen(false); remove = true })
             if (onRemoveFromQueue != null) DropdownMenuItem(text = { Text("Remove from queue") },
-                leadingIcon = { Icon(Icons.Rounded.Close, null) }, onClick = { open = false; onRemoveFromQueue() })
+                leadingIcon = { Icon(Icons.Rounded.Close, null) }, onClick = { setOpen(false); onRemoveFromQueue() })
             if (canReplace) DropdownMenuItem(text = { Text("Replace File") },
                 leadingIcon = { Icon(Icons.Rounded.UploadFile, null) }, enabled = !model.songBusy(track),
-                onClick = { open = false; replace = true })
-            DropdownMenuItem(text = { Text("Save file") }, leadingIcon = { Icon(Icons.Rounded.Download, null) }, onClick = { open = false; download(track.downloadUrl ?: songPath(track, "download"), track.name) })
+                onClick = { setOpen(false); replace = true })
+            DropdownMenuItem(text = { Text("Save file") }, leadingIcon = { Icon(Icons.Rounded.Download, null) }, onClick = { setOpen(false); download(track.downloadUrl ?: songPath(track, "download"), track.name) })
             if (canModify && track.mediaType == "audio") DropdownMenuItem(text = { Text("Share Media") },
                 enabled = !model.songBusy(track) && !model.songPrivacy(track).isPrivate,
-                leadingIcon = { Icon(Icons.Rounded.Share, null) }, onClick = { open = false; share = true })
+                leadingIcon = { Icon(Icons.Rounded.Share, null) }, onClick = { setOpen(false); share = true })
             if (canEdit) {
                 TranscribeMenuItem(model.library.transcriptionLocked(track), model.transcriptionAvailable, model.songBusy(track)) {
-                    open = false; transcribe = true
+                    setOpen(false); transcribe = true
                 }
             } else if (user?.isShared == true && track.mediaType == "audio") {
                 DropdownMenuItem(text = { Text("View song metadata") }, leadingIcon = { Icon(Icons.Rounded.Info, null) },
-                    onClick = { open = false; edit = true })
+                    onClick = { setOpen(false); edit = true })
             }
         }
     }
@@ -964,6 +978,15 @@ fun TrackMenu(model: MusicViewModel, track: Track, index: Int, onRemoveFromQueue
         if (it != null) model.transfer(track, it, transfer == "link")
         transfer = null
     }
+}
+
+@Composable
+private fun PlayNextMenuItem(model: MusicViewModel, track: Track, close: () -> Unit) {
+    val playback by model.playback.state.collectAsStateWithLifecycle()
+    DropdownMenuItem(text = { Text("Play Next") },
+        leadingIcon = { Icon(Icons.AutoMirrored.Rounded.PlaylistPlay, null) },
+        enabled = playback.connected && track.isPlayable && track.streamUrl != null,
+        onClick = { close(); model.playback.playNext(track) })
 }
 
 @Composable
