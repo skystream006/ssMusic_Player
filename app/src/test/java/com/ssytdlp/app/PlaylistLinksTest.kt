@@ -93,17 +93,19 @@ class PlaylistLinksTest {
         compose.setContent { MusicTheme {
             TrackMenu(model, file.value, 0, onRemoveFromQueue = if (queue.value) ({}) else null) { _, _ -> }
         } }
-        compose.onNodeWithContentDescription("Options for Song").performClick()
         for (inQueue in listOf(false, true)) {
             for (media in listOf("audio", "video")) {
                 compose.runOnIdle {
                     queue.value = inQueue
                     file.value = track.copy(mediaType = media, name = if (media == "video") "movie.mp4" else "song.mp3")
                 }
+                compose.onNodeWithContentDescription("Options for Song").performClick()
                 compose.onNodeWithText("Linked Playlists").assertIsEnabled()
+                compose.activityRule.scenario.onActivity { it.onBackPressedDispatcher.onBackPressed() }
             }
         }
         compose.runOnIdle { file.value = track.copy(isPlayable = false, name = "notes.txt", mediaType = "text") }
+        compose.onNodeWithContentDescription("Options for Song").performClick()
         compose.onNodeWithText("Linked Playlists").assertDoesNotExist()
         assertTrue(requests.isEmpty())
     }

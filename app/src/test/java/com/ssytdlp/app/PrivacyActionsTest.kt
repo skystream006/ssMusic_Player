@@ -462,7 +462,7 @@ class PrivacyActionsTest {
                     state(model).value = LibraryState().withLibrary(library(source))
                 }
                 openMenu(location.description)
-                val expected = mutableListOf("Linked Playlists", privacyLabel, "Replace File",
+                val expected = mutableListOf("Linked Playlists", privacyLabel, "Play Next", "Replace File",
                     "Save file", "Share Media", "Transcribe lyrics")
                 when (location) {
                     SongSurface.LIBRARY -> expected += listOf("Add to playlist", "Add to queue",
@@ -481,11 +481,11 @@ class PrivacyActionsTest {
                 compose.onNodeWithText("USLT Lyrics").performClick()
                 openMenu(location.description)
                 assertMenuOrder(listOf("Edit lyrics", "Edit metadata", "Linked Playlists",
-                    "Private — inherited from source", "Replace File", "Save file", "Share Media", "Transcribe lyrics"))
+                    "Play Next", "Private — inherited from source", "Replace File", "Save file", "Share Media", "Transcribe lyrics"))
             }
             compose.runOnIdle { account.value = testAccount(owner.copy(role = "shared")) }
             openMenu(location.description)
-            val expected = mutableListOf("Linked Playlists", "Save file", "View song metadata")
+            val expected = mutableListOf("Linked Playlists", "Play Next", "Save file", "View song metadata")
             if (location == SongSurface.LIBRARY) expected += "Add to queue"
             if (location == SongSurface.QUEUE) expected += "Remove from queue"
             assertMenuOrder(expected.sortedWith(String.CASE_INSENSITIVE_ORDER))

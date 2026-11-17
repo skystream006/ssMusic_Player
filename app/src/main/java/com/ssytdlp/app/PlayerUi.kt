@@ -382,6 +382,7 @@ private fun SongActionsMenu(model: MusicViewModel, track: Track?, download: (Str
         val canEdit = track.name.endsWith(".mp3", true) && account?.user?.let { user ->
             !user.isShared && model.library.library.jobs.find { it.id == track.jobId }?.canModify(user) == true
         } == true
+        val inheritedPrivacy = model.songPrivacy(track).inherited
         var transcribe by remember(canEdit, track.key, account?.origin, account?.user?.id) { mutableStateOf(false) }
         var moreActions by remember(track.key, menuKey, account?.origin, account?.user?.id, account?.user?.role) {
             mutableStateOf(false)
@@ -389,7 +390,6 @@ private fun SongActionsMenu(model: MusicViewModel, track: Track?, download: (Str
         Box {
             ToolButton(Icons.Rounded.MoreVert, "More song actions", modifier = Modifier.size(48.dp)) { moreActions = true }
             DropdownMenu(expanded = moreActions, onDismissRequest = { moreActions = false }) {
-                PlayNextMenuItem(model, track) { moreActions = false }
                 SongVideoMenuItem(model, track) { moreActions = false; videoTrack = track }
                 if (editLyrics != null) {
                     DropdownMenuItem(text = { Text("Edit lyrics") }, enabled = !model.songBusy(track),
@@ -408,7 +408,9 @@ private fun SongActionsMenu(model: MusicViewModel, track: Track?, download: (Str
                         leadingIcon = { Icon(Icons.AutoMirrored.Rounded.QueueMusic, null) },
                         onClick = { moreActions = false; linkedTrack = track })
                 }
-                SongPrivacyMenuItem(model, track) { moreActions = false }
+                if (!inheritedPrivacy) SongPrivacyMenuItem(model, track) { moreActions = false }
+                PlayNextMenuItem(model, track) { moreActions = false }
+                if (inheritedPrivacy) SongPrivacyMenuItem(model, track) { moreActions = false }
                 if (canReplaceFile(account?.user, job, track)) {
                     DropdownMenuItem(text = { Text("Replace File") }, enabled = !model.songBusy(track),
                         leadingIcon = { Icon(Icons.Rounded.UploadFile, null) },
@@ -931,7 +933,6 @@ fun TrackMenu(model: MusicViewModel, track: Track, index: Int, onRemoveFromQueue
     Box {
         ToolButton(Icons.Rounded.MoreVert, "Options for ${track.displayTitle}", enabled = !model.busy) { setOpen(true) }
         DropdownMenu(open, { setOpen(false) }) {
-            PlayNextMenuItem(model, track) { setOpen(false) }
             if (canTransfer) {
                 DropdownMenuItem(text = { Text("Add to playlist") }, enabled = !model.songBusy(track), leadingIcon = { Icon(Icons.Rounded.LibraryAdd, null) }, onClick = { setOpen(false); transfer = "link" })
             }
@@ -945,6 +946,7 @@ fun TrackMenu(model: MusicViewModel, track: Track, index: Int, onRemoveFromQueue
                 onClick = { setOpen(false); playlistLinks = true })
             if (!inheritedPrivacy) SongPrivacyMenuItem(model, track) { setOpen(false) }
             if (canTransfer && !inQueue) DropdownMenuItem(text = { Text("Move to playlist") }, enabled = !model.songBusy(track), leadingIcon = { Icon(Icons.AutoMirrored.Rounded.DriveFileMove, null) }, onClick = { setOpen(false); transfer = "move" })
+            PlayNextMenuItem(model, track) { setOpen(false) }
             if (inheritedPrivacy) SongPrivacyMenuItem(model, track) { setOpen(false) }
             if (!inQueue && canModify && track.playlistId != null) DropdownMenuItem(text = { Text("Remove from playlist") }, enabled = !model.songBusy(track), leadingIcon = { Icon(Icons.Rounded.DeleteOutline, null) }, onClick = { setOpen(false); remove = true })
             if (onRemoveFromQueue != null) DropdownMenuItem(text = { Text("Remove from queue") },
