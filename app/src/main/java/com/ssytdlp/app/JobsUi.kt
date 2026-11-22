@@ -21,6 +21,8 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.Lifecycle
@@ -38,9 +40,11 @@ fun JobsScreen(model: MusicViewModel, requestNotifications: () -> Unit, download
     var add by rememberSaveable { mutableStateOf(false) }
     var importing by rememberSaveable { mutableStateOf(false) }
     var search by rememberSaveable { mutableStateOf("") }
-    var mine by rememberSaveable { mutableStateOf(false) }
     val account by model.sessions.account.collectAsStateWithLifecycle()
     val user = account?.user ?: return
+    var userFilter by rememberSaveable(account?.origin, user.id, user.role) { mutableStateOf("mine") }
+    var filterOpen by remember(account?.origin, user.id, user.role) { mutableStateOf(false) }
+    val admin = user.role == "admin"
     LaunchedEffect(lifecycle) {
         lifecycle.repeatOnLifecycle(Lifecycle.State.RESUMED) {
             while (true) { model.pollJobs(); delay(5_000) }
@@ -54,11 +58,40 @@ fun JobsScreen(model: MusicViewModel, requestNotifications: () -> Unit, download
         }
         OutlinedTextField(search, { search = it }, Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 8.dp),
             placeholder = { Text("Search downloads") }, leadingIcon = { Icon(Icons.Rounded.Search, null) }, singleLine = true)
-        Row(Modifier.padding(horizontal = 16.dp), verticalAlignment = Alignment.CenterVertically) {
-            FilterChip(mine, { mine = !mine }, label = { Text("My downloads") })
+        if (admin) {
+            val initiators = linkedMapOf("user:${user.id}" to user.name.ifBlank { "Unknown" })
+            model.jobs.forEach { job ->
+                val key = job.initiatedBy?.id?.takeIf { it.isNotBlank() }?.let { "user:$it" } ?: "unknown"
+                initiators.putIfAbsent(key, job.initiatedBy?.name.orEmpty().ifBlank { "Unknown" })
+            }
+            val options = (listOf("mine" to "My jobs (owned and contributing)", "all" to "All users") +
+                initiators.map { (id, name) -> id to "Initiated by $name" } +
+                if (userFilter !in listOf("mine", "all") && userFilter !in initiators)
+                    listOf(userFilter to "Selected user (no jobs)") else emptyList())
+                .sortedWith(compareBy(String.CASE_INSENSITIVE_ORDER) { it.second })
+            Box(Modifier.padding(horizontal = 16.dp)) {
+                OutlinedButton(onClick = { filterOpen = true }, modifier = Modifier.fillMaxWidth()
+                    .semantics { contentDescription = "Filter jobs by user" }) {
+                    Text(options.first { it.first == userFilter }.second, Modifier.weight(1f))
+                    Icon(Icons.Rounded.ExpandMore, null)
+                }
+                DropdownMenu(filterOpen, { filterOpen = false }) {
+                    options.forEach { (value, label) ->
+                        DropdownMenuItem(text = { Text(label) }, onClick = { userFilter = value; filterOpen = false })
+                    }
+                }
+            }
         }
         LazyColumn(Modifier.weight(1f), contentPadding = PaddingValues(bottom = 20.dp)) {
-            val filtered = model.jobs.filter { (!mine || it.isMember(user)) && "${it.playlistTitle} ${it.url}".contains(search, true) }.sortedByDescending { it.updatedAt }
+            val filtered = model.jobs.filter { job ->
+                val matchesUser = when {
+                    !admin || userFilter == "mine" -> job.isMember(user)
+                    userFilter == "all" -> true
+                    userFilter == "unknown" -> job.initiatedBy?.id.isNullOrBlank()
+                    else -> userFilter == "user:${job.initiatedBy?.id}"
+                }
+                matchesUser && "${job.playlistTitle} ${job.url}".contains(search, true)
+            }.sortedByDescending { it.updatedAt }
             if (filtered.isEmpty()) item { EmptyState(Icons.Rounded.Download, "No downloads") }
             items(filtered, key = { it.id }) { job ->
                 Column {

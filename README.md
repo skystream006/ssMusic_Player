@@ -5,6 +5,13 @@ repository. Android 8.0 (API 26) or newer; targets Android 16 (API 36). The serv
 still owns media storage, yt-dlp downloads, transcoding, transcription, and
 backups. This is not a WebView wrapper or a replacement server.
 
+## Jobs
+
+The Jobs list shows jobs you own or contribute to. Administrators default to the
+same view and can filter by **My jobs (owned and contributing)**, **All users**,
+or **Initiated by** a specific user, matching the server's job ownership filter.
+Search applies within the selected filter. Other users cannot broaden the list.
+
 ## Appearance and launcher icons
 
 The launcher icon keeps the original SS/music-note design. **Settings > Appearance >
