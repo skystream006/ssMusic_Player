@@ -64,13 +64,11 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.IntOffset
-import androidx.compose.ui.viewinterop.AndroidView
 import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.media3.common.Player
 import androidx.media3.common.util.UnstableApi
-import androidx.media3.ui.PlayerView
 import com.ssytdlp.app.core.*
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.collectLatest
@@ -551,8 +549,9 @@ internal fun PlayerArtwork(state: PlaybackState, metadata: SongMetadata?, modifi
         }
     }
     val visual: @Composable (Modifier) -> Unit = { visualModifier ->
-        if (track?.mediaType == "video") AndroidView(factory = { context -> PlayerView(context).apply { useController = false; player = controller } },
-            update = { it.player = controller }, onRelease = { it.player = null }, modifier = visualModifier)
+        if (track?.mediaType == "video") key(track.key) {
+            VideoPlayerSurface(controller, track.displayTitle, visualModifier)
+        }
         else {
             val artworkModifier = visualModifier.absoluteOffset { IntOffset(artworkOffset().roundToInt(), 0) }
             if (visibleDisplay == PlayerDisplay.VIDEO && songVideo.available) {

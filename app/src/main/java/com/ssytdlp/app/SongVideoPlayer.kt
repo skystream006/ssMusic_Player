@@ -3,23 +3,40 @@ package com.ssytdlp.app
 import android.content.Context
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxScope
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.safeDrawingPadding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.rounded.Fullscreen
+import androidx.compose.material.icons.rounded.FullscreenExit
 import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.*
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.viewinterop.AndroidView
+import androidx.compose.ui.window.Dialog
+import androidx.compose.ui.window.DialogProperties
+import androidx.compose.ui.window.DialogWindowProvider
+import androidx.core.view.WindowCompat
+import androidx.core.view.WindowInsetsCompat
+import androidx.core.view.WindowInsetsControllerCompat
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.lifecycle.compose.currentStateAsState
@@ -158,19 +175,53 @@ internal fun SongVideoPlayer(state: PlaybackState, api: ServerApi?, account: Acc
         }
     }
     SideEffect { player?.let { synchronizeSongVideo(it, state, audio) } }
-    Box(modifier.background(Color.Black).testTag("linked-song-video")
-        .semantics { contentDescription = "Video for ${state.track?.displayTitle.orEmpty()}" },
-        contentAlignment = Alignment.Center) {
+    key(api, owner, trackKey, streamUrl) {
+        VideoPlayerSurface(player, state.track?.displayTitle.orEmpty(), modifier.testTag("linked-song-video")) {
+            if (resumed && buffering && error == null) CircularProgressIndicator(Modifier.size(32.dp))
+            error?.let {
+                Column(Modifier.background(MaterialTheme.colorScheme.surface).padding(12.dp),
+                    horizontalAlignment = Alignment.CenterHorizontally) {
+                    Text(it, color = MaterialTheme.colorScheme.error)
+                    TextButton(onClick = { attempt++ }) { Text("Retry video") }
+                }
+            }
+        }
+    }
+}
+
+@androidx.annotation.OptIn(UnstableApi::class)
+@Composable
+internal fun VideoPlayerSurface(player: Player?, title: String, modifier: Modifier = Modifier,
+    overlay: @Composable BoxScope.() -> Unit = {}) {
+    var fullscreen by rememberSaveable { mutableStateOf(false) }
+    val content: @Composable BoxScope.(Boolean) -> Unit = { expanded ->
         AndroidView(factory = { PlayerView(it).apply { useController = false } },
             update = { it.player = player }, onRelease = { it.player = null },
             modifier = Modifier.matchParentSize())
-        if (resumed && buffering && error == null) CircularProgressIndicator(Modifier.size(32.dp))
-        error?.let {
-            Column(Modifier.background(MaterialTheme.colorScheme.surface).padding(12.dp),
-                horizontalAlignment = Alignment.CenterHorizontally) {
-                Text(it, color = MaterialTheme.colorScheme.error)
-                TextButton(onClick = { attempt++ }) { Text("Retry video") }
-            }
+        overlay()
+        IconButton(onClick = { fullscreen = !expanded },
+            modifier = Modifier.align(Alignment.TopEnd).safeDrawingPadding().padding(8.dp)
+                .background(Color.Black.copy(alpha = 0.65f), CircleShape)) {
+            Icon(if (expanded) Icons.Rounded.FullscreenExit else Icons.Rounded.Fullscreen,
+                if (expanded) "Exit full screen video" else "Expand video to full screen", tint = Color.White)
+        }
+    }
+    Box(modifier.background(Color.Black).semantics { contentDescription = "Video for $title" },
+        contentAlignment = Alignment.Center) {
+        if (!fullscreen) content(false)
+    }
+    if (fullscreen) Dialog(onDismissRequest = { fullscreen = false },
+        properties = DialogProperties(usePlatformDefaultWidth = false, decorFitsSystemWindows = false)) {
+        val view = LocalView.current
+        LaunchedEffect(view) {
+            val window = (view.parent as DialogWindowProvider).window
+            val controller = WindowCompat.getInsetsController(window, view)
+            controller.systemBarsBehavior = WindowInsetsControllerCompat.BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE
+            controller.hide(WindowInsetsCompat.Type.systemBars())
+        }
+        Box(Modifier.fillMaxSize().background(Color.Black).testTag("fullscreen-video")
+            .semantics { contentDescription = "Video for $title" }, contentAlignment = Alignment.Center) {
+            content(true)
         }
     }
 }

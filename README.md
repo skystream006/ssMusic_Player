@@ -310,6 +310,10 @@ restarting the audio. Video playback is released when hidden or backgrounded;
 the existing audio service keeps playing. Shared-library videos retain the
 server's access controls. Display and visualizer-style choices persist on this
 device; selecting Video falls back to album art for songs without a ready video.
+For either a standalone video or a linked song video, tap **Expand video to full
+screen** in the video corner to hide the surrounding player and system bars.
+Tap **Exit full screen video** or press Back to return. Fullscreen keeps the same
+player and playback position, including linked-video synchronization with song audio.
 This requires the server's `/api/jobs/:id/files/:name/video` and
 `/api/jobs/:id/video/:name` endpoints introduced in the linked-video update.
 
