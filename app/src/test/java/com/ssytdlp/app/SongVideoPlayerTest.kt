@@ -8,7 +8,10 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.runtime.*
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.test.junit4.createAndroidComposeRule
+import androidx.compose.ui.test.assertIsDisplayed
+import androidx.compose.ui.test.onNodeWithContentDescription
 import androidx.compose.ui.test.onNodeWithTag
+import androidx.compose.ui.test.performClick
 import androidx.compose.ui.unit.dp
 import androidx.core.view.descendants
 import androidx.lifecycle.Lifecycle
@@ -44,6 +47,7 @@ import org.junit.Test
 import org.junit.runner.RunWith
 import org.robolectric.RobolectricTestRunner
 import org.robolectric.annotation.Config
+import org.robolectric.shadows.ShadowDialog
 
 @androidx.annotation.OptIn(UnstableApi::class)
 @RunWith(RobolectricTestRunner::class)
@@ -166,6 +170,92 @@ class SongVideoPlayerTest {
         compose.runOnIdle { assertTrue(replacement.isReleased) }
     }
 
+    @Test fun linkedVideoFullscreenReusesPlayerAndStillReleasesResourcesInBackground() {
+        val owner = object : LifecycleOwner {
+            val registry = LifecycleRegistry.createUnsafe(this)
+            override val lifecycle: Lifecycle = registry
+        }
+        var currentAccount by mutableStateOf(account)
+        compose.runOnUiThread { owner.registry.currentState = Lifecycle.State.RESUMED }
+        compose.setContent {
+            CompositionLocalProvider(LocalLifecycleOwner provides owner) {
+                MaterialTheme {
+                    SongVideoPlayer(PlaybackState(track = track, position = 12_345), api, currentAccount,
+                        stream, null, cache, Modifier.size(300.dp, 180.dp))
+                }
+            }
+        }
+        val first = compose.runOnIdle { playerView().player as ExoPlayer }
+        compose.onNodeWithContentDescription("Expand video to full screen").performClick()
+        compose.onNodeWithTag("fullscreen-video").assertIsDisplayed()
+        compose.runOnIdle {
+            assertSame(first, fullscreenPlayerView().player)
+            assertFalse(first.isReleased)
+            assertEquals(12_345L, first.currentPosition)
+            assertEquals(0f, first.volume)
+            assertFalse(compose.activity.findViewById<ViewGroup>(android.R.id.content)
+                .descendants.filterIsInstance<PlayerView>().any())
+        }
+        compose.onNodeWithContentDescription("Exit full screen video").performClick()
+        compose.onNodeWithTag("fullscreen-video").assertDoesNotExist()
+        compose.runOnIdle { assertSame(first, playerView().player); assertFalse(first.isReleased) }
+        compose.onNodeWithContentDescription("Expand video to full screen").performClick()
+        compose.runOnIdle { owner.registry.currentState = Lifecycle.State.STARTED }
+        compose.runOnIdle { assertTrue(first.isReleased); assertNull(fullscreenPlayerView().player) }
+        compose.runOnIdle { owner.registry.currentState = Lifecycle.State.RESUMED }
+        val resumed = compose.runOnIdle { fullscreenPlayerView().player as ExoPlayer }
+        assertNotSame(first, resumed)
+        compose.runOnIdle {
+            currentAccount = account.copy(user = User("other"))
+            cache.setAccount(currentAccount)
+        }
+        compose.onNodeWithTag("fullscreen-video").assertDoesNotExist()
+        compose.runOnIdle { assertTrue(resumed.isReleased) }
+        compose.onNodeWithContentDescription("Expand video to full screen").assertIsDisplayed()
+    }
+
+    @Test
+    @Config(sdk = [26, 34], qualifiers = "w800dp-h360dp-land")
+    fun standaloneVideoFullscreenFillsWindowAndBackRestoresTheSameQueueAndPosition() {
+        lateinit var video: ExoPlayer
+        val videoTrack = track.copy(mediaType = "video")
+        compose.runOnUiThread {
+            video = ExoPlayer.Builder(compose.activity).build()
+            video.setMediaItem(videoTrack.toMediaItem(api))
+            video.seekTo(23_456)
+        }
+        try {
+            compose.setContent {
+                MaterialTheme {
+                    PlayerArtwork(PlaybackState(track = videoTrack), null, Modifier.size(300.dp, 180.dp),
+                        controller = video)
+                }
+            }
+            compose.onNodeWithContentDescription("Expand video to full screen").performClick()
+            compose.onNodeWithContentDescription("Exit full screen video").assertIsDisplayed()
+            val fullscreenBounds = compose.onNodeWithTag("fullscreen-video").fetchSemanticsNode().boundsInRoot
+            compose.runOnIdle {
+                val window = ShadowDialog.getLatestDialog().window!!
+                assertSame(video, fullscreenPlayerView().player)
+                assertEquals(window.decorView.width.toFloat(), fullscreenBounds.width, 1f)
+                assertEquals(window.decorView.height.toFloat(), fullscreenBounds.height, 1f)
+                assertTrue(fullscreenBounds.width > 300 * compose.activity.resources.displayMetrics.density)
+            }
+            compose.runOnUiThread { ShadowDialog.getLatestDialog().onBackPressed() }
+            compose.onNodeWithTag("fullscreen-video").assertDoesNotExist()
+            compose.onNodeWithContentDescription("Expand video to full screen").assertIsDisplayed()
+            compose.runOnIdle {
+                assertSame(video, playerView().player)
+                assertFalse(video.isReleased)
+                assertEquals(23_456L, video.currentPosition)
+                assertEquals(1, video.mediaItemCount)
+                assertEquals(videoTrack, video.currentMediaItem!!.asTrack())
+            }
+        } finally {
+            compose.runOnUiThread { video.release() }
+        }
+    }
+
     @Test fun videoSourcesCannotSendAccountCredentialsOutsideTheSelectedServer() {
         compose.runOnUiThread {
             listOf("https://other.example/api/video", "http://music.example/api/video", "/app-login").forEach {
@@ -239,4 +329,8 @@ class SongVideoPlayerTest {
 
     private fun playerView(): PlayerView =
         compose.activity.findViewById<ViewGroup>(android.R.id.content).descendants.filterIsInstance<PlayerView>().single()
+
+    private fun fullscreenPlayerView(): PlayerView =
+        (ShadowDialog.getLatestDialog().window!!.decorView as ViewGroup)
+            .descendants.filterIsInstance<PlayerView>().single()
 }
