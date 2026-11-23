@@ -18,6 +18,7 @@ import androidx.compose.ui.test.junit4.StateRestorationTester
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.ViewModelStore
 import androidx.lifecycle.viewModelScope
+import androidx.media3.common.Player
 import androidx.test.core.app.ApplicationProvider
 import com.ssytdlp.app.core.*
 import java.security.Provider
@@ -268,6 +269,153 @@ class PlaylistEditingTest {
         waitFor { !model.busy }
         assertEquals("This library is read-only.", model.playlistCreationResult?.error)
         assertTrue(requests.isEmpty())
+    }
+
+    @Config(qualifiers = "w320dp-h800dp")
+    @Test fun expandedMenuSavesTheWholeQueueInOrderToAFolderWithoutChangingPlayback() {
+        startModel()
+        val songs = (0 until 52).map { index ->
+            Track(job.id, when (index) {
+                0 -> "[NoVocals]/instrumental.mp3"
+                51 -> "video.mp4"
+                else -> "$index.mp3"
+            }, playlistId = entry.id, mediaType = if (index == 51) "video" else "audio")
+        }
+        val queue = songs.reversed() + songs.last()
+        val snapshot = PlaybackState(connected = true, track = queue[3], queue = queue, index = 3,
+            position = 42_123, duration = 60_000, playing = true, shuffle = true, repeat = Player.REPEAT_MODE_ALL)
+        val playback = ReflectionHelpers.getField<MutableStateFlow<PlaybackState>>(model.playback, "mutableState")
+        compose.runOnUiThread { playback.value = snapshot }
+        compose.setContent { MusicTheme { NowPlayingScreen(model, snapshot) { _, _ -> } } }
+        compose.onNodeWithContentDescription("More song actions").performClick()
+        val queueHeading = compose.onNodeWithText("Queue actions").getUnclippedBoundsInRoot()
+        val save = compose.onNodeWithText("Save As New Playlist").assertIsEnabled().getUnclippedBoundsInRoot()
+        val mediaHeading = compose.onNodeWithText("Current media").getUnclippedBoundsInRoot()
+        assertTrue(queueHeading.bottom <= save.top && save.bottom <= mediaHeading.top)
+        compose.onNodeWithText("Save As New Playlist").performClick()
+        compose.onNode(isPopup()).assertDoesNotExist()
+        compose.onNodeWithText("53 queued tracks. Source files and the queue are unchanged.").assertIsDisplayed()
+        compose.onNodeWithText("Save playlist").assertIsNotEnabled()
+        compose.onNodeWithText("Playlist name").performTextInput("  Queue collection  ")
+        chooseFolder()
+        compose.onNodeWithText("Save playlist").performClick()
+        waitFor { !model.busy && !model.library.loading }
+        compose.onNode(isDialog()).assertDoesNotExist()
+        assertEquals(snapshot, playback.value)
+        assertEquals("created-playlist", model.library.selectedId)
+        assertEquals("child", model.library.library.entries.single { it.id == "created-playlist" }.parentId)
+        assertEquals(52, model.library.library.playlists.single { it.id == "created-playlist" }.songCount)
+        assertEquals(playlist, model.library.library.playlists.single { it.id == playlist.id })
+        val posts = requests.filter { it.method == "POST" }
+        assertEquals(listOf("/api/library/playlists", "/api/library/links",
+            "/api/library/playlists/created-playlist/queue"), posts.map { it.url.encodedPath })
+        assertEquals(json("playlistTitle" to "Queue collection"), body(posts[0]))
+        assertEquals(json("jobId" to "created-playlist"), body(posts[1]))
+        assertEquals(buildJsonObject {
+            put("version", 9)
+            put("parentId", "child")
+            put("keys", buildJsonArray { queue.distinctBy { it.key }.forEach { add(it.key) } })
+        }, body(posts[2]))
+    }
+
+    @Config(qualifiers = "w320dp-h800dp")
+    @Test fun failedQueueSaveRetriesTheSameCreatedPlaylistAndSnapshotAfterRecreation() {
+        val attempts = AtomicInteger()
+        startModel { request ->
+            if (request.url.encodedPath == "/api/library/playlists/created-playlist/queue" &&
+                attempts.incrementAndGet() == 1) 409 to """{"error":"Your library changed."}"""
+            else null
+        }
+        val queue = mutableListOf(Track(job.id, "first.mp3"), Track(job.id, "second.mp3"))
+        val keys = queue.map { it.key }
+        compose.runOnUiThread { model.openQueuePlaylist(queue) }
+        queue.reverse()
+        val showing = mutableStateOf(true)
+        val restoration = StateRestorationTester(compose)
+        restoration.setContent { MusicTheme { if (showing.value) QueuePlaylistDialog(model) } }
+        compose.onNodeWithText("Playlist name").performTextInput("Saved queue")
+        compose.onNodeWithText("Save playlist").performClick()
+        waitFor { !model.busy }
+        compose.onNodeWithText("Playlist created, but the queue could not be saved: Your library changed. " +
+            "Retry to finish saving to the same playlist.").assertIsDisplayed()
+        compose.onNodeWithText("Playlist name").assertIsNotEnabled().assertTextContains("Saved queue")
+        restoration.emulateSavedInstanceStateRestore()
+        compose.onNodeWithText("Playlist name").assertTextContains("Saved queue")
+        compose.runOnIdle { showing.value = false }
+        compose.onNode(isDialog()).assertDoesNotExist()
+        compose.runOnIdle { showing.value = true }
+        compose.onNodeWithText("Playlist name").assertTextContains("Saved queue").assertIsNotEnabled()
+        compose.onNodeWithText("Save playlist").assertIsEnabled().performClick()
+        waitFor { !model.busy && !model.library.loading }
+        compose.onNode(isDialog()).assertDoesNotExist()
+        assertEquals(1, requests.count { it.url.encodedPath == "/api/library/playlists" })
+        assertEquals(2, requests.count { it.url.encodedPath == "/api/library/links" })
+        val saves = requests.filter { it.url.encodedPath == "/api/library/playlists/created-playlist/queue" }
+        assertEquals(2, saves.size)
+        assertEquals(listOf(9L, 10L), saves.map { body(it).getValue("version").jsonPrimitive.long })
+        assertTrue(saves.all { body(it).getValue("keys").jsonArray.map { key -> key.jsonPrimitive.content } == keys })
+        assertTrue(saves.all { body(it).getValue("parentId") == JsonNull })
+    }
+
+    @Test fun queueSavingRejectsEmptyQueuesMissingFoldersAndReadOnlyAccountsBeforeCreation() {
+        startModel()
+        val track = Track(job.id, "song.mp3")
+        compose.runOnUiThread { model.openQueuePlaylist(emptyList()) }
+        assertNull(model.queuePlaylistDraft)
+        assertEquals("Your queue is empty.", model.notice)
+        compose.runOnUiThread {
+            model.openQueuePlaylist(listOf(track))
+            model.saveQueuePlaylist("Saved queue", "missing")
+        }
+        waitFor { !model.busy }
+        assertEquals("Destination folder is no longer available.", model.queuePlaylistDraft?.error)
+        compose.runOnUiThread {
+            model.closeQueuePlaylist()
+            model.viewModelScope.cancel()
+            account.value = testAccount(owner.copy(role = "shared"))
+        }
+        compose.setContent { MusicTheme {
+            NowPlayingScreen(model, PlaybackState(track = track, queue = listOf(track))) { _, _ -> }
+        } }
+        compose.onNodeWithContentDescription("More song actions").performClick()
+        compose.onNodeWithText("Save As New Playlist").assertIsNotEnabled()
+        compose.runOnUiThread { model.openQueuePlaylist(listOf(track)) }
+        assertNull(model.queuePlaylistDraft)
+        assertEquals("This library is read-only.", model.notice)
+        assertTrue(requests.none { it.method == "POST" })
+    }
+
+    @Config(qualifiers = "w320dp-h800dp")
+    @Test fun inFlightQueueSaveDisablesTheFormAndCannotContinueUnderAnotherSession() {
+        val started = AtomicBoolean(false)
+        val release = CountDownLatch(1)
+        startModel { request ->
+            if (request.url.encodedPath == "/api/library/links") {
+                started.set(true)
+                check(release.await(10, TimeUnit.SECONDS))
+            }
+            null
+        }
+        compose.runOnUiThread { model.openQueuePlaylist(listOf(Track(job.id, "song.mp3"))) }
+        compose.setContent { MusicTheme { QueuePlaylistDialog(model) } }
+        compose.onNodeWithText("Playlist name").performTextInput("Saved queue")
+        try {
+            compose.onNodeWithText("Save playlist").performClick()
+            waitFor { started.get() }
+            compose.onNodeWithText("Save playlist").assertIsNotEnabled()
+            compose.onNodeWithText("Cancel").assertIsNotEnabled()
+            compose.onNodeWithText("Playlist name").assertIsNotEnabled()
+            compose.runOnUiThread {
+                model.saveQueuePlaylist("Duplicate", null)
+                account.value = testAccount(owner).copy(session = Session("new-session", "2099-01-01T00:00:00Z"))
+            }
+            waitFor { model.queuePlaylistDraft == null }
+            compose.onNode(isDialog()).assertDoesNotExist()
+        } finally { release.countDown() }
+        waitFor { !model.busy }
+        assertNull(model.queuePlaylistDraft)
+        assertEquals(1, requests.count { it.url.encodedPath == "/api/library/playlists" })
+        assertTrue(requests.none { it.url.encodedPath.endsWith("/queue") })
     }
 
     @Test fun playlistSortsAcrossAllPagesLocallyAndKeepsPlaybackIndicesAligned() {
@@ -1206,6 +1354,20 @@ class PlaylistEditingTest {
                         initiatedBy = user, status = "completed"),
                     jobs = current.jobs + created))
                 201 to buildJsonObject { put("job", ApiJson.encodeToJsonElement(created)) }.toString()
+            }
+            "/api/library/links" -> {
+                val updated = current.copy(version = current.version + 1)
+                catalog.set(updated)
+                200 to ApiJson.encodeToString(updated)
+            }
+            "/api/library/playlists/created-playlist/queue" -> {
+                val parent = body.getValue("parentId").jsonPrimitive.contentOrNull
+                val count = body.getValue("keys").jsonArray.size
+                val updated = current.copy(version = current.version + 1,
+                    entries = current.entries.map { if (it.id == "created-playlist") it.copy(parentId = parent) else it },
+                    playlists = current.playlists.map { if (it.id == "created-playlist") it.copy(songCount = count) else it })
+                catalog.set(updated)
+                200 to ApiJson.encodeToString(updated)
             }
             titlePath -> {
                 val title = body.getValue("playlistTitle").jsonPrimitive.content

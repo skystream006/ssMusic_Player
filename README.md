@@ -314,6 +314,9 @@ For either a standalone video or a linked song video, tap **Expand video to full
 screen** in the video corner to hide the surrounding player and system bars.
 Tap **Exit full screen video** or press Back to return. Fullscreen keeps the same
 player and playback position, including linked-video synchronization with song audio.
+Pinch to zoom from 100% to 500% and drag to pan the enlarged video. The fixed
+**Zoom in video** / **Zoom out video** buttons also adjust zoom; tap the percentage
+to reset it. Leaving fullscreen or changing videos resets zoom without changing playback.
 This requires the server's `/api/jobs/:id/files/:name/video` and
 `/api/jobs/:id/video/:name` endpoints introduced in the linked-video update.
 
@@ -429,6 +432,16 @@ reorder actions are available on the drag handle instead.
 In Queue only, swipe a song left to remove that occurrence without deleting the
 song or changing its playlist membership. Short, canceled, or rightward swipes
 do not remove songs.
+
+The expanded player's three-dot menu beside **Settings** has **Queue actions**
+at the top and the current media's alphabetically ordered actions below.
+Choose **Save As New Playlist**, enter a name, and choose a destination folder
+(the library root by default). The entire queue is saved in its displayed order,
+including tracks on other pages, with duplicate songs included only once.
+Playback, the queue, and source files and playlists are unchanged. If saving fails
+after creation, retry finishes saving to the same playlist rather than creating
+another. Shared accounts cannot save queues. This requires the server's
+`POST /api/library/playlists/:id/queue` endpoint.
 
 The selected playlist or folder, full queue order, current song and playback position,
 shuffle, and repeat are saved on this device. Reopening after the app has stopped

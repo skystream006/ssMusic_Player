@@ -457,6 +457,7 @@ class PrivacyActionsTest {
         )
         for (location in SongSurface.entries) {
             compose.runOnIdle { surface.value = location }
+            val queueActions = if (location == SongSurface.NOW_PLAYING) listOf("Save As New Playlist") else emptyList()
             for ((source, privacyLabel) in cases) {
                 compose.runOnIdle {
                     state(model).value = LibraryState().withLibrary(library(source))
@@ -470,7 +471,7 @@ class PrivacyActionsTest {
                     SongSurface.QUEUE -> expected += listOf("Add to playlist", "Edit song / rating", "Remove from queue")
                     SongSurface.DOCK, SongSurface.NOW_PLAYING -> expected += "Edit metadata"
                 }
-                assertMenuOrder(expected.sortedWith(String.CASE_INSENSITIVE_ORDER))
+                assertMenuOrder(queueActions + expected.sortedWith(String.CASE_INSENSITIVE_ORDER))
             }
             if (location == SongSurface.NOW_PLAYING) {
                 compose.onNodeWithText("Save file").performClick()
@@ -480,7 +481,7 @@ class PrivacyActionsTest {
                 }
                 compose.onNodeWithText("USLT Lyrics").performClick()
                 openMenu(location.description)
-                assertMenuOrder(listOf("Edit lyrics", "Edit metadata", "Linked Playlists", "Play Next",
+                assertMenuOrder(queueActions + listOf("Edit lyrics", "Edit metadata", "Linked Playlists", "Play Next",
                     "Private — inherited from source", "Replace File", "Save file", "Share Media", "Transcribe lyrics"))
             }
             compose.runOnIdle { account.value = testAccount(owner.copy(role = "shared")) }
@@ -488,7 +489,7 @@ class PrivacyActionsTest {
             val expected = mutableListOf("Linked Playlists", "Play Next", "Save file", "View song metadata")
             if (location == SongSurface.LIBRARY) expected += "Add to queue"
             if (location == SongSurface.QUEUE) expected += "Remove from queue"
-            assertMenuOrder(expected.sortedWith(String.CASE_INSENSITIVE_ORDER))
+            assertMenuOrder(queueActions + expected.sortedWith(String.CASE_INSENSITIVE_ORDER))
             compose.runOnIdle { account.value = testAccount(owner) }
         }
         assertTrue(drainRequests().isEmpty())

@@ -244,7 +244,7 @@ fun NowPlayingScreen(model: MusicViewModel, state: PlaybackState, onBack: () -> 
                 SongActionsMenu(model, state.track, download, menuKey = visibleTab,
                     editLyrics = if (canEditLyrics && metadata != null) ({ track ->
                         editingLyrics = Triple(track, metadata, showUslt)
-                    }) else null)
+                    }) else null, queue = state.queue)
             }
             if (model.busy) LinearProgressIndicator(Modifier.fillMaxWidth())
             Row(Modifier.weight(1f).fillMaxWidth()) {
@@ -364,7 +364,7 @@ private fun NowPlayingTopBar(track: Track?, refreshEnabled: Boolean, onRefresh: 
 
 @Composable
 private fun SongActionsMenu(model: MusicViewModel, track: Track?, download: (String, String) -> Unit,
-    menuKey: Int = 0, editLyrics: ((Track) -> Unit)? = null) {
+    menuKey: Int = 0, editLyrics: ((Track) -> Unit)? = null, queue: List<Track>? = null) {
     val account by model.sessions.account.collectAsStateWithLifecycle()
     var editingTrack by remember { mutableStateOf<Track?>(null) }
     var sharingTrack by remember { mutableStateOf<Track?>(null) }
@@ -388,6 +388,20 @@ private fun SongActionsMenu(model: MusicViewModel, track: Track?, download: (Str
         Box {
             ToolButton(Icons.Rounded.MoreVert, "More song actions", modifier = Modifier.size(48.dp)) { moreActions = true }
             DropdownMenu(expanded = moreActions, onDismissRequest = { moreActions = false }) {
+                queue?.let { queued ->
+                    Text("Queue actions", Modifier.padding(horizontal = 16.dp, vertical = 8.dp).semantics { heading() },
+                        style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    DropdownMenuItem(text = { Text("Save As New Playlist") },
+                        enabled = !model.busy && queued.isNotEmpty() &&
+                            account?.user?.let { !it.isShared && it.id.isNotBlank() } == true,
+                        leadingIcon = { Icon(Icons.Rounded.Save, null) }, onClick = {
+                            moreActions = false
+                            model.openQueuePlaylist(queued)
+                        })
+                    HorizontalDivider(Modifier.padding(vertical = 4.dp))
+                    Text("Current media", Modifier.padding(horizontal = 16.dp, vertical = 8.dp).semantics { heading() },
+                        style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                }
                 SongVideoMenuItem(model, track) { moreActions = false; videoTrack = track }
                 if (editLyrics != null) {
                     DropdownMenuItem(text = { Text("Edit lyrics") }, enabled = !model.songBusy(track),
@@ -437,6 +451,7 @@ private fun SongActionsMenu(model: MusicViewModel, track: Track?, download: (Str
         }
         if (canEdit && transcribe) TranscribeDialog(model, track) { transcribe = false }
     }
+    if (queue != null) QueuePlaylistDialog(model)
     editingTrack?.let { track -> MetadataDialog(model, track) { editingTrack = null } }
     linkedTrack?.let { track -> PlaylistLinksDialog(model, track) { linkedTrack = null } }
     videoTrack?.let { track -> SongVideoDialog(model, track) { videoTrack = null } }

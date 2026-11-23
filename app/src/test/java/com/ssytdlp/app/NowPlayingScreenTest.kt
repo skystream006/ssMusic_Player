@@ -1600,7 +1600,8 @@ class NowPlayingScreenTest {
         }
         songAction("Linked Playlists").assertIsDisplayed().assertIsEnabled().assertHasClickAction()
         songAction("Play Next").assertIsDisplayed().assertIsNotEnabled()
-        compose.onAllNodes(hasClickAction() and hasAnyAncestor(isPopup())).assertCountEquals(actions.size + 2)
+        songAction("Save As New Playlist").assertIsDisplayed().assertIsNotEnabled()
+        compose.onAllNodes(hasClickAction() and hasAnyAncestor(isPopup())).assertCountEquals(actions.size + 3)
         compose.runOnIdle { busy.value = true }
         actions.forEach { songAction(it).assertIsNotEnabled() }
         songAction("Linked Playlists").assertIsEnabled()
