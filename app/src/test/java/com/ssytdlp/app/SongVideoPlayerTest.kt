@@ -1,18 +1,26 @@
 package com.ssytdlp.app
 
 import android.app.Application
+import android.view.TextureView
 import android.view.ViewGroup
 import androidx.activity.ComponentActivity
 import androidx.compose.foundation.layout.size
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.runtime.*
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.semantics.SemanticsProperties
+import androidx.compose.ui.test.assertIsNotEnabled
 import androidx.compose.ui.test.junit4.createAndroidComposeRule
 import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.onNodeWithContentDescription
 import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.performClick
+import androidx.compose.ui.test.performTouchInput
+import androidx.compose.ui.test.pinch
+import androidx.compose.ui.test.swipe
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.IntSize
 import androidx.core.view.descendants
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleOwner
@@ -264,6 +272,90 @@ class SongVideoPlayerTest {
                 }
             }
         }
+    }
+
+    @Test
+    @Config(sdk = [26, 34], qualifiers = "w800dp-h360dp-land")
+    fun fullscreenVideoPinchesPansAndResetsWithoutChangingPlayback() {
+        lateinit var video: ExoPlayer
+        val videoTrack = track.copy(mediaType = "video")
+        compose.runOnUiThread {
+            video = ExoPlayer.Builder(compose.activity).build()
+            video.setMediaItem(videoTrack.toMediaItem(api))
+            video.seekTo(23_456)
+        }
+        try {
+            compose.setContent {
+                MaterialTheme {
+                    VideoPlayerSurface(video, videoTrack.displayTitle, Modifier.size(300.dp, 180.dp))
+                }
+            }
+            compose.onNodeWithContentDescription("Expand video to full screen").performClick()
+            compose.onNodeWithTag("video-zoom-surface").performTouchInput {
+                val near = Offset(width * 0.1f, 0f)
+                val far = Offset(width * 0.3f, 0f)
+                pinch(center - near, center - far, center + near, center + far, durationMillis = 600)
+            }
+            compose.runOnIdle {
+                val view = fullscreenPlayerView()
+                assertTrue(view.videoSurfaceView is TextureView)
+                assertTrue(view.scaleX > 1f)
+                assertEquals(view.scaleX, view.scaleY, 0f)
+                assertSame(video, view.player)
+            }
+            compose.onNodeWithTag("video-zoom-surface").performTouchInput {
+                swipe(center, center + Offset(width * 0.35f, height * 0.2f), durationMillis = 600)
+            }
+            compose.runOnIdle {
+                val view = fullscreenPlayerView()
+                assertTrue(view.translationX > 0f)
+                assertTrue(view.translationY > 0f)
+                assertTrue(view.translationX <= view.width * (view.scaleX - 1f) / 2f)
+                assertTrue(view.translationY <= view.height * (view.scaleY - 1f) / 2f)
+            }
+            repeat(8) { compose.onNodeWithContentDescription("Zoom in video").performClick() }
+            compose.onNodeWithContentDescription("Zoom in video").assertIsNotEnabled()
+            assertEquals("Zoom 500%", compose.onNodeWithTag("fullscreen-video")
+                .fetchSemanticsNode().config[SemanticsProperties.StateDescription])
+            compose.runOnIdle { assertEquals(5f, fullscreenPlayerView().scaleX, 0f) }
+            compose.onNodeWithContentDescription("Reset video zoom").performClick()
+            compose.onNodeWithContentDescription("Zoom out video").assertIsNotEnabled()
+            compose.runOnIdle {
+                val view = fullscreenPlayerView()
+                assertEquals(1f, view.scaleX, 0f)
+                assertEquals(0f, view.translationX, 0f)
+                assertEquals(0f, view.translationY, 0f)
+            }
+            compose.onNodeWithContentDescription("Zoom in video").performClick()
+            compose.onNodeWithContentDescription("Zoom out video").performClick()
+            compose.runOnIdle { assertEquals(1f, fullscreenPlayerView().scaleX, 0f) }
+            compose.onNodeWithContentDescription("Zoom in video").performClick()
+            compose.onNodeWithContentDescription("Exit full screen video").performClick()
+            compose.runOnIdle { assertEquals(1f, playerView().scaleX, 0f) }
+            compose.onNodeWithContentDescription("Expand video to full screen").performClick()
+            compose.runOnIdle {
+                assertEquals(1f, fullscreenPlayerView().scaleX, 0f)
+                assertSame(video, fullscreenPlayerView().player)
+                assertEquals(23_456L, video.currentPosition)
+                assertEquals(1, video.mediaItemCount)
+                assertEquals(videoTrack, video.currentMediaItem!!.asTrack())
+            }
+        } finally {
+            compose.runOnUiThread { video.release() }
+        }
+    }
+
+    @Test fun videoZoomKeepsThePinchFocusAndClampsPanningAtBothScaleLimits() {
+        val size = IntSize(800, 400)
+        val zoom = VideoZoomState().transform(2f, Offset.Zero, Offset(600f, 200f), size)
+        assertEquals(2f, zoom.scale, 0f)
+        assertEquals(Offset(-200f, 0f), zoom.offset)
+        val upper = zoom.transform(10f, Offset(10_000f, -10_000f), Offset(400f, 200f), size)
+        assertEquals(5f, upper.scale, 0f)
+        assertEquals(Offset(1_600f, -800f), upper.offset)
+        val lower = upper.transform(0.01f, Offset(100f, 100f), Offset(200f, 100f), size)
+        assertEquals(1f, lower.scale, 0f)
+        assertEquals(Offset.Zero, lower.offset)
     }
 
     @Test fun linkedVideoFillsTheSharedCacheAndReopensWithoutNetworkRequests() {

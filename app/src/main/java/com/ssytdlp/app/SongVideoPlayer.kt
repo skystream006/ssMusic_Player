@@ -1,10 +1,13 @@
 package com.ssytdlp.app
 
 import android.content.Context
+import android.view.LayoutInflater
 import androidx.compose.foundation.background
+import androidx.compose.foundation.gestures.detectTransformGestures
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxScope
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.safeDrawingPadding
@@ -13,6 +16,8 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.Fullscreen
 import androidx.compose.material.icons.rounded.FullscreenExit
+import androidx.compose.material.icons.rounded.ZoomIn
+import androidx.compose.material.icons.rounded.ZoomOut
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -23,12 +28,18 @@ import androidx.compose.runtime.*
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clipToBounds
+import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.semantics.stateDescription
+import androidx.compose.ui.unit.IntSize
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.viewinterop.AndroidView
 import androidx.compose.ui.window.Dialog
@@ -51,6 +62,7 @@ import androidx.media3.ui.PlayerView
 import com.ssytdlp.app.core.Account
 import com.ssytdlp.app.core.ServerResource
 import kotlin.math.abs
+import kotlin.math.roundToInt
 
 internal enum class PlayerDisplay(val label: String) {
     ALBUM_ART("Album art"), AUDIO_VISUALIZER("Audio visualizer"), VIDEO("Song video");
@@ -59,6 +71,19 @@ internal enum class PlayerDisplay(val label: String) {
         fun fromPreference(value: String?, legacyVisualizer: Boolean = false): PlayerDisplay =
             entries.firstOrNull { it.name == value }
                 ?: if (legacyVisualizer) AUDIO_VISUALIZER else ALBUM_ART
+    }
+}
+
+internal data class VideoZoomState(val scale: Float = 1f, val offset: Offset = Offset.Zero) {
+    fun transform(zoom: Float, pan: Offset, centroid: Offset, size: IntSize): VideoZoomState {
+        val nextScale = (scale * zoom).coerceIn(1f, 5f)
+        if (nextScale == 1f) return VideoZoomState()
+        val focus = centroid - Offset(size.width / 2f, size.height / 2f)
+        val nextOffset = (offset - focus) * (nextScale / scale) + focus + pan
+        val limitX = size.width * (nextScale - 1f) / 2f
+        val limitY = size.height * (nextScale - 1f) / 2f
+        return VideoZoomState(nextScale, Offset(nextOffset.x.coerceIn(-limitX, limitX),
+            nextOffset.y.coerceIn(-limitY, limitY)))
     }
 }
 
@@ -194,11 +219,48 @@ internal fun SongVideoPlayer(state: PlaybackState, api: ServerApi?, account: Acc
 internal fun VideoPlayerSurface(player: Player?, title: String, modifier: Modifier = Modifier,
     overlay: @Composable BoxScope.() -> Unit = {}) {
     var fullscreen by rememberSaveable { mutableStateOf(false) }
+    var zoom by remember(fullscreen) { mutableStateOf(VideoZoomState()) }
+    var viewportSize by remember { mutableStateOf(IntSize.Zero) }
     val content: @Composable BoxScope.(Boolean) -> Unit = { expanded ->
-        AndroidView(factory = { PlayerView(it).apply { useController = false } },
-            update = { it.player = player }, onRelease = { it.player = null },
+        AndroidView(factory = {
+            if (expanded) LayoutInflater.from(it).inflate(R.layout.fullscreen_video_player, null) as PlayerView
+            else PlayerView(it).apply { useController = false }
+        }, update = {
+            it.player = player
+            it.scaleX = if (expanded) zoom.scale else 1f
+            it.scaleY = if (expanded) zoom.scale else 1f
+            it.translationX = if (expanded) zoom.offset.x else 0f
+            it.translationY = if (expanded) zoom.offset.y else 0f
+        }, onRelease = { it.player = null },
             modifier = Modifier.matchParentSize())
+        if (expanded) {
+            Box(Modifier.matchParentSize().testTag("video-zoom-surface").pointerInput(Unit) {
+                detectTransformGestures { centroid, pan, scale, _ ->
+                    zoom = zoom.transform(scale, pan, centroid, viewportSize)
+                }
+            })
+        }
         overlay()
+        if (expanded) {
+            Row(Modifier.align(Alignment.TopStart).safeDrawingPadding().padding(8.dp)
+                .background(Color.Black.copy(alpha = 0.65f), CircleShape),
+                verticalAlignment = Alignment.CenterVertically) {
+                fun zoomBy(factor: Float) {
+                    zoom = zoom.transform(factor, Offset.Zero,
+                        Offset(viewportSize.width / 2f, viewportSize.height / 2f), viewportSize)
+                }
+                IconButton(onClick = { zoomBy(0.8f) }, enabled = zoom.scale > 1f) {
+                    Icon(Icons.Rounded.ZoomOut, "Zoom out video", tint = Color.White)
+                }
+                TextButton(onClick = { zoom = VideoZoomState() },
+                    modifier = Modifier.semantics { contentDescription = "Reset video zoom" }) {
+                    Text("${(zoom.scale * 100).roundToInt()}%", color = Color.White)
+                }
+                IconButton(onClick = { zoomBy(1.25f) }, enabled = zoom.scale < 5f) {
+                    Icon(Icons.Rounded.ZoomIn, "Zoom in video", tint = Color.White)
+                }
+            }
+        }
         IconButton(onClick = { fullscreen = !expanded },
             modifier = Modifier.align(Alignment.TopEnd).safeDrawingPadding().padding(8.dp)
                 .background(Color.Black.copy(alpha = 0.65f), CircleShape)) {
@@ -219,8 +281,14 @@ internal fun VideoPlayerSurface(player: Player?, title: String, modifier: Modifi
             controller.systemBarsBehavior = WindowInsetsControllerCompat.BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE
             controller.hide(WindowInsetsCompat.Type.systemBars())
         }
-        Box(Modifier.fillMaxSize().background(Color.Black).testTag("fullscreen-video")
-            .semantics { contentDescription = "Video for $title" }, contentAlignment = Alignment.Center) {
+        Box(Modifier.fillMaxSize().background(Color.Black).clipToBounds().testTag("fullscreen-video")
+            .onSizeChanged {
+                viewportSize = it
+                zoom = zoom.transform(1f, Offset.Zero, Offset.Zero, it)
+            }.semantics {
+                contentDescription = "Video for $title"
+                stateDescription = "Zoom ${(zoom.scale * 100).roundToInt()}%"
+            }, contentAlignment = Alignment.Center) {
             content(true)
         }
     }

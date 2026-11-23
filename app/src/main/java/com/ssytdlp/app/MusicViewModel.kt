@@ -186,6 +186,10 @@ internal fun Track.withReplacedFile(file: Track): Track = when {
 internal data class PlaylistSaveResult(val id: String, val error: String? = null)
 internal data class PlaylistCreationResult(val error: String? = null)
 internal data class PlaylistEditTarget(val id: String, val account: Account)
+internal data class QueuePlaylistDraft(
+    val account: Account, val tracks: List<Track>, val job: Job? = null,
+    val error: String? = null, val saved: Boolean = false
+)
 private data class MetadataSelection(val owner: MetadataOwner, val identity: MetadataIdentity)
 private data class MetadataUpdate(val selection: MetadataSelection, val canEdit: Boolean?)
 private data class MetadataLoad(val owner: MetadataOwner?, val track: Track?, val generation: Long)
@@ -246,6 +250,8 @@ class MusicViewModel @JvmOverloads constructor(application: Application, private
         private set
     internal var playlistEditTarget by mutableStateOf<PlaylistEditTarget?>(null)
         private set
+    internal var queuePlaylistDraft by mutableStateOf<QueuePlaylistDraft?>(null)
+        private set
     private var playlistReloadRequired = false
     var signingIn by mutableStateOf(false)
         private set
@@ -302,6 +308,7 @@ class MusicViewModel @JvmOverloads constructor(application: Application, private
                 playlistSaveResult = null
                 playlistCreationResult = null
                 playlistEditTarget = null
+                queuePlaylistDraft = null
                 playlistReloadRequired = false
                 if (account == null) {
                     operation?.cancel()
@@ -753,17 +760,21 @@ class MusicViewModel @JvmOverloads constructor(application: Application, private
 
     internal fun clearPlaylistCreationResult() { playlistCreationResult = null }
 
+    private suspend fun createPlaylistJob(title: String): Job {
+        val user = sessions.account.value?.user
+        require(user != null && !user.isShared && user.id.isNotBlank()) { "This library is read-only." }
+        require(isValidPlaylistTitle(title)) {
+            "Playlist title must be between 1 and 200 characters without control characters."
+        }
+        val result = api.request("/api/library/playlists", "POST", json("playlistTitle" to title.trim()))
+        return ApiJson.decodeFromJsonElement<Job>(result.jsonObject.getValue("job"))
+    }
+
     fun createPlaylist(title: String) = launchAction {
         val account = sessions.account.value
         playlistCreationResult = null
         val job = try {
-            val user = account?.user
-            require(user != null && !user.isShared && user.id.isNotBlank()) { "This library is read-only." }
-            require(isValidPlaylistTitle(title)) {
-                "Playlist title must be between 1 and 200 characters without control characters."
-            }
-            val result = api.request("/api/library/playlists", "POST", json("playlistTitle" to title.trim()))
-            ApiJson.decodeFromJsonElement<Job>(result.jsonObject.getValue("job"))
+            createPlaylistJob(title)
         } catch (error: Exception) {
             if (error is CancellationException) throw error
             if (sameAccount(account)) playlistCreationResult = PlaylistCreationResult(
@@ -785,6 +796,59 @@ class MusicViewModel @JvmOverloads constructor(application: Application, private
             if (!sameAccount(account)) return@launchAction
             message("Playlist created, but the library could not be refreshed. Refresh before creating another playlist. " +
                 (error.message ?: "Unable to contact the server."))
+        }
+    }
+
+    internal fun openQueuePlaylist(queue: List<Track>) {
+        if (busy) return
+        val account = sessions.account.value
+        if (account == null || account.user.isShared || account.user.id.isBlank()) {
+            message("This library is read-only.")
+            return
+        }
+        if (queue.isEmpty()) {
+            message("Your queue is empty.")
+            return
+        }
+        queuePlaylistDraft = QueuePlaylistDraft(account, queue.toList())
+    }
+
+    internal fun closeQueuePlaylist() { queuePlaylistDraft = null }
+
+    internal fun saveQueuePlaylist(title: String, parentId: String?) = launchAction {
+        var draft = requireNotNull(queuePlaylistDraft) { "Reopen the queue playlist dialog." }
+        try {
+            require(sameAccount(draft.account)) { "Account changed. Reopen the queue playlist dialog." }
+            val user = sessions.account.value?.user
+            require(user != null && !user.isShared && user.id.isNotBlank()) { "This library is read-only." }
+            require(draft.tracks.isNotEmpty()) { "Your queue is empty." }
+            require(parentId == null || library.library.entries.any { it.id == parentId && it.type == "folder" }) {
+                "Destination folder is no longer available."
+            }
+            val job = draft.job ?: createPlaylistJob(title)
+            if (!sameAccount(draft.account)) return@launchAction
+            draft = draft.copy(job = job, error = null)
+            queuePlaylistDraft = draft
+            val linked = ApiJson.decodeFromJsonElement<Library>(
+                api.request("/api/library/links", "POST", json("jobId" to job.id)))
+            if (!sameAccount(draft.account)) return@launchAction
+            val result = api.request("/api/library/playlists/${encode(job.id)}/queue", "POST", buildJsonObject {
+                put("version", linked.version)
+                put("parentId", parentId?.let(::JsonPrimitive) ?: JsonNull)
+                put("keys", buildJsonArray { draft.tracks.distinctBy { it.key }.forEach { add(it.key) } })
+            })
+            if (!sameAccount(draft.account)) return@launchAction
+            library = library.withLibrary(ApiJson.decodeFromJsonElement<Library>(result))
+            queuePlaylistDraft = draft.copy(saved = true)
+            selectLibrary(job.id)
+            message("Queue saved as playlist.")
+        } catch (error: Exception) {
+            if (error is CancellationException) throw error
+            if (sameAccount(draft.account)) queuePlaylistDraft = draft.copy(error = if (draft.job == null)
+                error.message ?: "Unable to create the playlist."
+            else "Playlist created, but the queue could not be saved: " +
+                (error.message ?: "Unable to contact the server.") + " Retry to finish saving to the same playlist.")
+            throw error
         }
     }
 
