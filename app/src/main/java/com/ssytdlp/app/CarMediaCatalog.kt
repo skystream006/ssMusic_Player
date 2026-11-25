@@ -25,17 +25,17 @@ private const val SEARCH = "auto:search:"
 private const val SONG = "auto:song:"
 private const val GROUP = "auto:group:"
 private const val GROUP_SIZE = 50
-private val appIcon = Uri.parse("android.resource://${BuildConfig.APPLICATION_ID}/${R.mipmap.ic_launcher}")
+private val folderIcon = resourceArtwork(R.drawable.ic_car_folder)
 
 @Serializable private data class SongId(val source: String, val key: String, val occurrence: Int)
 @Serializable private data class GroupId(val parent: String, val start: Int)
 
-private fun folder(id: String, title: String, type: Int = MediaMetadata.MEDIA_TYPE_FOLDER_MIXED): MediaItem =
+private fun folder(id: String, title: String, type: Int = MediaMetadata.MEDIA_TYPE_FOLDER_MIXED,
+    artwork: Uri = folderIcon): MediaItem =
     MediaItem.Builder().setMediaId(id).setMediaMetadata(MediaMetadata.Builder().setTitle(title)
-        .setIsBrowsable(true).setIsPlayable(false).setMediaType(type).setArtworkUri(appIcon).build()).build()
+        .setIsBrowsable(true).setIsPlayable(false).setMediaType(type).setArtworkUri(artwork).build()).build()
 
-internal val carRoot = folder(ROOT, "ssMusic Player")
-private val allMusic = folder(ALL, "All Music")
+internal val carRoot = folder(ROOT, "ssMusic Player", artwork = resourceArtwork(R.mipmap.ic_launcher))
 private val libraryFolder = folder(LIBRARY, "Folders and playlists", MediaMetadata.MEDIA_TYPE_FOLDER_PLAYLISTS)
 
 internal fun <T> List<T>.carPage(page: Int, size: Int): List<T> {
@@ -44,8 +44,11 @@ internal fun <T> List<T>.carPage(page: Int, size: Int): List<T> {
     return subList(start, (start.toLong() + size).coerceAtMost(this.size.toLong()).toInt())
 }
 
-internal class CarSongs(source: String, files: List<Track>) {
-    val tracks = files.filter { it.isPlayable && !it.streamUrl.isNullOrBlank() && it.mediaType == "audio" }
+internal val Track.carPlayable: Boolean get() =
+    isPlayable && !streamUrl.isNullOrBlank() && (mediaType == "audio" || mediaType == "video")
+
+internal class CarSongs(source: String, files: List<Track>, private val artwork: CarArtwork) {
+    val tracks = files.filter { it.carPlayable }
     private val ids = buildList {
         val occurrences = mutableMapOf<String, Int>()
         for (track in tracks) {
@@ -59,7 +62,7 @@ internal class CarSongs(source: String, files: List<Track>) {
     fun indexOf(id: String): Int = ids.indexOf(id).also { require(it >= 0) { "This song is no longer available." } }
 
     fun row(index: Int): MediaItem = MediaItem.Builder().setMediaId(ids[index])
-        .setMediaMetadata(tracks[index].playbackMetadata().setArtworkUri(appIcon).build()).build()
+        .setMediaMetadata(tracks[index].playbackMetadata().setArtworkUri(artwork.track(tracks[index])).build()).build()
 
     val rows = object : AbstractList<MediaItem>() {
         override val size: Int get() = tracks.size
@@ -67,9 +70,8 @@ internal class CarSongs(source: String, files: List<Track>) {
     }
 
     fun playable(index: Int, api: ServerApi): MediaItem {
-        val item = tracks[index].toMediaItem(api)
-        return item.buildUpon().setMediaId(ids[index])
-            .setMediaMetadata(item.mediaMetadata.buildUpon().setArtworkUri(appIcon).build()).build()
+        val track = tracks[index]
+        return track.toMediaItem(api, artwork.track(track)).buildUpon().setMediaId(ids[index]).build()
     }
 }
 
@@ -88,6 +90,7 @@ internal fun MediaItem.RequestMetadata.voiceTerm(): String = listOf(extras?.getS
 
 /** Scoped to one playback account. IDs describe library selections, never stream URLs or credentials. */
 internal class CarMediaCatalog(
+    private val artwork: CarArtwork,
     private val loadLibrary: suspend () -> Library,
     private val loadTracks: suspend (entryId: String?, query: String) -> List<Track>
 ) {
@@ -113,7 +116,7 @@ internal class CarMediaCatalog(
             }
             else -> throw IllegalArgumentException("Unknown song collection.")
         }
-        CarSongs(source, files).also {
+        CarSongs(source, files, artwork).also {
             lastSource = source
             lastSongs = it
             loadedAt = SystemClock.elapsedRealtime()
@@ -127,11 +130,11 @@ internal class CarMediaCatalog(
         folder(FOLDER + entry.id, entry.name)
     } else {
         val title = playlists.find { it.id == entry.id }?.playlistTitle.orEmpty().ifBlank { entry.name }
-        folder(TRACKS + entry.id, title, MediaMetadata.MEDIA_TYPE_PLAYLIST)
+        folder(TRACKS + entry.id, title, MediaMetadata.MEDIA_TYPE_PLAYLIST, artwork.playlist(entry.id, version))
     }
 
     private suspend fun rows(parent: String): List<MediaItem> = when {
-        parent == ROOT -> listOf(allMusic, libraryFolder)
+        parent == ROOT -> listOf(libraryFolder)
         parent == LIBRARY || parent.startsWith(FOLDER) -> {
             val library = loadLibrary()
             val folderId = if (parent == LIBRARY) null else parent.removePrefix(FOLDER).also {
@@ -165,7 +168,6 @@ internal class CarMediaCatalog(
     suspend fun item(id: String): MediaItem = when {
         id == ROOT -> carRoot
         id == LIBRARY -> libraryFolder
-        id == ALL -> allMusic
         id.startsWith(FOLDER) || id.startsWith(TRACKS) -> {
             val library = loadLibrary()
             val entry = library.entry(if (id.startsWith(FOLDER)) id.removePrefix(FOLDER) else id.removePrefix(TRACKS))
@@ -210,7 +212,7 @@ internal class CarMediaCatalog(
             else require(playlist.isNullOrBlank()) { "Playlist not found." }
         }
         val songs = songs(source)
-        require(songs.tracks.isNotEmpty()) { "No matching audio tracks." }
+        require(songs.tracks.isNotEmpty()) { "No matching playable tracks." }
         val artist = hints?.getString(MediaStore.EXTRA_MEDIA_ARTIST)
         val exact = songs.tracks.indexOfFirst { it.displayTitle.equals(term, true) &&
             (artist.isNullOrBlank() || it.artist.equals(artist, true)) }

@@ -8,11 +8,13 @@ import android.os.Process
 import android.provider.MediaStore
 import androidx.media3.common.C
 import androidx.media3.common.MediaItem
+import androidx.media3.common.MediaMetadata
 import androidx.media3.common.util.UnstableApi
 import androidx.media3.exoplayer.ExoPlayer
 import androidx.media3.session.MediaLibraryService.MediaLibrarySession
 import androidx.media3.session.MediaSession.ControllerInfo
 import androidx.media3.session.SessionError
+import androidx.media3.session.SessionResult
 import androidx.test.core.app.ApplicationProvider
 import com.google.common.util.concurrent.ListenableFuture
 import com.ssytdlp.app.core.*
@@ -47,8 +49,12 @@ class CarMediaSessionTest {
     private val entry = "mix:/? &"
     private val library = Library(entries = listOf(LibraryEntry("folder", "folder", "Road"),
         LibraryEntry(entry, "playlist", "Original", "folder")), playlists = listOf(LibraryPlaylist(entry, "My Mix")))
-    private val song = Track("job/?", "song.mp3", "First song", "Artist", streamUrl = "/api/stream/song.mp3")
-    private val files = listOf(song, song.copy(mediaType = "video"), song.copy(isPlayable = false),
+    private val song = Track("job/?", "song.mp3", "First song", "Artist", streamUrl = "/api/stream/song.mp3",
+        artworkUrl = "/api/jobs/job%2F%3F/artwork/song.mp3?v=1",
+        linkedVideo = LinkedVideo("https://example.com/video", "completed", streamUrl = "/api/jobs/job/video/song.mp3?v=2"))
+    private val film = song.copy(name = "concert.mp4", title = "Concert", mediaType = "video",
+        streamUrl = "/api/stream/concert.mp4", artworkUrl = null, linkedVideo = null)
+    private val files = listOf(song, film, song.copy(isPlayable = false), song.copy(mediaType = "other"),
         song.copy(name = "[NoVocals]/song.mp3")) + (1..50).map { song.copy(name = "$it.mp3", title = "Song $it") } + song
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
     private val car = controller("com.google.android.projection.gearhead", Process.myUid() + 1, true)
@@ -85,16 +91,22 @@ class CarMediaSessionTest {
 
     @Test fun `browse and cold play a duplicate on the last page in its authenticated playlist queue`() {
         val root = callback.onGetLibraryRoot(session, car, null).get().value!!
-        val library = children(root).single { it.mediaMetadata.title == "Folders and playlists" }
-        val playlist = children(children(library).single()).single { it.mediaMetadata.title == "My Mix" }
+        val library = children(root).single()
+        assertEquals("Folders and playlists", library.mediaMetadata.title)
+        val folder = children(library).single()
+        assertEquals(resourceArtwork(R.drawable.ic_car_folder), folder.mediaMetadata.artworkUri)
+        val playlist = children(folder).single { it.mediaMetadata.title == "My Mix" }
+        assertEquals("content", playlist.mediaMetadata.artworkUri?.scheme)
+        assertNotEquals(folder.mediaMetadata.artworkUri, playlist.mediaMetadata.artworkUri)
         val groups = children(playlist)
-        assertEquals(listOf("1 - 50", "51 - 53"), groups.map { it.mediaMetadata.title })
+        assertEquals(listOf("1 - 50", "51 - 54"), groups.map { it.mediaMetadata.title })
         val last = children(groups.last()).last()
         assertNull(last.localConfiguration)
         assertNull(last.mediaMetadata.extras)
         assertEquals(true, last.mediaMetadata.isPlayable)
         assertEquals(false, last.mediaMetadata.isBrowsable)
         assertEquals("Artist", last.mediaMetadata.artist)
+        assertEquals("content", last.mediaMetadata.artworkUri?.scheme)
         assertNotEquals(children(groups.first()).first().mediaId, last.mediaId)
 
         callback.setAccount(owner) // Drop the in-memory browse snapshot.
@@ -102,8 +114,9 @@ class CarMediaSessionTest {
         val foreign = song.copy(streamUrl = "/api/private/not-a-song").toMediaItem(api).buildUpon()
             .setMediaId(last.mediaId).setUri("https://other.example/untrusted").build()
         val queue = callback.onSetMediaItems(session, car, listOf(foreign), C.INDEX_UNSET, 5000).awaitResult()
-        assertEquals(52, queue.mediaItems.size)
-        assertEquals(51, queue.startIndex)
+        assertEquals(53, queue.mediaItems.size)
+        assertEquals(52, queue.startIndex)
+        assertEquals(last.mediaMetadata.artworkUri, queue.mediaItems.last().mediaMetadata.artworkUri)
         assertEquals(5000L, queue.startPositionMs)
         assertEquals(song, queue.mediaItems.last().asTrack())
         assertEquals(owner.origin + song.streamUrl, queue.mediaItems.last().localConfiguration!!.uri.toString())
@@ -122,7 +135,7 @@ class CarMediaSessionTest {
             C.INDEX_UNSET, C.TIME_UNSET).awaitResult()
         assertEquals("Song 5", voice("Song 5").mediaItems.first().mediaMetadata.title)
         val playlist = voice("my mix")
-        assertEquals(52, playlist.mediaItems.size)
+        assertEquals(53, playlist.mediaItems.size)
         assertThrows(ExecutionException::class.java) {
             voice("my mix", Bundle().apply { putString(MediaStore.EXTRA_MEDIA_TITLE, "my mix") })
         }
@@ -147,7 +160,56 @@ class CarMediaSessionTest {
         assertNull(result.value)
         account = owner
         callback.setAccount(owner)
-        assertEquals(2, children(root).size)
+        assertEquals(1, children(root).size)
+    }
+
+    @Test fun `linked soundtrack switches in place while native videos use their own stream without a toggle`() {
+        val selection = callback.onSetMediaItems(session, car, listOf(MediaItem.Builder().setRequestMetadata(
+            MediaItem.RequestMetadata.Builder().setSearchQuery("my mix").build()).build()), 0, 0).awaitResult()
+        val player = session.player
+        val index = selection.mediaItems.lastIndex
+        player.setMediaItems(selection.mediaItems, index, 12_345)
+        callback.updateVideoAction(session)
+        val button = session.mediaButtonPreferences.single()
+        assertEquals("Use video audio", button.displayName)
+        val command = button.sessionCommand!!
+        assertTrue(callback.onConnect(session, car).availableSessionCommands.contains(command))
+        assertEquals(SessionError.ERROR_PERMISSION_DENIED, callback.onCustomCommand(session,
+            controller("other", Process.myUid() + 1, true), command, Bundle.EMPTY).get().resultCode)
+        repeat(2) { step ->
+            assertEquals(SessionResult.RESULT_SUCCESS, callback.onCustomCommand(session, car, command, Bundle.EMPTY).get().resultCode)
+            val current = player.currentMediaItem!!
+            assertEquals(index, player.currentMediaItemIndex)
+            assertEquals(selection.mediaItems.size, player.mediaItemCount)
+            assertEquals(selection.mediaItems[index].mediaId, current.mediaId)
+            assertEquals(song, current.asTrack())
+            assertEquals(12_345L, player.currentPosition)
+            assertFalse(player.playWhenReady)
+            assertEquals(owner.origin + if (step == 0) song.linkedVideo!!.streamUrl else song.streamUrl,
+                current.localConfiguration!!.uri.toString())
+            assertEquals(if (step == 0) "Use song audio" else "Use video audio", session.mediaButtonPreferences.single().displayName)
+        }
+        player.seekToDefaultPosition(1)
+        callback.updateVideoAction(session)
+        assertEquals(MediaMetadata.MEDIA_TYPE_VIDEO, player.currentMediaItem!!.mediaMetadata.mediaType)
+        assertEquals(owner.origin + film.streamUrl, player.currentMediaItem!!.localConfiguration!!.uri.toString())
+        assertTrue(session.mediaButtonPreferences.isEmpty())
+        assertEquals(SessionError.ERROR_NOT_SUPPORTED, callback.onCustomCommand(session, car, command, Bundle.EMPTY).get().resultCode)
+        player.setMediaItem(callback.playable(song.copy(linkedVideo = song.linkedVideo!!.copy(status = "running"))))
+        callback.updateVideoAction(session)
+        assertTrue(session.mediaButtonPreferences.isEmpty())
+    }
+
+    @Test fun `phone queues and restored tracks receive artwork and a theme change only replaces missing covers`() {
+        val phone = controller(BuildConfig.APPLICATION_ID, Process.myUid(), true)
+        val items = callback.onAddMediaItems(session, phone, listOf(song.toMediaItem(api), film.toMediaItem(api))).awaitResult()
+        assertEquals(callback.playable(song).mediaMetadata.artworkUri, items.first().mediaMetadata.artworkUri)
+        assertEquals("content", items.first().mediaMetadata.artworkUri?.scheme)
+        session.player.setMediaItems(items, 1, 2345)
+        callback.updateArtwork(session, R.mipmap.ic_launcher_gold_dark)
+        assertEquals(items.first(), session.player.getMediaItemAt(0))
+        assertEquals(resourceArtwork(R.mipmap.ic_launcher_gold_dark), session.player.currentMediaItem!!.mediaMetadata.artworkUri)
+        assertEquals(2345L, session.player.currentPosition)
     }
 
     private fun children(item: MediaItem) =

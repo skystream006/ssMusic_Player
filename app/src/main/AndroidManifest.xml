@@ -133,6 +133,8 @@
                 <action android:name="android.media.browse.MediaBrowserService" />
             </intent-filter>
         </service>
+        <provider android:name=".CarArtworkProvider" android:authorities="${applicationId}.car-art"
+            android:exported="false" android:grantUriPermissions="true" />
         <provider
             android:name="androidx.core.content.FileProvider"
             android:authorities="${applicationId}.updates"

@@ -899,10 +899,8 @@ fun AlbumArtwork(artwork: String?, modifier: Modifier = Modifier) {
                 }
             }, contentAlignment = Alignment.Center) {
             if (bitmap != null) Image(bitmap!!, "Album artwork", Modifier.fillMaxSize(), contentScale = ContentScale.Fit)
-            else {
-                if (LocalWaveAppearance.current) Image(painterResource(R.drawable.wave_cover), null, Modifier.fillMaxSize(), contentScale = ContentScale.Crop)
-                Icon(Icons.Rounded.Album, "Album artwork unavailable", Modifier.fillMaxSize(0.32f), tint = MaterialTheme.colorScheme.primary.copy(alpha = 0.85f))
-            }
+            else Image(painterResource(LocalThemeLogo.current), "Album artwork unavailable", Modifier.fillMaxSize(),
+                contentScale = ContentScale.Fit)
         }
     }
 }
