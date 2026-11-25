@@ -2614,6 +2614,9 @@ class NowPlayingScreenTest {
         compose.onNodeWithText("Player").performClick()
         val artwork = compose.onNodeWithContentDescription("Album artwork unavailable")
         val original = artwork.fetchSemanticsNode().boundsInRoot
+        // The full-size logo can move past the pane clip; its visible left edge then stops moving.
+        val originalX = artwork.fetchSemanticsNode().positionInRoot.x
+        fun displacement() = artwork.fetchSemanticsNode().positionInRoot.x - originalX
         val title = compose.onNode(hasText("Blue hour") and !isSongHeading).fetchSemanticsNode().boundsInRoot
         compose.mainClock.autoAdvance = false
         try {
@@ -2626,17 +2629,17 @@ class NowPlayingScreenTest {
                 compose.runOnIdle { Snapshot.sendApplyNotifications() }
                 compose.mainClock.advanceTimeBy(64)
                 compose.waitForIdle()
-                val moved = artwork.fetchSemanticsNode().boundsInRoot.left - original.left
+                val moved = displacement()
                 assertTrue(moved * distance > 0f)
                 assertTrue(kotlin.math.abs(moved) > 50f)
                 assertEquals(title, compose.onNode(hasText("Blue hour") and !isSongHeading).fetchSemanticsNode().boundsInRoot)
                 compose.onNodeWithTag("page").performTouchInput { if (distance > 0f) up() else cancel() }
                 compose.mainClock.advanceTimeBy(32)
                 compose.waitForIdle()
-                assertTrue(kotlin.math.abs(artwork.fetchSemanticsNode().boundsInRoot.left - original.left) > 1f)
+                assertTrue(kotlin.math.abs(displacement()) > 1f)
                 compose.mainClock.advanceTimeBy(2_000)
                 compose.waitForIdle()
-                assertEquals(original.left, artwork.fetchSemanticsNode().boundsInRoot.left, 1f)
+                assertEquals(0f, displacement(), 1f)
             }
         } finally {
             compose.mainClock.autoAdvance = true
