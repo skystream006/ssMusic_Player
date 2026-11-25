@@ -85,7 +85,7 @@ fun PlayerDock(state: PlaybackState, model: MusicViewModel, expand: () -> Unit, 
     MiniPlayer(state, model.metadata?.artwork, expand, { requestNotifications(); model.playback.toggle() },
         model.playback::next, model.playback::seek, model.playback::previous, model.playback::repeat,
         model.playback::shuffle, model.playback::previousTrack) {
-        SongActionsMenu(model, state.track, download)
+        PlayerSongMenu(model, state.track, download)
     }
 }
 
@@ -241,7 +241,7 @@ fun NowPlayingScreen(model: MusicViewModel, state: PlaybackState, onBack: () -> 
           ScaffoldDefaults.contentWindowInsets.only(WindowInsetsSides.Horizontal + WindowInsetsSides.Bottom))) {
         Column(Modifier.fillMaxSize()) {
             NowPlayingTopBar(state.track, !model.busy, model::refresh, onBack, onSettings) {
-                SongActionsMenu(model, state.track, download, menuKey = visibleTab,
+                PlayerSongMenu(model, state.track, download, menuKey = visibleTab,
                     editLyrics = if (canEditLyrics && metadata != null) ({ track ->
                         editingLyrics = Triple(track, metadata, showUslt)
                     }) else null, queue = state.queue)
@@ -363,110 +363,158 @@ private fun NowPlayingTopBar(track: Track?, refreshEnabled: Boolean, onRefresh: 
 }
 
 @Composable
-private fun SongActionsMenu(model: MusicViewModel, track: Track?, download: (String, String) -> Unit,
+private fun PlayerSongMenu(model: MusicViewModel, track: Track?, download: (String, String) -> Unit,
     menuKey: Int = 0, editLyrics: ((Track) -> Unit)? = null, queue: List<Track>? = null) {
     val account by model.sessions.account.collectAsStateWithLifecycle()
-    var editingTrack by remember { mutableStateOf<Track?>(null) }
-    var sharingTrack by remember { mutableStateOf<Track?>(null) }
-    var linkedTrack by remember(account?.origin, account?.user?.id, account?.session) { mutableStateOf<Track?>(null) }
-    var replacingTrack by remember(account?.origin, account?.user?.id, account?.user?.role) { mutableStateOf<Track?>(null) }
-    var videoTrack by remember(account?.origin, account?.user?.id, account?.session) { mutableStateOf<Track?>(null) }
+    var open by remember(track?.key, track?.libraryOwnerId, menuKey, account?.origin, account?.user?.id,
+        account?.user?.role, account?.session) { mutableStateOf(false) }
+    Box {
+        if (track != null) {
+            ToolButton(Icons.Rounded.MoreVert, "More song actions", modifier = Modifier.size(48.dp)) { open = true }
+        }
+        SongActionsMenu(model, track, SongMenuSource.Player(queue, editLyrics), open, { open = false }, download)
+    }
+    if (queue != null) QueuePlaylistDialog(model)
+}
+
+private sealed interface SongMenuSource {
+    data object LibraryRow : SongMenuSource
+    class QueueRow(val remove: () -> Unit) : SongMenuSource
+    class Player(val queue: List<Track>?, val editLyrics: ((Track) -> Unit)?) : SongMenuSource
+}
+
+private enum class SongDialog { METADATA, LINKS, VIDEO, REPLACE, SHARE, ADD_TO_PLAYLIST, MOVE_TO_PLAYLIST, REMOVE_FROM_PLAYLIST }
+
+@Composable
+private fun SongMenuHeading(title: String) {
+    Text(title, Modifier.padding(horizontal = 16.dp, vertical = 8.dp).semantics { heading() },
+        style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+}
+
+@Composable
+private fun SongActionsMenu(model: MusicViewModel, track: Track?, source: SongMenuSource,
+    expanded: Boolean, close: () -> Unit, download: (String, String) -> Unit) {
+    val account by model.sessions.account.collectAsStateWithLifecycle()
+    val user = account?.user
+    val player = source as? SongMenuSource.Player
+    var dialog by remember(account?.origin, user?.id, user?.role, account?.session) {
+        mutableStateOf<Pair<SongDialog, Track>?>(null)
+    }
+    fun libraryJob(song: Track) = model.library.library.jobs.find { it.id == song.jobId }
+    fun sourceJob(song: Track) = libraryJob(song) ?: model.jobs.find { it.id == song.jobId }
+    fun canModify(job: Job?) = user != null && !user.isShared && job?.canModify(user) == true
+    fun canShare(song: Track) = song.mediaType == "audio" && canModify(if (player != null) sourceJob(song) else libraryJob(song))
+    fun canTransfer(song: Track) = user?.isShared == false && song.playlistId != null
+
     track?.let { track ->
-        val job = model.library.library.jobs.find { it.id == track.jobId }
-            ?: model.jobs.find { it.id == track.jobId }
-        val canShare = track.mediaType == "audio" && account?.user?.let { user ->
-            !user.isShared && job?.canModify(user) == true
-        } == true
-        val canEdit = track.name.endsWith(".mp3", true) && account?.user?.let { user ->
-            !user.isShared && model.library.library.jobs.find { it.id == track.jobId }?.canModify(user) == true
-        } == true
-        val inheritedPrivacy = model.songPrivacy(track).inherited
-        var transcribe by remember(canEdit, track.key, account?.origin, account?.user?.id) { mutableStateOf(false) }
-        var moreActions by remember(track.key, menuKey, account?.origin, account?.user?.id, account?.user?.role) {
+        val canEdit = track.mediaType != "video" && track.name.endsWith(".mp3", true) && canModify(libraryJob(track))
+        var transcribe by remember(canEdit, track.key, track.libraryOwnerId, account?.origin, user?.id, account?.session) {
             mutableStateOf(false)
         }
-        Box {
-            ToolButton(Icons.Rounded.MoreVert, "More song actions", modifier = Modifier.size(48.dp)) { moreActions = true }
-            DropdownMenu(expanded = moreActions, onDismissRequest = { moreActions = false }) {
-                queue?.let { queued ->
-                    Text("Queue actions", Modifier.padding(horizontal = 16.dp, vertical = 8.dp).semantics { heading() },
-                        style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                    DropdownMenuItem(text = { Text("Save As New Playlist") },
-                        enabled = !model.busy && queued.isNotEmpty() &&
-                            account?.user?.let { !it.isShared && it.id.isNotBlank() } == true,
-                        leadingIcon = { Icon(Icons.Rounded.Save, null) }, onClick = {
-                            moreActions = false
-                            model.openQueuePlaylist(queued)
-                        })
-                    HorizontalDivider(Modifier.padding(vertical = 4.dp))
-                    Text("Current media", Modifier.padding(horizontal = 16.dp, vertical = 8.dp).semantics { heading() },
-                        style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                }
-                SongVideoMenuItem(model, track) { moreActions = false; videoTrack = track }
-                if (editLyrics != null) {
+        fun show(action: SongDialog) {
+            close()
+            dialog = action to track
+        }
+        DropdownMenu(expanded = expanded, onDismissRequest = close) {
+            player?.queue?.let { queue ->
+                SongMenuHeading("Queue list actions")
+                DropdownMenuItem(text = { Text("Save As New Playlist") },
+                    enabled = !model.busy && queue.isNotEmpty() && user != null && !user.isShared && user.id.isNotBlank(),
+                    leadingIcon = { Icon(Icons.Rounded.Save, null) }, onClick = { close(); model.openQueuePlaylist(queue) })
+                HorizontalDivider(Modifier.padding(vertical = 4.dp))
+            }
+
+            val privacyJob = model.privacyJob(track)?.takeIf { it.canChangePrivacy(user) }
+            val viewMetadata = user?.isShared == true && track.mediaType == "audio"
+            if (player?.editLyrics != null || canEdit || track.canShowPlaylistLinks || privacyJob != null || viewMetadata) {
+                SongMenuHeading("Current Media")
+                player?.editLyrics?.let { editLyrics ->
                     DropdownMenuItem(text = { Text("Edit lyrics") }, enabled = !model.songBusy(track),
-                        leadingIcon = { Icon(Icons.Rounded.EditNote, null) }, onClick = {
-                            moreActions = false
-                            editLyrics(track)
-                        })
+                        leadingIcon = { Icon(Icons.Rounded.EditNote, null) }, onClick = { close(); editLyrics(track) })
                 }
                 if (canEdit) {
                     DropdownMenuItem(text = { Text("Edit metadata") }, enabled = !model.songBusy(track),
-                        leadingIcon = { Icon(Icons.Rounded.Edit, null) },
-                        onClick = { moreActions = false; editingTrack = track })
+                        leadingIcon = { Icon(Icons.Rounded.Edit, null) }, onClick = { show(SongDialog.METADATA) })
                 }
                 if (track.canShowPlaylistLinks) {
                     DropdownMenuItem(text = { Text("Linked Playlists") },
-                        leadingIcon = { Icon(Icons.AutoMirrored.Rounded.QueueMusic, null) },
-                        onClick = { moreActions = false; linkedTrack = track })
+                        leadingIcon = { Icon(Icons.AutoMirrored.Rounded.QueueMusic, null) }, onClick = { show(SongDialog.LINKS) })
                 }
-                if (!inheritedPrivacy) SongPrivacyMenuItem(model, track) { moreActions = false }
-                PlayNextMenuItem(model, track) { moreActions = false }
-                if (inheritedPrivacy) SongPrivacyMenuItem(model, track) { moreActions = false }
-                if (canReplaceFile(account?.user, job, track)) {
-                    DropdownMenuItem(text = { Text("Replace File") }, enabled = !model.songBusy(track),
-                        leadingIcon = { Icon(Icons.Rounded.UploadFile, null) },
-                        onClick = { moreActions = false; replacingTrack = track })
-                }
-                DropdownMenuItem(text = { Text("Save file") }, enabled = !model.busy,
-                    leadingIcon = { Icon(Icons.Rounded.Download, null) }, onClick = {
-                        moreActions = false
-                        download(track.downloadUrl ?: songPath(track, "download"), track.name)
-                    })
-                if (canShare) {
-                    DropdownMenuItem(text = { Text("Share Media") }, enabled = !model.songBusy(track) && !model.songPrivacy(track).isPrivate,
-                        leadingIcon = { Icon(Icons.Rounded.Share, null) },
-                        onClick = { moreActions = false; sharingTrack = track })
-                }
-                if (canEdit) {
-                    TranscribeMenuItem(model.library.transcriptionLocked(track), model.transcriptionAvailable, model.songBusy(track)) {
-                        moreActions = false; transcribe = true
-                    }
-                } else if (account?.user?.isShared == true && track.mediaType == "audio") {
+                if (privacyJob != null) SongPrivacyMenuItem(model, track, privacyJob, close)
+                if (viewMetadata) {
                     DropdownMenuItem(text = { Text("View song metadata") }, enabled = !model.busy,
-                        leadingIcon = { Icon(Icons.Rounded.Info, null) },
-                        onClick = { moreActions = false; editingTrack = track })
+                        leadingIcon = { Icon(Icons.Rounded.Info, null) }, onClick = { show(SongDialog.METADATA) })
                 }
+                HorizontalDivider(Modifier.padding(vertical = 4.dp))
+            }
+
+            SongMenuHeading("Other")
+            if (canReplaceFile(user, sourceJob(track), track)) {
+                DropdownMenuItem(text = { Text("Replace file") }, enabled = !model.songBusy(track),
+                    leadingIcon = { Icon(Icons.Rounded.UploadFile, null) }, onClick = { show(SongDialog.REPLACE) })
+            }
+            SongVideoMenuItem(model, track) { show(SongDialog.VIDEO) }
+            DropdownMenuItem(text = { Text("Save file") }, enabled = !model.busy,
+                leadingIcon = { Icon(Icons.Rounded.Download, null) }, onClick = {
+                    close(); download(track.downloadUrl ?: songPath(track, "download"), track.name)
+                })
+            if (canShare(track)) {
+                DropdownMenuItem(text = { Text("Share Media") }, enabled = !model.songBusy(track) && !model.songPrivacy(track).isPrivate,
+                    leadingIcon = { Icon(Icons.Rounded.Share, null) }, onClick = { show(SongDialog.SHARE) })
+            }
+            if (canEdit) {
+                TranscribeMenuItem(model.library.transcriptionLocked(track), model.transcriptionAvailable, model.songBusy(track)) {
+                    close(); transcribe = true
+                }
+            }
+            HorizontalDivider(Modifier.padding(vertical = 4.dp))
+
+            SongMenuHeading("List actions")
+            PlayNextMenuItem(model, track, close)
+            if (source is SongMenuSource.QueueRow) {
+                DropdownMenuItem(text = { Text("Remove from queue") },
+                    leadingIcon = { Icon(Icons.Rounded.Close, null) }, onClick = { close(); source.remove() })
+            }
+            if (canTransfer(track)) {
+                DropdownMenuItem(text = { Text("Add to playlist") }, enabled = !model.songBusy(track),
+                    leadingIcon = { Icon(Icons.Rounded.LibraryAdd, null) }, onClick = { show(SongDialog.ADD_TO_PLAYLIST) })
+                if (source == SongMenuSource.LibraryRow) {
+                    DropdownMenuItem(text = { Text("Move to playlist") }, enabled = !model.songBusy(track),
+                        leadingIcon = { Icon(Icons.AutoMirrored.Rounded.DriveFileMove, null) }, onClick = { show(SongDialog.MOVE_TO_PLAYLIST) })
+                    if (canModify(libraryJob(track))) {
+                        DropdownMenuItem(text = { Text("Remove from playlist") }, enabled = !model.songBusy(track),
+                            leadingIcon = { Icon(Icons.Rounded.DeleteOutline, null) }, onClick = { show(SongDialog.REMOVE_FROM_PLAYLIST) })
+                    }
+                }
+            }
+            if (source == SongMenuSource.LibraryRow) {
+                DropdownMenuItem(text = { Text("Add to queue") },
+                    leadingIcon = { Icon(Icons.AutoMirrored.Rounded.PlaylistAdd, null) }, onClick = { close(); model.playback.enqueue(track) })
             }
         }
         if (canEdit && transcribe) TranscribeDialog(model, track) { transcribe = false }
     }
-    if (queue != null) QueuePlaylistDialog(model)
-    editingTrack?.let { track -> MetadataDialog(model, track) { editingTrack = null } }
-    linkedTrack?.let { track -> PlaylistLinksDialog(model, track) { linkedTrack = null } }
-    videoTrack?.let { track -> SongVideoDialog(model, track) { videoTrack = null } }
-    sharingTrack?.let { track ->
-        val job = model.library.library.jobs.find { it.id == track.jobId } ?: model.jobs.find { it.id == track.jobId }
-        val canShare = track.mediaType == "audio" && account?.user?.let { user ->
-            !user.isShared && job?.canModify(user) == true
-        } == true
-        if (canShare) ShareMediaDialog(model, track) { sharingTrack = null }
-    }
-    replacingTrack?.let { track ->
-        if (canReplaceFile(account?.user,
-            model.library.library.jobs.find { it.id == track.jobId } ?: model.jobs.find { it.id == track.jobId }, track)) {
-            ReplaceFileDialog(model, track) {
-                if (replacingTrack?.key == track.key) replacingTrack = null
+    dialog?.let { selection ->
+        val (action, song) = selection
+        val dismiss = { if (dialog === selection) dialog = null }
+        when (action) {
+            SongDialog.METADATA -> MetadataDialog(model, song, dismiss = dismiss)
+            SongDialog.LINKS -> PlaylistLinksDialog(model, song, dismiss)
+            SongDialog.VIDEO -> SongVideoDialog(model, song, dismiss)
+            SongDialog.REPLACE -> if (canReplaceFile(user, sourceJob(song), song)) ReplaceFileDialog(model, song, dismiss)
+            SongDialog.SHARE -> if (canShare(song)) ShareMediaDialog(model, song, dismiss)
+            SongDialog.ADD_TO_PLAYLIST, SongDialog.MOVE_TO_PLAYLIST -> if (canTransfer(song)) {
+                val link = action == SongDialog.ADD_TO_PLAYLIST
+                DestinationDialog(if (link) "Add to playlist" else "Move to playlist",
+                    model.library.library.playlists.filter { it.id != song.playlistId }.map { it.id to it.playlistTitle }, dismiss) {
+                    if (it != null) model.transfer(song, it, link)
+                    dismiss()
+                }
+            }
+            SongDialog.REMOVE_FROM_PLAYLIST -> if (canTransfer(song) && canModify(libraryJob(song))) {
+                ConfirmDialog("Remove this song?", "This removes its playlist membership. If no other links remain, the server deletes the media file. This cannot be undone.", dismiss) {
+                    model.remove(song); dismiss()
+                }
             }
         }
     }
@@ -914,111 +962,42 @@ private class ArtworkDisplayTiming(val started: Long = System.nanoTime(), var dr
 fun TrackMenu(model: MusicViewModel, track: Track, index: Int, onRemoveFromQueue: (() -> Unit)? = null,
     expanded: Boolean? = null, onExpandedChange: (Boolean) -> Unit = {},
     download: (String, String) -> Unit) {
-    val inQueue = onRemoveFromQueue != null
     var internalOpen by remember { mutableStateOf(false) }
     val open = expanded ?: internalOpen
     fun setOpen(value: Boolean) {
         internalOpen = value
         onExpandedChange(value)
     }
-    var edit by remember { mutableStateOf(false) }
-    var remove by remember { mutableStateOf(false) }
-    var share by remember { mutableStateOf(false) }
-    val account by model.sessions.account.collectAsStateWithLifecycle()
-    val user = account?.user
-    var playlistLinks by remember(track.key, track.libraryOwnerId, account?.origin, user?.id, account?.session) {
-        mutableStateOf(false)
-    }
-    var videoDownload by remember(track.key, track.libraryOwnerId, account?.origin, user?.id, account?.session) {
-        mutableStateOf(false)
-    }
-    val canTransfer = user?.isShared == false && track.playlistId != null
-    var transfer by remember(canTransfer) { mutableStateOf<String?>(null) }
-    val canModify = user != null && !user.isShared &&
-        model.library.library.jobs.find { it.id == track.jobId }?.canModify(user) == true
-    val canEdit = canModify && track.mediaType != "video" && track.name.endsWith(".mp3", true)
-    val inheritedPrivacy = model.songPrivacy(track).inherited
-    val canReplace = canReplaceFile(user,
-        model.library.library.jobs.find { it.id == track.jobId } ?: model.jobs.find { it.id == track.jobId }, track)
-    var replace by remember(canReplace, track.key, account?.origin, user?.id) { mutableStateOf(false) }
-    var transcribe by remember(canModify, track.key) { mutableStateOf(false) }
     Box {
         ToolButton(Icons.Rounded.MoreVert, "Options for ${track.displayTitle}", enabled = !model.busy) { setOpen(true) }
-        DropdownMenu(open, { setOpen(false) }) {
-            if (canTransfer) {
-                DropdownMenuItem(text = { Text("Add to playlist") }, enabled = !model.songBusy(track), leadingIcon = { Icon(Icons.Rounded.LibraryAdd, null) }, onClick = { setOpen(false); transfer = "link" })
-            }
-            if (!inQueue) DropdownMenuItem(text = { Text("Add to queue") }, leadingIcon = { Icon(Icons.AutoMirrored.Rounded.PlaylistAdd, null) }, onClick = { setOpen(false); model.playback.enqueue(track) })
-            SongVideoMenuItem(model, track) { setOpen(false); videoDownload = true }
-            if (canEdit) {
-                DropdownMenuItem(text = { Text("Edit song / rating") }, enabled = !model.songBusy(track), leadingIcon = { Icon(Icons.Rounded.Edit, null) }, onClick = { setOpen(false); edit = true })
-            }
-            if (track.canShowPlaylistLinks) DropdownMenuItem(text = { Text("Linked Playlists") },
-                leadingIcon = { Icon(Icons.AutoMirrored.Rounded.QueueMusic, null) },
-                onClick = { setOpen(false); playlistLinks = true })
-            if (!inheritedPrivacy) SongPrivacyMenuItem(model, track) { setOpen(false) }
-            if (canTransfer && !inQueue) DropdownMenuItem(text = { Text("Move to playlist") }, enabled = !model.songBusy(track), leadingIcon = { Icon(Icons.AutoMirrored.Rounded.DriveFileMove, null) }, onClick = { setOpen(false); transfer = "move" })
-            PlayNextMenuItem(model, track) { setOpen(false) }
-            if (inheritedPrivacy) SongPrivacyMenuItem(model, track) { setOpen(false) }
-            if (!inQueue && canModify && track.playlistId != null) DropdownMenuItem(text = { Text("Remove from playlist") }, enabled = !model.songBusy(track), leadingIcon = { Icon(Icons.Rounded.DeleteOutline, null) }, onClick = { setOpen(false); remove = true })
-            if (onRemoveFromQueue != null) DropdownMenuItem(text = { Text("Remove from queue") },
-                leadingIcon = { Icon(Icons.Rounded.Close, null) }, onClick = { setOpen(false); onRemoveFromQueue() })
-            if (canReplace) DropdownMenuItem(text = { Text("Replace File") },
-                leadingIcon = { Icon(Icons.Rounded.UploadFile, null) }, enabled = !model.songBusy(track),
-                onClick = { setOpen(false); replace = true })
-            DropdownMenuItem(text = { Text("Save file") }, leadingIcon = { Icon(Icons.Rounded.Download, null) }, onClick = { setOpen(false); download(track.downloadUrl ?: songPath(track, "download"), track.name) })
-            if (canModify && track.mediaType == "audio") DropdownMenuItem(text = { Text("Share Media") },
-                enabled = !model.songBusy(track) && !model.songPrivacy(track).isPrivate,
-                leadingIcon = { Icon(Icons.Rounded.Share, null) }, onClick = { setOpen(false); share = true })
-            if (canEdit) {
-                TranscribeMenuItem(model.library.transcriptionLocked(track), model.transcriptionAvailable, model.songBusy(track)) {
-                    setOpen(false); transcribe = true
-                }
-            } else if (user?.isShared == true && track.mediaType == "audio") {
-                DropdownMenuItem(text = { Text("View song metadata") }, leadingIcon = { Icon(Icons.Rounded.Info, null) },
-                    onClick = { setOpen(false); edit = true })
-            }
+        key(track.key, track.libraryOwnerId, track.playlistId) {
+            val source = if (onRemoveFromQueue == null) SongMenuSource.LibraryRow else SongMenuSource.QueueRow(onRemoveFromQueue)
+            SongActionsMenu(model, track, source, open, { setOpen(false) }, download)
         }
-    }
-    if (edit) MetadataDialog(model, track) { edit = false }
-    if (playlistLinks) PlaylistLinksDialog(model, track) { playlistLinks = false }
-    if (videoDownload) SongVideoDialog(model, track) { videoDownload = false }
-    if (share && canModify && track.mediaType == "audio") ShareMediaDialog(model, track) { share = false }
-    if (canReplace && replace) ReplaceFileDialog(model, track) { replace = false }
-    if (transcribe) TranscribeDialog(model, track) { transcribe = false }
-    if (remove) ConfirmDialog("Remove this song?", "This removes its playlist membership. If no other links remain, the server deletes the media file. This cannot be undone.", { remove = false }) { model.remove(track); remove = false }
-    if (canTransfer && transfer != null) DestinationDialog(if (transfer == "link") "Add to playlist" else "Move to playlist",
-        model.library.library.playlists.filter { it.id != track.playlistId }.map { it.id to it.playlistTitle }, { transfer = null }) {
-        if (it != null) model.transfer(track, it, transfer == "link")
-        transfer = null
     }
 }
 
 @Composable
 private fun PlayNextMenuItem(model: MusicViewModel, track: Track, close: () -> Unit) {
     val playback by model.playback.state.collectAsStateWithLifecycle()
-    DropdownMenuItem(text = { Text("Play Next") },
+    DropdownMenuItem(text = { Text("Play next") },
         leadingIcon = { Icon(Icons.AutoMirrored.Rounded.PlaylistPlay, null) },
         enabled = playback.connected && track.isPlayable && track.streamUrl != null,
         onClick = { close(); model.playback.playNext(track) })
 }
 
 @Composable
-private fun SongPrivacyMenuItem(model: MusicViewModel, track: Track, close: () -> Unit) {
-    val account by model.sessions.account.collectAsStateWithLifecycle()
-    val job = model.privacyJob(track)
+private fun SongPrivacyMenuItem(model: MusicViewModel, track: Track, job: Job, close: () -> Unit) {
     val privacy = model.songPrivacy(track)
-    if (job?.canChangePrivacy(account?.user) == true) {
-        DropdownMenuItem(text = { Text(when {
-            privacy.inherited -> "Private — inherited from source"
-            privacy.isPrivate -> "Make song public"
-            else -> "Make song private"
-        }) }, leadingIcon = { Icon(if (privacy.isPrivate) Icons.Rounded.Lock else Icons.Rounded.LockOpen, null) },
-            enabled = !model.songBusy(track) && !job.active && !privacy.inherited, onClick = {
-                close()
-                model.setSongPrivate(track, !privacy.isPrivate)
-            })
-    }
+    DropdownMenuItem(text = { Text(when {
+        privacy.inherited -> "Private — inherited from source"
+        privacy.isPrivate -> "Make song public"
+        else -> "Make song private"
+    }) }, leadingIcon = { Icon(if (privacy.isPrivate) Icons.Rounded.Lock else Icons.Rounded.LockOpen, null) },
+        enabled = !model.songBusy(track) && !job.active && !privacy.inherited, onClick = {
+            close()
+            model.setSongPrivate(track, !privacy.isPrivate)
+        })
 }
 
 @Composable

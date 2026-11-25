@@ -26,8 +26,11 @@ Open only the source for the requested surface. Test names resolve through
   do not duplicate their logic in composables.
 - Queue row indices identify **occurrences**, not unique song keys. A changed
   snapshot cancels gestures rather than applying stale indices.
-- `PlayerDock` and Now Playing share `SongActionsMenu`; keep compact actions
-  beside the seek slider without shrinking transport controls or song text.
+- `TrackMenu` (Library and Queue rows) and `PlayerSongMenu` (dock and Now Playing)
+  share `SongActionsMenu`. Only the expanded player offers queue-wide actions;
+  only Queue rows can remove an occurrence, and only Library rows can move or
+  remove playlist membership or append to the queue. Keep the dock menu beside
+  the seek slider without shrinking transport controls or song text.
 - Distinguish callbacks for track swipes from the previous transport button.
   Consult playback if their semantics change, not for styling the buttons.
 - Keep drafts bound to their original song/account and preserve cancellation,
