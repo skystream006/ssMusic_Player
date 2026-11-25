@@ -1,7 +1,9 @@
 package com.ssytdlp.app
 
 import android.content.Context
+import android.content.Intent
 import android.content.pm.ProviderInfo
+import android.os.Bundle
 import android.os.Handler
 import android.os.Looper
 import android.net.Uri
@@ -12,6 +14,7 @@ import androidx.compose.ui.test.*
 import androidx.compose.ui.test.junit4.createAndroidComposeRule
 import androidx.lifecycle.ViewModelStore
 import androidx.lifecycle.viewModelScope
+import androidx.media3.session.MediaSession.ControllerInfo
 import androidx.test.core.app.ApplicationProvider
 import com.ssytdlp.app.core.Account
 import com.ssytdlp.app.core.ApiJson
@@ -72,6 +75,7 @@ import org.junit.Rule
 import org.junit.Test
 import org.junit.runner.RunWith
 import org.junit.rules.TemporaryFolder
+import org.robolectric.Robolectric
 import org.robolectric.RobolectricTestRunner
 import org.robolectric.Shadows.shadowOf
 import org.robolectric.annotation.Config
@@ -128,6 +132,41 @@ class AccountRefreshTest {
 
         @JvmStatic @AfterClass fun removeKeyStore() {
             Security.removeProvider(provider.name)
+        }
+    }
+
+    @androidx.annotation.OptIn(androidx.media3.common.util.UnstableApi::class)
+    @Test fun boundCarServiceTracksPhoneSignInAndSignOutWithoutAutoplay() {
+        compose.runOnUiThread {
+            val action = Intent("android.media.browse.MediaBrowserService").setPackage(context.packageName)
+            assertTrue(context.packageManager.queryIntentServices(action, 0)
+                .any { it.serviceInfo.name == PlaybackService::class.java.name })
+            val voice = Intent(android.provider.MediaStore.INTENT_ACTION_MEDIA_PLAY_FROM_SEARCH)
+                .addCategory(Intent.CATEGORY_DEFAULT).setPackage(context.packageName)
+            assertEquals(MainActivity::class.java.name, context.packageManager.resolveActivity(voice, 0)?.activityInfo?.name)
+            val service = Robolectric.buildService(PlaybackService::class.java).create()
+            try {
+                assertNotNull(service.get().onBind(action))
+                val host = ControllerInfo.createTestOnlyControllerInfo("car", 1, 2, 0, 0, true, Bundle.EMPTY)
+                val session = service.get().onGetSession(host)!!
+                val signedOut = session.player
+                sessions.save(account)
+                shadowOf(Looper.getMainLooper()).idle()
+                val player = session.player
+                assertNotSame(signedOut, player)
+                player.setMediaItem(Track("job", "song.mp3", streamUrl = "/api/stream/song").toMediaItem(application.api))
+                assertTrue(sessions.updateUser(account, account.user.copy(name = "Updated")))
+                shadowOf(Looper.getMainLooper()).idle()
+                assertSame(player, session.player)
+                assertEquals(1, player.mediaItemCount)
+                assertFalse(player.playWhenReady)
+                sessions.clear()
+                shadowOf(Looper.getMainLooper()).idle()
+                assertSame(session, service.get().onGetSession(host))
+                assertEquals(0, session.player.mediaItemCount)
+                assertFalse(session.player.playWhenReady)
+                assertEquals(0, server.requestCount)
+            } finally { service.destroy() }
         }
     }
 

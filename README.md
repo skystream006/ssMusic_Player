@@ -5,6 +5,23 @@ repository. Android 8.0 (API 26) or newer; targets Android 16 (API 36). The serv
 still owns media storage, yt-dlp downloads, transcoding, transcription, and
 backups. This is not a WebView wrapper or a replacement server.
 
+## Android Auto
+
+While parked, configure the server and sign in on the phone. Connect the phone
+to Android Auto, then select **ssMusic Player** in the car's app launcher.
+**All Music** lists playable audio; **Folders and playlists** follows your server
+library. Large lists are split into numbered folders. Pick a song to start its
+queue, or use search and voice (for example, “Play My Mix on ssMusic Player”).
+The phone, dashboard and steering-wheel transport controls share one player:
+pause, resume, seek, or skip without opening the phone app. Connecting alone
+does not start playback. Video, account setup and library editing stay on the phone.
+
+The phone needs access to the server to browse or search; the existing audio
+cache still applies to playback. If your session expires, sign in again on the
+phone while parked. If the launcher hides an APK installed from GitHub, check
+**Customize launcher** in Android Auto settings. For a trusted sideloaded media
+build, see Google's [Android Auto testing guide](https://developer.android.com/training/cars/testing#unknown-sources).
+
 ## Jobs
 
 The Jobs list shows jobs you own or contribute to. Administrators default to the
@@ -473,12 +490,14 @@ audio, even when its stream URL stays the same.
 This is best-effort reuse, not an offline library: evicted data, incomplete tracks,
 and tracks larger than the cache can still need the server.
 
-When no app activity is resumed (including screen lock), library, job, health,
+When no app activity is resumed (including screen lock), phone library, job, health,
 settings, and update checks stop. Non-playback reads are canceled and deferred
 until the app resumes; new mutations wait for the foreground. In-flight mutations
 and imports are canceled on backgrounding, never replayed, and report that server
 changes may already have completed; refresh before retrying. Song streams and song information remain available
-for background playback. UI position polling, edge animation, and PCM metering
+for background playback. Android Auto can also request the signed-in account's
+catalog while the phone is locked, without restarting any phone polling.
+UI position polling, edge animation, and PCM metering
 stop in the background; metering also stays off when edge lighting is disabled
 and no audio visualizer is displayed.
 These changes reduce background network traffic, CPU work, and storage writes
@@ -556,8 +575,8 @@ uses the web client's saved colors and light/dark preference. Advanced server
 administration and passkey enrollment use the existing browser settings UI;
 they may require a separate browser passkey login.
 
-There is no managed offline library, whole-device audio scan, casting, Android Auto
-library browser, automatic playback after process death, or automatic background
+There is no managed offline library, whole-device audio scan, casting,
+automatic playback after process death, or automatic background
 upload/download retry. Saved files and export ZIPs go to the document location
 the user chooses, not an app-managed offline library. Media uses device-supported
 Media3 codecs. Imports and file saves should stay in the foreground; rotation
@@ -680,7 +699,7 @@ from Android's general notification permission requirement; the runtime request
 also gives users an explicit notification choice. Settings links to the Android
 notification page after denial.
 
-The player lives in `MediaSessionService`, not the activity. Media3 supplies
+The player lives in a Media3 `MediaLibraryService`, not the activity. Media3 supplies
 foreground/media notifications, lock-screen and Bluetooth/headset transport
 controls, audio focus, and pause-on-headphone-disconnect behavior. Music continues
 when navigating, locking the screen, or dismissing the activity while playing.
@@ -696,9 +715,10 @@ only to explicitly selected documents. Some manufacturers add battery controls;
 the app links to Android app settings without automatically requesting unrestricted
 battery access.
 
-The exported media service accepts only its own app and Android-trusted media
-controllers. Queue insertion is restricted to the app and resource URLs are
-validated again inside the service. Lint's exported-service and user-CA warnings
+The exported media session admits the app, Android-trusted media controllers,
+and verified Google car/assistant hosts. Only the phone controller can submit
+track details; external controllers select from the account's catalog by ID or
+search. The service rebuilds and validates stream URLs. Lint's exported-service and user-CA warnings
 are deliberate, reviewed self-hosted media-app tradeoffs, not disabled TLS checks.
 
 ## Metadata artwork performance

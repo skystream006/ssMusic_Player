@@ -18,7 +18,7 @@ This reference covers the client boundary, not server passkey implementation. Co
 - `exchange` uses unauthenticated transport; authenticated resources stay on the account's HTTPS origin under `/api/`, including normalized paths. Do not send bearer tokens in URLs/cookies, follow redirects, or bypass TLS validation.
 - Request ownership is origin + user ID + session token, checked before execution and before publishing JSON/artwork results. Expiry/401 clears only the expected token. Profile refresh uses expected-account equality and matching user ID; it must not reset playback/caches.
 - Resumed means at least one **resumed** activity, not merely started/visible. Safe reads may restart after pause. Mutations, uploads and single-use exchanges do not replay; caller cancellation remains cancellation. Stream-writing downloads are not automatically repeatable.
-- Only GET/HEAD job lyrics/stream/download and `/api/stream/…` routes bypass the UI gate; jobs, health, artwork and mutations do not. Artwork is bounded to 64 KiB, including chunked bodies.
+- Only GET/HEAD job lyrics/stream/download and `/api/stream/…` routes bypass the UI gate in ordinary requests. The car host has separate, owner-bound `carLibrary` and `carTracks` GETs; do not exempt library routes globally. Jobs, health, artwork and mutations remain gated. Artwork is bounded to 64 KiB, including chunked bodies.
 
 ## Conditional handoffs
 

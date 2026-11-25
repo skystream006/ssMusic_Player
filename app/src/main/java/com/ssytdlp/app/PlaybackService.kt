@@ -18,10 +18,10 @@ import androidx.media3.exoplayer.audio.DefaultAudioSink
 import androidx.media3.exoplayer.audio.TeeAudioProcessor
 import androidx.media3.exoplayer.source.DefaultMediaSourceFactory
 import androidx.media3.session.MediaSession
-import androidx.media3.session.MediaSessionService
+import androidx.media3.session.MediaLibraryService
+import androidx.media3.session.MediaLibraryService.MediaLibrarySession
 import androidx.media3.session.DefaultMediaNotificationProvider
-import com.google.common.util.concurrent.Futures
-import com.google.common.util.concurrent.ListenableFuture
+import com.ssytdlp.app.core.Account
 import com.ssytdlp.app.core.ApiJson
 import com.ssytdlp.app.core.Track
 import kotlinx.coroutines.CoroutineScope
@@ -29,21 +29,21 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
 import kotlinx.coroutines.delay
-import kotlinx.coroutines.flow.distinctUntilChanged
+import kotlinx.coroutines.flow.distinctUntilChangedBy
 import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.flow.MutableStateFlow
-import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.launch
 import kotlinx.serialization.encodeToString
 
 internal const val PLAYBACK_CHECKPOINT_INTERVAL_MS = 30_000L
 
 @androidx.annotation.OptIn(UnstableApi::class)
-class PlaybackService : MediaSessionService() {
-    private var session: MediaSession? = null
+class PlaybackService : MediaLibraryService() {
+    private var session: MediaLibrarySession? = null
     private var persistence: PlaybackPersistence? = null
     private var audioCache: AudioCache.Handle? = null
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
+    private val playing = MutableStateFlow(false)
 
     override fun onCreate() {
         super.onCreate()
@@ -53,9 +53,52 @@ class PlaybackService : MediaSessionService() {
             }
         )
         val app = application as MusicApplication
-        val account = app.sessions.account.value
-        audioCache = account?.let { app.sessions.audioCache.acquire(it, app.api.playbackCalls(it)) }
-        val source = audioCache?.factory ?: DataSource.Factory {
+        var owner = app.sessions.account.value
+        val callback = CarMediaSessionCallback(this, app.api, scope).apply { setAccount(owner) }
+        val openApp = PendingIntent.getActivity(this, 0, Intent(this, MainActivity::class.java),
+            PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE)
+        val library = MediaLibrarySession.Builder(this, createPlayer(app, owner), callback)
+            .setSessionActivity(openApp).build()
+        session = library
+        scope.launch {
+            playing.collectLatest { active ->
+                if (!active) return@collectLatest
+                while (true) {
+                    delay(PLAYBACK_CHECKPOINT_INTERVAL_MS)
+                    persistence?.save()
+                }
+            }
+        }
+        scope.launch {
+            app.uiActivity.resumed.collectLatest { resumed -> if (!resumed) persistence?.save() }
+        }
+        scope.launch {
+            app.sessions.account.distinctUntilChangedBy { it.playbackIdentity() }.collect { next ->
+                if (next.playbackIdentity() != owner.playbackIdentity()) {
+                    // A car can remain bound across phone sign-in/sign-out. Never reuse the old
+                    // player's data-source factory or hand its in-flight work the new credentials.
+                    callback.setAccount(next)
+                    val previous = library.player
+                    persistence?.close()
+                    persistence = null
+                    previous.stop()
+                    previous.clearMediaItems()
+                    audioCache?.close()
+                    playing.value = false
+                    owner = next
+                    library.player = createPlayer(app, next)
+                    previous.release()
+                    library.notifyChildrenChanged(carRoot.mediaId, Int.MAX_VALUE, null)
+                    if (next == null) stopSelf()
+                }
+            }
+        }
+    }
+
+    private fun createPlayer(app: MusicApplication, account: Account?): ExoPlayer {
+        val cache = account?.let { app.sessions.audioCache.acquire(it, app.api.playbackCalls(it)) }
+        audioCache = cache
+        val source = cache?.factory ?: DataSource.Factory {
             throw IllegalStateException("Sign in before playing music.")
         }
         val renderers = object : DefaultRenderersFactory(this) {
@@ -75,69 +118,25 @@ class PlaybackService : MediaSessionService() {
             .build()
         player.addListener(object : Player.Listener {
             override fun onMediaItemTransition(mediaItem: MediaItem?, reason: Int) {
-                audioCache?.cacheCurrent(null)
+                cache?.cacheCurrent(null)
             }
             override fun onIsPlayingChanged(isPlaying: Boolean) {
-                if (isPlaying) audioCache?.cacheCurrent(player.currentMediaItem?.localConfiguration?.uri, retry = true)
+                playing.value = isPlaying
+                if (isPlaying) cache?.cacheCurrent(player.currentMediaItem?.localConfiguration?.uri, retry = true)
             }
             override fun onEvents(player: Player, events: Player.Events) {
                 if (player.playWhenReady && player.playbackState != Player.STATE_IDLE) {
-                    audioCache?.cacheCurrent(player.currentMediaItem?.localConfiguration?.uri)
+                    cache?.cacheCurrent(player.currentMediaItem?.localConfiguration?.uri)
                 }
             }
         })
         if (account != null) {
             persistence = PlaybackPersistence(player, app.sessions.playback, account) { it.toMediaItem(app.api) }
-            val playing = MutableStateFlow(player.isPlaying)
-            player.addListener(object : Player.Listener {
-                override fun onIsPlayingChanged(isPlaying: Boolean) { playing.value = isPlaying }
-            })
-            scope.launch {
-                playing.collectLatest { active ->
-                    if (!active) return@collectLatest
-                    while (true) {
-                        delay(PLAYBACK_CHECKPOINT_INTERVAL_MS)
-                        persistence?.save()
-                    }
-                }
-            }
-            scope.launch {
-                app.uiActivity.resumed.collectLatest { resumed ->
-                    if (!resumed) persistence?.save()
-                }
-            }
         }
-        val openApp = PendingIntent.getActivity(this, 0, Intent(this, MainActivity::class.java),
-            PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE)
-        session = MediaSession.Builder(this, player).setSessionActivity(openApp)
-            .setCallback(object : MediaSession.Callback {
-                override fun onAddMediaItems(mediaSession: MediaSession, controller: MediaSession.ControllerInfo,
-                    mediaItems: List<MediaItem>): ListenableFuture<List<MediaItem>> {
-                    if (controller.packageName != packageName) return Futures.immediateFailedFuture(SecurityException("Use the app to choose music."))
-                    return try {
-                        Futures.immediateFuture(mediaItems.map { item ->
-                            val track = item.asTrack() ?: throw IllegalArgumentException("Missing track information.")
-                            track.toMediaItem(app.api)
-                        })
-                    } catch (error: Exception) { Futures.immediateFailedFuture(error) }
-                }
-            }).build()
-        val owner = account?.let { Triple(it.origin, it.user.id, it.session.token) }
-        scope.launch {
-            app.sessions.account.map {
-                it?.let { account -> Triple(account.origin, account.user.id, account.session.token) }
-            }.distinctUntilChanged().collect { identity ->
-                if (identity == null || identity != owner) {
-                    player.stop()
-                    player.clearMediaItems()
-                    stopSelf()
-                }
-            }
-        }
+        return player
     }
 
-    override fun onGetSession(controllerInfo: MediaSession.ControllerInfo): MediaSession? =
-        session.takeIf { controllerInfo.packageName == packageName || controllerInfo.isTrusted }
+    override fun onGetSession(controllerInfo: MediaSession.ControllerInfo): MediaLibrarySession? = session
 
     override fun onTaskRemoved(rootIntent: Intent?) {
         persistence?.save(synchronous = true)
@@ -157,9 +156,15 @@ class PlaybackService : MediaSessionService() {
     }
 }
 
+private fun Account?.playbackIdentity() = this?.let { Triple(it.origin, it.user.id, it.session.token) }
+
+internal fun Track.playbackMetadata(): MediaMetadata.Builder = MediaMetadata.Builder()
+    .setTitle(displayTitle).setArtist(displayArtist).setAlbumTitle(album).setIsPlayable(true).setIsBrowsable(false)
+    .setMediaType(if (mediaType == "video") MediaMetadata.MEDIA_TYPE_VIDEO else MediaMetadata.MEDIA_TYPE_MUSIC)
+
 fun Track.toMediaItem(api: ServerApi): MediaItem = MediaItem.Builder()
     .setMediaId(key).setUri(api.url(requireNotNull(streamUrl) { "This file is not playable." }))
-    .setMediaMetadata(MediaMetadata.Builder().setTitle(displayTitle).setArtist(displayArtist).setAlbumTitle(album)
+    .setMediaMetadata(playbackMetadata()
         .setExtras(Bundle().apply { putString("track", ApiJson.encodeToString(this@toMediaItem)) }).build()).build()
 
 fun MediaItem.asTrack(): Track? = mediaMetadata.extras?.getString("track")?.let {

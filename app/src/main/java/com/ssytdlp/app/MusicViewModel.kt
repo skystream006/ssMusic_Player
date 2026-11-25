@@ -1497,25 +1497,29 @@ internal const val INACTIVE_TRANSCRIPTION_MESSAGE =
 internal val JsonObject?.transcriptionActive: Boolean
     get() = ((this?.get("transcription") as? JsonObject)?.get("status") as? JsonPrimitive)?.content == "active"
 
-internal suspend fun ServerApi.trackPage(selection: LibraryState, pageSize: Int = 50): TrackPage {
-    val query = listOfNotNull("page=${selection.page}", "pageSize=$pageSize", "search=${encode(selection.search)}",
-        selection.selectedId?.let { "entryId=${encode(it)}" }).joinToString("&")
-    return ApiJson.decodeFromJsonElement(request("/api/library/tracks?$query"))
+private fun libraryTracksPath(entryId: String?, search: String, page: Int? = null, pageSize: Int? = null): String {
+    val query = listOfNotNull(page?.let { "page=$it" }, pageSize?.let { "pageSize=$it" }, "search=${encode(search)}",
+        entryId?.let { "entryId=${encode(it)}" }).joinToString("&")
+    return "/api/library/tracks?$query"
 }
 
-internal suspend fun ServerApi.allTracks(selection: LibraryState): TrackPage {
+internal suspend fun ServerApi.trackPage(selection: LibraryState, pageSize: Int = 50): TrackPage =
+    ApiJson.decodeFromJsonElement(request(libraryTracksPath(selection.selectedId, selection.search, selection.page, pageSize)))
+
+internal suspend fun ServerApi.allTracks(selection: LibraryState): TrackPage =
+    loadAllTracks(selection.selectedId, selection.search) { request(it) }
+
+internal suspend fun loadAllTracks(entryId: String?, search: String, read: suspend (String) -> JsonElement): TrackPage {
     // Omitting pagination returns the entire selected playlist/folder. All Music is always paginated.
     repeat(2) {
-        val first = if (selection.selectedId == null) trackPage(selection.copy(page = 1), pageSize = 1000) else {
-            val query = "search=${encode(selection.search)}&entryId=${encode(selection.selectedId)}"
-            ApiJson.decodeFromJsonElement<TrackPage>(request("/api/library/tracks?$query"))
-        }
+        val path = if (entryId == null) libraryTracksPath(null, search, 1, 1000) else libraryTracksPath(entryId, search)
+        val first = ApiJson.decodeFromJsonElement<TrackPage>(read(path))
         if (first.totalPages <= 1) return first
         val files = first.files.toMutableList()
         var consistent = first.page == 1 && first.pageSize > 0
         for (page in 2..first.totalPages) {
             if (!consistent) break
-            val next = trackPage(selection.copy(page = page), first.pageSize)
+            val next = ApiJson.decodeFromJsonElement<TrackPage>(read(libraryTracksPath(entryId, search, page, first.pageSize)))
             consistent = next.page == page && next.pageSize == first.pageSize && next.version == first.version &&
                 next.total == first.total && next.totalPages == first.totalPages
             if (consistent) files += next.files

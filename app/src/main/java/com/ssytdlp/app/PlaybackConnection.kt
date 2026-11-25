@@ -161,15 +161,19 @@ class PlaybackConnection(
 internal fun Player.setPlaybackQueue(tracks: List<Track>, index: Int, api: ServerApi): Boolean {
     val selected = tracks.getOrNull(index) ?: return false
     if (!selected.isPlayable || selected.streamUrl == null) return false
-    val includeNoVocals = selected.name.startsWith("[NoVocals]/", ignoreCase = true)
-    val playable = tracks.withIndex().filter {
-        it.value.isPlayable && it.value.streamUrl != null &&
-            (includeNoVocals || !it.value.name.startsWith("[NoVocals]/", ignoreCase = true))
-    }
+    val playable = tracks.queueFor(selected)
     // Keep the selected occurrence even when the same song appears on several pages.
     val selectedIndex = playable.indexOfFirst { it.index == index }
     setMediaItems(playable.map { it.value.toMediaItem(api) }, selectedIndex, 0)
     return true
+}
+
+internal fun List<Track>.queueFor(selected: Track): List<IndexedValue<Track>> {
+    val includeNoVocals = selected.name.startsWith("[NoVocals]/", ignoreCase = true)
+    return withIndex().filter {
+        it.value.isPlayable && it.value.streamUrl != null &&
+            (includeNoVocals || !it.value.name.startsWith("[NoVocals]/", ignoreCase = true))
+    }
 }
 
 internal fun Player.matchesQueue(queue: List<Track>): Boolean =
