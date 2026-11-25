@@ -10,9 +10,9 @@
 
 ## Invariants
 
-- The `MediaSessionService` owns ExoPlayer, notification integration, audio focus, noisy-device handling and network wake mode. UI detachment normally releases the controller, not live audio; explicit sign-out uses stop/clear. Service destruction saves persistence before releasing player/session and cache lease.
-- `onGetSession` admits this package or trusted controllers. Adding media is stricter: only this package, decoded `Track` extras, and rebuilt same-origin URLs. Do not accept arbitrary controller-provided URIs.
-- Service identity is origin + user ID + token. A missing/changed identity stops playback, clears items and stops the service; a cosmetic profile update must not do this.
+- The `MediaLibraryService` owns ExoPlayer, notification integration, audio focus, noisy-device handling and network wake mode. UI detachment normally releases the controller, not live audio; explicit sign-out uses stop/clear. Service destruction saves persistence before releasing player/session and cache lease.
+- Media3's legacy browser bind has no caller identity; admit controllers in [CarMediaSessionCallback.kt](../../../app/src/main/java/com/ssytdlp/app/CarMediaSessionCallback.kt) `onConnect`. Only the phone can submit `Track` extras. Resolve external selections against the account's [car catalog](../../../app/src/main/java/com/ssytdlp/app/CarMediaCatalog.kt), never caller URIs or extras containing track details.
+- Service identity is origin + user ID + token. When it changes, cancel catalog requests, replace the player and its cache lease, and refresh the root of the still-bound car session. A cosmetic profile update must not do this.
 - `matchesQueue` compares the complete ordered tracks, including duplicate occurrences. Moves/sorts operate in place, disable shuffle for explicit ordering, preserve selected occurrence/position/play intent, and do not mutate source playlists. Reject stale/invalid requests instead of rebuilding a guessed queue.
 - `replaceSongFile` refreshes every matching copy. A changed current stream URL restarts at zero without forcing playback on; unrelated or nested companion changes must not rewind the current track.
 - Position polling defaults to 300 ms only while resumed and catches up immediately on resume. The service's persistence checkpoint is separate: 30 seconds while playing, plus player events, backgrounding, task removal and shutdown.

@@ -57,6 +57,28 @@ class BackgroundApiTest {
 
     @After fun teardown() { server.shutdown() }
 
+    @Test fun `car catalog works while locked without waking phone reads or crossing accounts`() = runBlocking {
+        val phone = async(start = CoroutineStart.UNDISPATCHED) { api.request("/api/library") }
+        val owner = account
+        server.enqueue(MockResponse().setBody("""{"songCount":7}"""))
+        assertEquals(7, withTimeout(5_000) { api.carLibrary(owner) }.songCount)
+        val library = server.takeRequest(2, TimeUnit.SECONDS)!!
+        assertEquals("/api/library", library.path)
+        assertEquals("Bearer ${owner.session.token}", library.getHeader("Authorization"))
+        server.enqueue(MockResponse().setBody("""{"files":[{"name":"song.mp3"}]}"""))
+        assertEquals("song.mp3", withTimeout(5_000) { api.carTracks(owner, "mix/?", "A & B") }.files.single().name)
+        val tracks = server.takeRequest(2, TimeUnit.SECONDS)!!
+        assertEquals("GET", tracks.method)
+        assertEquals("/api/library/tracks", tracks.requestUrl!!.encodedPath)
+        assertEquals("mix/?", tracks.requestUrl!!.queryParameter("entryId"))
+        assertEquals("A & B", tracks.requestUrl!!.queryParameter("search"))
+        assertFalse(phone.isCompleted)
+        phone.cancelAndJoin()
+        account = owner.copy(user = User("other"))
+        assertTrue(runCatching { api.carLibrary(owner) }.exceptionOrNull() is IOException)
+        assertEquals(2, server.requestCount)
+    }
+
     @Test fun `only playback reads are exempt not jobs or mutations`() {
         listOf("/api/jobs/job/lyrics/song.mp3", "/api/jobs/job/stream/song.mp3",
             "/api/jobs/job/download/song.mp3", "/api/stream/song.mp3").forEach {

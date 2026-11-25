@@ -3,7 +3,9 @@ package com.ssytdlp.app
 import com.ssytdlp.app.core.ApiJson
 import com.ssytdlp.app.core.Account
 import com.ssytdlp.app.core.AuthProtocol
+import com.ssytdlp.app.core.Library
 import com.ssytdlp.app.core.ServerResource
+import com.ssytdlp.app.core.TrackPage
 import java.io.IOException
 import java.time.Instant
 import java.util.concurrent.TimeUnit
@@ -13,6 +15,7 @@ import kotlinx.coroutines.suspendCancellableCoroutine
 import kotlinx.serialization.json.JsonElement
 import kotlinx.serialization.json.JsonNull
 import kotlinx.serialization.json.JsonObject
+import kotlinx.serialization.json.decodeFromJsonElement
 import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
 import okhttp3.Call
@@ -79,10 +82,7 @@ class ServerApi(
     val authenticatedClient: OkHttpClient = transport.newBuilder().addInterceptor { chain ->
         val account = currentAccount() ?: throw ApiException(401, "Sign in with your passkey.")
         chain.request().tag(RequestOwner::class.java)?.let { requireOwner(it.account, account) }
-        if (!Instant.parse(account.session.expiresAt).isAfter(Instant.now())) {
-            clearAccount(account.session.token)
-            throw ApiException(401, "Your session expired. Sign in again.")
-        }
+        checkExpiry(account)
         try { ServerResource.resolve(account.origin, chain.request().url.toString()) }
         catch (_: IllegalArgumentException) { throw IOException("Refused a request outside the selected server.") }
         val response = chain.proceed(chain.request().newBuilder()
@@ -102,6 +102,32 @@ class ServerApi(
     internal fun playbackCalls(owner: Account): Call.Factory = Call.Factory { request ->
         playbackClient.newCall(request.newBuilder()
             .tag(RequestOwner::class.java, RequestOwner(owner)).build())
+    }
+
+    internal fun requireActiveOwner(owner: Account) {
+        requireOwner(owner)
+        checkExpiry(owner)
+    }
+
+    private fun checkExpiry(account: Account) {
+        if (!Instant.parse(account.session.expiresAt).isAfter(Instant.now())) {
+            clearAccount(account.session.token)
+            throw ApiException(401, "Your session expired. Sign in again.")
+        }
+    }
+
+    // These two typed, read-only operations serve a visible car host, not the phone UI.
+    internal suspend fun carLibrary(owner: Account): Library =
+        ApiJson.decodeFromJsonElement(carCatalogRead(owner, "/api/library"))
+
+    internal suspend fun carTracks(owner: Account, entryId: String?, search: String): TrackPage =
+        loadAllTracks(entryId, search) { path -> carCatalogRead(owner, path) }
+
+    private suspend fun carCatalogRead(owner: Account, path: String): JsonElement {
+        requireActiveOwner(owner)
+        val request = Request.Builder().url(ServerResource.resolve(owner.origin, path))
+            .tag(RequestOwner::class.java, RequestOwner(owner)).build()
+        return executeJson(authenticatedClient.newCall(request)).also { requireActiveOwner(owner) }
     }
 
     suspend fun request(path: String, method: String = "GET", body: JsonElement? = null): JsonElement {
