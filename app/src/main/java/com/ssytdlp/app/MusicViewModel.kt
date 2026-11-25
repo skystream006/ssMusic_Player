@@ -1497,7 +1497,7 @@ internal const val INACTIVE_TRANSCRIPTION_MESSAGE =
 internal val JsonObject?.transcriptionActive: Boolean
     get() = ((this?.get("transcription") as? JsonObject)?.get("status") as? JsonPrimitive)?.content == "active"
 
-private fun libraryTracksPath(entryId: String?, search: String, page: Int? = null, pageSize: Int? = null): String {
+internal fun libraryTracksPath(entryId: String?, search: String, page: Int? = null, pageSize: Int? = null): String {
     val query = listOfNotNull(page?.let { "page=$it" }, pageSize?.let { "pageSize=$it" }, "search=${encode(search)}",
         entryId?.let { "entryId=${encode(it)}" }).joinToString("&")
     return "/api/library/tracks?$query"

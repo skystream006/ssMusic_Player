@@ -34,6 +34,7 @@ class LauncherIconTest {
                 LauncherIcon.update(context, preferences, waveAppearance = false)
                 val expected = "Launcher$alias${if (mode == "dark") "Dark" else "Light"}"
                 assertLauncher(expected, if (mode == "dark") artwork.second else artwork.first)
+                assertEquals(LauncherIcon.currentArtwork(context), LauncherIcon.artwork(context, preferences, false))
                 LauncherIcon.update(context, preferences, waveAppearance = false)
                 assertLauncher(expected, if (mode == "dark") artwork.second else artwork.first)
             }
@@ -60,6 +61,7 @@ class LauncherIconTest {
         assertLauncher("LauncherGreenDark", R.mipmap.ic_launcher_green_dark)
         LauncherIcon.update(context, Preferences("pink", "light"), waveAppearance = true)
         assertLauncher("LauncherDefault", R.mipmap.ic_launcher)
+        assertEquals(R.mipmap.ic_launcher, LauncherIcon.artwork(context, Preferences("pink", "light"), true))
     }
 
     private fun assertLauncher(alias: String, artwork: Int) {

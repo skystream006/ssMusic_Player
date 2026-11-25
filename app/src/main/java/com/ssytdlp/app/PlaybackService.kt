@@ -3,6 +3,7 @@ package com.ssytdlp.app
 import android.app.PendingIntent
 import android.content.Context
 import android.content.Intent
+import android.net.Uri
 import android.os.Bundle
 import androidx.media3.common.AudioAttributes
 import androidx.media3.common.C
@@ -31,6 +32,7 @@ import kotlinx.coroutines.cancel
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.distinctUntilChangedBy
 import kotlinx.coroutines.flow.collectLatest
+import kotlinx.coroutines.flow.filterNotNull
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.launch
 import kotlinx.serialization.encodeToString
@@ -57,9 +59,13 @@ class PlaybackService : MediaLibraryService() {
         val callback = CarMediaSessionCallback(this, app.api, scope).apply { setAccount(owner) }
         val openApp = PendingIntent.getActivity(this, 0, Intent(this, MainActivity::class.java),
             PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE)
-        val library = MediaLibrarySession.Builder(this, createPlayer(app, owner), callback)
+        val library = MediaLibrarySession.Builder(this, createPlayer(app, owner, callback), callback)
             .setSessionActivity(openApp).build()
         session = library
+        callback.updateVideoAction(library)
+        scope.launch {
+            LauncherIcon.artworkChanges.filterNotNull().collect { callback.updateArtwork(library, it) }
+        }
         scope.launch {
             playing.collectLatest { active ->
                 if (!active) return@collectLatest
@@ -86,7 +92,8 @@ class PlaybackService : MediaLibraryService() {
                     audioCache?.close()
                     playing.value = false
                     owner = next
-                    library.player = createPlayer(app, next)
+                    library.player = createPlayer(app, next, callback)
+                    callback.updateVideoAction(library)
                     previous.release()
                     library.notifyChildrenChanged(carRoot.mediaId, Int.MAX_VALUE, null)
                     if (next == null) stopSelf()
@@ -95,7 +102,7 @@ class PlaybackService : MediaLibraryService() {
         }
     }
 
-    private fun createPlayer(app: MusicApplication, account: Account?): ExoPlayer {
+    private fun createPlayer(app: MusicApplication, account: Account?, callback: CarMediaSessionCallback): ExoPlayer {
         val cache = account?.let { app.sessions.audioCache.acquire(it, app.api.playbackCalls(it)) }
         audioCache = cache
         val source = cache?.factory ?: DataSource.Factory {
@@ -125,13 +132,16 @@ class PlaybackService : MediaLibraryService() {
                 if (isPlaying) cache?.cacheCurrent(player.currentMediaItem?.localConfiguration?.uri, retry = true)
             }
             override fun onEvents(player: Player, events: Player.Events) {
+                if (events.containsAny(Player.EVENT_MEDIA_ITEM_TRANSITION, Player.EVENT_TIMELINE_CHANGED)) {
+                    session?.takeIf { it.player === player }?.let(callback::updateVideoAction)
+                }
                 if (player.playWhenReady && player.playbackState != Player.STATE_IDLE) {
                     cache?.cacheCurrent(player.currentMediaItem?.localConfiguration?.uri)
                 }
             }
         })
         if (account != null) {
-            persistence = PlaybackPersistence(player, app.sessions.playback, account) { it.toMediaItem(app.api) }
+            persistence = PlaybackPersistence(player, app.sessions.playback, account, callback::playable)
         }
         return player
     }
@@ -162,9 +172,9 @@ internal fun Track.playbackMetadata(): MediaMetadata.Builder = MediaMetadata.Bui
     .setTitle(displayTitle).setArtist(displayArtist).setAlbumTitle(album).setIsPlayable(true).setIsBrowsable(false)
     .setMediaType(if (mediaType == "video") MediaMetadata.MEDIA_TYPE_VIDEO else MediaMetadata.MEDIA_TYPE_MUSIC)
 
-fun Track.toMediaItem(api: ServerApi): MediaItem = MediaItem.Builder()
+fun Track.toMediaItem(api: ServerApi, artworkUri: Uri? = null): MediaItem = MediaItem.Builder()
     .setMediaId(key).setUri(api.url(requireNotNull(streamUrl) { "This file is not playable." }))
-    .setMediaMetadata(playbackMetadata()
+    .setMediaMetadata(playbackMetadata().setArtworkUri(artworkUri)
         .setExtras(Bundle().apply { putString("track", ApiJson.encodeToString(this@toMediaItem)) }).build()).build()
 
 fun MediaItem.asTrack(): Track? = mediaMetadata.extras?.getString("track")?.let {

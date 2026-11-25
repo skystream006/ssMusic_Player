@@ -2,9 +2,12 @@ package com.ssytdlp.app
 
 import android.content.ComponentName
 import android.content.Context
+import android.content.Intent
 import android.content.pm.PackageManager
 import android.os.Build
 import com.ssytdlp.app.core.Preferences
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.asStateFlow
 
 internal val Preferences.isDarkAppearance: Boolean
     get() = mode == "dark" || (mode == null && effectiveTheme in listOf("midnight", "black"))
@@ -16,10 +19,22 @@ internal object LauncherIcon {
     )
     private const val DEFAULT = "LauncherDefault"
     private val aliases = listOf(DEFAULT) + themes.values.flatMap { listOf("Launcher${it}Light", "Launcher${it}Dark") }
+    private val mutableArtwork = MutableStateFlow<Int?>(null)
+    val artworkChanges = mutableArtwork.asStateFlow()
+
+    private fun alias(preferences: Preferences, waveAppearance: Boolean) = if (waveAppearance) DEFAULT else
+        "Launcher${themes[preferences.effectiveTheme] ?: themes.getValue("green")}${if (preferences.isDarkAppearance) "Dark" else "Light"}"
+
+    fun artwork(context: Context, preferences: Preferences, waveAppearance: Boolean): Int =
+        context.packageManager.getActivityInfo(ComponentName(context.packageName,
+            "${context.packageName}.${alias(preferences, waveAppearance)}"), PackageManager.MATCH_DISABLED_COMPONENTS).icon
+
+    fun currentArtwork(context: Context): Int = context.packageManager.resolveActivity(
+        Intent(Intent.ACTION_MAIN).addCategory(Intent.CATEGORY_LAUNCHER).setPackage(context.packageName), 0
+    )?.activityInfo?.icon ?: R.mipmap.ic_launcher
 
     fun update(context: Context, preferences: Preferences, waveAppearance: Boolean) {
-        val selected = if (waveAppearance) DEFAULT else
-            "Launcher${themes[preferences.effectiveTheme] ?: themes.getValue("green")}${if (preferences.isDarkAppearance) "Dark" else "Light"}"
+        val selected = alias(preferences, waveAppearance)
         val manager = context.packageManager
         val changes = aliases.mapNotNull { alias ->
             val component = ComponentName(context.packageName, "${context.packageName}.$alias")
@@ -42,6 +57,7 @@ internal object LauncherIcon {
                 manager.setComponentEnabledSetting(component, state(enabled), PackageManager.DONT_KILL_APP)
             }
         }
+        mutableArtwork.value = artwork(context, preferences, waveAppearance)
     }
 
     private fun state(enabled: Boolean) = if (enabled) PackageManager.COMPONENT_ENABLED_STATE_ENABLED

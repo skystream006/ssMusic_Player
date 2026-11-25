@@ -3,6 +3,8 @@ package com.ssytdlp.app
 import android.content.Context
 import android.content.Intent
 import android.content.pm.ProviderInfo
+import android.graphics.Bitmap
+import android.graphics.BitmapFactory
 import android.os.Bundle
 import android.os.Handler
 import android.os.Looper
@@ -34,6 +36,8 @@ import com.ssytdlp.app.core.TrackPage
 import com.ssytdlp.app.core.TrackSort
 import com.ssytdlp.app.core.User
 import com.ssytdlp.app.core.UserResponse
+import java.io.ByteArrayOutputStream
+import java.io.FileNotFoundException
 import java.io.InputStream
 import java.io.OutputStream
 import java.net.InetAddress
@@ -79,7 +83,9 @@ import org.robolectric.Robolectric
 import org.robolectric.RobolectricTestRunner
 import org.robolectric.Shadows.shadowOf
 import org.robolectric.annotation.Config
+import org.robolectric.annotation.GraphicsMode
 import org.robolectric.shadows.ShadowContentResolver
+import org.robolectric.shadows.ShadowPausedAsyncTask
 import org.robolectric.util.ReflectionHelpers
 
 @RunWith(RobolectricTestRunner::class)
@@ -154,20 +160,75 @@ class AccountRefreshTest {
                 shadowOf(Looper.getMainLooper()).idle()
                 val player = session.player
                 assertNotSame(signedOut, player)
-                player.setMediaItem(Track("job", "song.mp3", streamUrl = "/api/stream/song").toMediaItem(application.api))
+                player.setMediaItem(Track("job", "song.mp3", streamUrl = "/api/stream/song",
+                    linkedVideo = LinkedVideo("https://example.com/video", "completed", streamUrl = "/api/jobs/job/video/song.mp3"))
+                    .toMediaItem(application.api))
                 assertTrue(sessions.updateUser(account, account.user.copy(name = "Updated")))
                 shadowOf(Looper.getMainLooper()).idle()
                 assertSame(player, session.player)
                 assertEquals(1, player.mediaItemCount)
+                assertEquals("Use video audio", session.mediaButtonPreferences.single().displayName)
                 assertFalse(player.playWhenReady)
+                LauncherIcon.update(context, Preferences("gold", "dark"), waveAppearance = false)
+                shadowOf(Looper.getMainLooper()).idle()
+                assertEquals(resourceArtwork(R.mipmap.ic_launcher_gold_dark), player.currentMediaItem!!.mediaMetadata.artworkUri)
                 sessions.clear()
                 shadowOf(Looper.getMainLooper()).idle()
                 assertSame(session, service.get().onGetSession(host))
                 assertEquals(0, session.player.mediaItemCount)
+                assertTrue(session.mediaButtonPreferences.isEmpty())
                 assertFalse(session.player.playWhenReady)
                 assertEquals(0, server.requestCount)
             } finally { service.destroy() }
         }
+    }
+
+    @Test @GraphicsMode(GraphicsMode.Mode.NATIVE)
+    fun carProviderServesPrivatePlaylistAndTrackCoversAndRejectsOldSessions() {
+        sessions.save(account)
+        LauncherIcon.update(context, Preferences("pink", "dark"), waveAppearance = false)
+        val art = CarArtwork(account, R.mipmap.ic_launcher_pink_dark)
+        val source = "/api/jobs/source/artwork/%5BNoVocals%5D%2Fa%20%26%20b.mp3?v=2&userId=shared"
+        val track = Track("source", "[NoVocals]/a & b.mp3", streamUrl = "/api/stream/song", artworkUrl = source)
+        val thumbnail = ByteArrayOutputStream().use { out ->
+            val bitmap = Bitmap.createBitmap(3, 2, Bitmap.Config.ARGB_8888)
+            bitmap.eraseColor(android.graphics.Color.GREEN)
+            bitmap.compress(Bitmap.CompressFormat.PNG, 100, out)
+            bitmap.recycle()
+            out.toByteArray()
+        }
+        server.dispatcher = object : Dispatcher() {
+            override fun dispatch(request: RecordedRequest): MockResponse = when {
+                request.getHeader("Authorization") != "Bearer ${account.session.token}" -> MockResponse().setResponseCode(401)
+                request.path == source -> MockResponse().setBody(okio.Buffer().write(thumbnail))
+                request.requestUrl!!.encodedPath == "/api/library/tracks" -> MockResponse().setBody(ApiJson.encodeToString(
+                    TrackPage(files = if (request.requestUrl!!.queryParameter("entryId") == "mix") listOf(track) else emptyList())))
+                else -> MockResponse().setResponseCode(404)
+            }
+        }
+        val resolver = context.contentResolver
+        fun bytes(uri: Uri): ByteArray {
+            // Robolectric backs pipes with regular files: finish the framework's pipe writer before reading.
+            ShadowPausedAsyncTask.overrideExecutor(Runnable::run)
+            return try { resolver.openInputStream(uri)!!.use { it.readBytes() } } finally { ShadowPausedAsyncTask.reset() }
+        }
+        val cover = art.track(track)
+        for (uri in listOf(art.playlist("mix", 1), cover)) {
+            assertEquals("content", uri.scheme)
+            assertFalse(uri.toString().contains(account.session.token))
+            val data = bytes(uri)
+            val bitmap = BitmapFactory.decodeByteArray(data, 0, data.size)!!
+            assertEquals(3, bitmap.width)
+            assertEquals(android.graphics.Color.GREEN, bitmap.getPixel(0, 0))
+            bitmap.recycle()
+        }
+        val logo = context.resources.openRawResource(R.mipmap.ic_launcher_pink_dark).use { it.readBytes() }
+        assertArrayEquals(logo, bytes(art.playlist("empty", 1)))
+        assertArrayEquals(logo, bytes(art.track(track.copy(artworkUrl = source.replace("v=2", "v=missing")))))
+        assertEquals(5, server.requestCount)
+        sessions.save(account.copy(session = account.session.copy(token = "new-session")))
+        assertThrows(FileNotFoundException::class.java) { resolver.openFileDescriptor(cover, "r")?.close() }
+        assertEquals(5, server.requestCount)
     }
 
     @Test fun lanConfigurationAndSeparateSessionPersistEncryptedWithoutReplacingPrimary() {

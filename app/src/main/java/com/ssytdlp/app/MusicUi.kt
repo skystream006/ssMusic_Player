@@ -57,6 +57,7 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 
 val LocalWaveAppearance = staticCompositionLocalOf { true }
+internal val LocalThemeLogo = staticCompositionLocalOf { R.mipmap.ic_launcher }
 
 @Composable
 internal fun isLandscape(): Boolean =
@@ -115,7 +116,9 @@ fun MusicTheme(preferences: Preferences = Preferences(), waveAppearance: Boolean
         labelLarge = textStyle(body, 13, 18, FontWeight.SemiBold),
         labelMedium = textStyle(body, 12, 17, FontWeight.Medium), labelSmall = textStyle(body, 11, 16, FontWeight.Medium)
     )
-    CompositionLocalProvider(LocalWaveAppearance provides waveAppearance, LocalAppSkin provides skin) {
+    val context = LocalContext.current
+    val logo = remember(context, preferences, waveAppearance) { LauncherIcon.artwork(context, preferences, waveAppearance) }
+    CompositionLocalProvider(LocalWaveAppearance provides waveAppearance, LocalAppSkin provides skin, LocalThemeLogo provides logo) {
         MaterialTheme(colorScheme = colors, typography = typography,
             shapes = Shapes(extraSmall = RoundedCornerShape(4.dp), small = RoundedCornerShape(6.dp),
                 medium = RoundedCornerShape(8.dp), large = RoundedCornerShape(8.dp), extraLarge = RoundedCornerShape(8.dp)),

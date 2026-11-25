@@ -5,6 +5,7 @@ import com.ssytdlp.app.core.Account
 import com.ssytdlp.app.core.AuthProtocol
 import com.ssytdlp.app.core.Library
 import com.ssytdlp.app.core.ServerResource
+import com.ssytdlp.app.core.Track
 import com.ssytdlp.app.core.TrackPage
 import java.io.IOException
 import java.time.Instant
@@ -116,12 +117,33 @@ class ServerApi(
         }
     }
 
-    // These two typed, read-only operations serve a visible car host, not the phone UI.
+    // These typed, read-only operations serve a car host, not the phone UI.
     internal suspend fun carLibrary(owner: Account): Library =
         ApiJson.decodeFromJsonElement(carCatalogRead(owner, "/api/library"))
 
     internal suspend fun carTracks(owner: Account, entryId: String?, search: String): TrackPage =
         loadAllTracks(entryId, search) { path -> carCatalogRead(owner, path) }
+
+    internal suspend fun carPlaylistCover(owner: Account, entryId: String): Track? {
+        var page = 1
+        while (true) {
+            val result = ApiJson.decodeFromJsonElement<TrackPage>(
+                carCatalogRead(owner, libraryTracksPath(entryId, "", page, 50)))
+            if (result.page != page) throw IOException("Playlist changed while loading its cover.")
+            result.files.firstOrNull { it.carPlayable && !it.artworkUrl.isNullOrBlank() }?.let { return it }
+            if (page >= result.totalPages || result.files.isEmpty()) return null
+            page++
+        }
+    }
+
+    internal suspend fun carThumbnail(owner: Account, job: String, file: String, revision: String?, userId: String?): ByteArray {
+        require(listOf(job, file).all { it.isNotBlank() && it.split('/', '\\').none { part -> part == "." || part == ".." } }) {
+            "Invalid artwork identifier."
+        }
+        val query = listOfNotNull(revision?.let { "v=${encode(it)}" }, userId?.let { "userId=${encode(it)}" })
+        return readThumbnail(owner, "/api/jobs/${encode(job)}/artwork/${encode(file)}" +
+            if (query.isEmpty()) "" else query.joinToString("&", prefix = "?"))
+    }
 
     private suspend fun carCatalogRead(owner: Account, path: String): JsonElement {
         requireActiveOwner(owner)
@@ -197,23 +219,23 @@ class ServerApi(
     }
 
     private suspend fun artwork(path: String, owner: Account): ByteArray {
-        requireOwner(owner)
+        return if (uiActivity == null) readThumbnail(owner, path) else uiActivity.readWhileResumed { readThumbnail(owner, path) }
+    }
+
+    private suspend fun readThumbnail(owner: Account, path: String): ByteArray {
+        requireActiveOwner(owner)
         val request = Request.Builder().url(ServerResource.resolve(owner.origin, path))
             .tag(RequestOwner::class.java, RequestOwner(owner)).build()
-        suspend fun execute(): ByteArray {
-            requireOwner(owner)
-            var bytes = ByteArray(0)
-            download(authenticatedClient.newCall(request)) { input ->
-                input.source().buffer().use { source ->
-                    source.request(64 * 1024L + 1)
-                    if (source.buffer.size > 64 * 1024) throw IOException("Artwork thumbnail is too large.")
-                    bytes = source.readByteArray()
-                }
+        var bytes = ByteArray(0)
+        download(authenticatedClient.newCall(request)) { input ->
+            input.source().buffer().use { source ->
+                source.request(64 * 1024L + 1)
+                if (source.buffer.size > 64 * 1024) throw IOException("Artwork thumbnail is too large.")
+                bytes = source.readByteArray()
             }
-            requireOwner(owner)
-            return bytes
         }
-        return if (uiActivity == null) execute() else uiActivity.readWhileResumed { execute() }
+        requireActiveOwner(owner)
+        return bytes
     }
 
     private suspend fun download(call: Call, write: (java.io.InputStream) -> Unit): Unit = suspendCancellableCoroutine { continuation ->

@@ -9,12 +9,19 @@ backups. This is not a WebView wrapper or a replacement server.
 
 While parked, configure the server and sign in on the phone. Connect the phone
 to Android Auto, then select **ssMusic Player** in the car's app launcher.
-**All Music** lists playable audio; **Folders and playlists** follows your server
-library. Large lists are split into numbered folders. Pick a song to start its
-queue, or use search and voice (for example, “Play My Mix on ssMusic Player”).
+**Folders and playlists** follows your server library. Folders have a folder icon;
+playlists use a song cover, and tracks in playlists, search and the queue show
+their album art. Missing artwork uses your selected theme's launcher logo.
+Large lists are split into numbered folders. Pick a track to start its queue,
+or search the whole library by text or voice (for example, “Play My Mix on ssMusic Player”).
 The phone, dashboard and steering-wheel transport controls share one player:
 pause, resume, seek, or skip without opening the phone app. Connecting alone
-does not start playback. Video, account setup and library editing stay on the phone.
+does not start playback. Video files play their soundtrack. For a song with a
+downloaded linked video, open the player actions and choose **Use video audio**;
+**Use song audio** switches back without restarting the queue.
+[Projected Android Auto media apps](https://developer.android.com/training/cars#supported-app-categories)
+cannot display video pictures, even when parked. Watch video on the phone while
+parked. Account setup and library editing also stay on the phone.
 
 The phone needs access to the server to browse or search; the existing audio
 cache still applies to playback. If your session expires, sign in again on the
@@ -34,7 +41,8 @@ Search applies within the selected filter. Other users cannot broaden the list.
 The launcher icon keeps the original SS/music-note design. **Settings > Appearance >
 Server theme** selects matching Midnight, Royal Purple, Gold, Green, Pink, or Black
 artwork, with a light or dark background matching **Dark appearance**. Blue Wave
-uses the original blue icon. Icons also follow preferences loaded from the server;
+uses the original blue icon. The same logo is the default album art in the player
+and in library and queue thumbnails. Icons also follow preferences loaded from the server;
 Android retains the selected launcher entry across restarts.
 
 Some launchers cache icons, so a change may take a few seconds to appear. Switching
@@ -496,7 +504,7 @@ until the app resumes; new mutations wait for the foreground. In-flight mutation
 and imports are canceled on backgrounding, never replayed, and report that server
 changes may already have completed; refresh before retrying. Song streams and song information remain available
 for background playback. Android Auto can also request the signed-in account's
-catalog while the phone is locked, without restarting any phone polling.
+catalog and thumbnail covers while the phone is locked, without restarting any phone polling.
 UI position polling, edge animation, and PCM metering
 stop in the background; metering also stays off when edge lighting is disabled
 and no audio visualizer is displayed.

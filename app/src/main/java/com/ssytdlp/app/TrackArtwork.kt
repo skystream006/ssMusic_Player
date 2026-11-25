@@ -9,8 +9,6 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.GraphicEq
-import androidx.compose.material.icons.rounded.Movie
-import androidx.compose.material.icons.rounded.MusicNote
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.runtime.Composable
@@ -23,6 +21,7 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.ImageBitmap
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.unit.dp
 import com.ssytdlp.app.core.Account
 import com.ssytdlp.app.core.Track
@@ -49,12 +48,11 @@ internal fun TrackArtwork(track: Track, active: Boolean, bitmap: ImageBitmap?) {
         contentAlignment = Alignment.Center) {
         if (bitmap != null) {
             Image(bitmap, "Album artwork for ${track.displayTitle}", Modifier.fillMaxSize(), contentScale = ContentScale.Crop)
-            if (active) Icon(Icons.Rounded.GraphicEq, null,
-                Modifier.align(Alignment.BottomEnd).background(MaterialTheme.colorScheme.surfaceContainer).size(18.dp),
-                tint = MaterialTheme.colorScheme.primary)
         } else {
-            Icon(if (active) Icons.Rounded.GraphicEq else if (track.mediaType == "video") Icons.Rounded.Movie else Icons.Rounded.MusicNote,
-                null, Modifier.size(22.dp), tint = if (active) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant)
+            Image(painterResource(LocalThemeLogo.current), null, Modifier.fillMaxSize(), contentScale = ContentScale.Fit)
         }
+        if (active) Icon(Icons.Rounded.GraphicEq, null,
+            Modifier.align(Alignment.BottomEnd).background(MaterialTheme.colorScheme.surfaceContainer).size(18.dp),
+            tint = MaterialTheme.colorScheme.primary)
     }
 }
