@@ -271,6 +271,34 @@ class PlaylistEditingTest {
         assertTrue(requests.isEmpty())
     }
 
+    @Test fun playerAddsTheSelectedSongToAPlaylistEvenIfPlaybackAdvances() {
+        val destination = LibraryPlaylist("destination", "Road trip")
+        catalog.updateAndGet { it.copy(playlists = it.playlists + destination) }
+        val path = "/api/library/songs/transfer"
+        startModel { if (it.url.encodedPath == path) 200 to "{}" else null }
+        val song = Track(job.id, "first.mp3", playlistId = entry.id)
+        val next = song.copy(name = "next.mp3", playlistId = destination.id)
+        val current = mutableStateOf(song)
+        compose.setContent { MusicTheme { NowPlayingScreen(model, PlaybackState(track = current.value)) { _, _ -> } } }
+
+        compose.onNodeWithContentDescription("More song actions").performClick()
+        compose.onNodeWithText("Add to playlist").performScrollTo().performClick()
+        compose.onNode(isPopup()).assertDoesNotExist()
+        compose.runOnIdle { current.value = next }
+        compose.onNodeWithText(destination.playlistTitle).performClick()
+        waitFor { model.pendingSongs.isEmpty() }
+        compose.onNode(isDialog()).assertDoesNotExist()
+        val post = synchronized(requests) { requests.single { it.method == "POST" } }
+        assertEquals(path, post.url.encodedPath)
+        assertEquals(buildJsonObject {
+            put("action", "link")
+            put("sourcePlaylistId", entry.id)
+            put("playlistId", destination.id)
+            put("keys", buildJsonArray { add(song.key) })
+            put("version", catalog.get().version)
+        }, body(post))
+    }
+
     @Config(qualifiers = "w320dp-h800dp")
     @Test fun expandedMenuSavesTheWholeQueueInOrderToAFolderWithoutChangingPlayback() {
         startModel()
@@ -288,9 +316,9 @@ class PlaylistEditingTest {
         compose.runOnUiThread { playback.value = snapshot }
         compose.setContent { MusicTheme { NowPlayingScreen(model, snapshot) { _, _ -> } } }
         compose.onNodeWithContentDescription("More song actions").performClick()
-        val queueHeading = compose.onNodeWithText("Queue actions").getUnclippedBoundsInRoot()
+        val queueHeading = compose.onNodeWithText("Queue list actions").getUnclippedBoundsInRoot()
         val save = compose.onNodeWithText("Save As New Playlist").assertIsEnabled().getUnclippedBoundsInRoot()
-        val mediaHeading = compose.onNodeWithText("Current media").getUnclippedBoundsInRoot()
+        val mediaHeading = compose.onNodeWithText("Current Media").getUnclippedBoundsInRoot()
         assertTrue(queueHeading.bottom <= save.top && save.bottom <= mediaHeading.top)
         compose.onNodeWithText("Save As New Playlist").performClick()
         compose.onNode(isPopup()).assertDoesNotExist()

@@ -444,7 +444,7 @@ class PrivacyActionsTest {
 
     @Test
     @Config(qualifiers = "w360dp-h1600dp")
-    fun songMenusAreAlphabeticalAcrossSurfacesAndPrivacyStates() {
+    fun songMenusGroupActionsBySectionAndSurfaceAcrossPrivacyStates() {
         val linked = track.copy(playlistId = entry.id)
         val model = startModel()
         compose.runOnIdle { model.viewModelScope.cancel() }
@@ -457,21 +457,19 @@ class PrivacyActionsTest {
         )
         for (location in SongSurface.entries) {
             compose.runOnIdle { surface.value = location }
-            val queueActions = if (location == SongSurface.NOW_PLAYING) listOf("Save As New Playlist") else emptyList()
+            val queueActions = if (location == SongSurface.NOW_PLAYING) listOf("Queue list actions", "Save As New Playlist") else emptyList()
+            val listActions = when (location) {
+                SongSurface.LIBRARY -> listOf("Play next", "Add to playlist", "Move to playlist", "Remove from playlist", "Add to queue")
+                SongSurface.QUEUE -> listOf("Play next", "Remove from queue", "Add to playlist")
+                SongSurface.DOCK, SongSurface.NOW_PLAYING -> listOf("Play next", "Add to playlist")
+            }
+            val otherAndList = listOf("Other", "Replace file", "Save file", "Share Media", "Transcribe lyrics", "List actions") + listActions
             for ((source, privacyLabel) in cases) {
                 compose.runOnIdle {
                     state(model).value = LibraryState().withLibrary(library(source))
                 }
                 openMenu(location.description)
-                val expected = mutableListOf("Linked Playlists", "Play Next", privacyLabel, "Replace File",
-                    "Save file", "Share Media", "Transcribe lyrics")
-                when (location) {
-                    SongSurface.LIBRARY -> expected += listOf("Add to playlist", "Add to queue",
-                        "Edit song / rating", "Move to playlist", "Remove from playlist")
-                    SongSurface.QUEUE -> expected += listOf("Add to playlist", "Edit song / rating", "Remove from queue")
-                    SongSurface.DOCK, SongSurface.NOW_PLAYING -> expected += "Edit metadata"
-                }
-                assertMenuOrder(queueActions + expected.sortedWith(String.CASE_INSENSITIVE_ORDER))
+                assertMenuOrder(queueActions + listOf("Current Media", "Edit metadata", "Linked Playlists", privacyLabel) + otherAndList)
             }
             if (location == SongSurface.NOW_PLAYING) {
                 compose.onNodeWithText("Save file").performClick()
@@ -481,15 +479,16 @@ class PrivacyActionsTest {
                 }
                 compose.onNodeWithText("USLT Lyrics").performClick()
                 openMenu(location.description)
-                assertMenuOrder(queueActions + listOf("Edit lyrics", "Edit metadata", "Linked Playlists", "Play Next",
-                    "Private — inherited from source", "Replace File", "Save file", "Share Media", "Transcribe lyrics"))
+                assertMenuOrder(queueActions + listOf("Current Media", "Edit lyrics", "Edit metadata", "Linked Playlists",
+                    "Private — inherited from source") + otherAndList)
             }
             compose.runOnIdle { account.value = testAccount(owner.copy(role = "shared")) }
             openMenu(location.description)
-            val expected = mutableListOf("Linked Playlists", "Play Next", "Save file", "View song metadata")
+            val expected = mutableListOf("Current Media", "Linked Playlists", "View song metadata", "Other", "Save file",
+                "List actions", "Play next")
             if (location == SongSurface.LIBRARY) expected += "Add to queue"
             if (location == SongSurface.QUEUE) expected += "Remove from queue"
-            assertMenuOrder(queueActions + expected.sortedWith(String.CASE_INSENSITIVE_ORDER))
+            assertMenuOrder(queueActions + expected)
             compose.runOnIdle { account.value = testAccount(owner) }
         }
         assertTrue(drainRequests().isEmpty())
@@ -557,7 +556,8 @@ class PrivacyActionsTest {
     }
 
     private fun assertMenuOrder(expected: List<String>) {
-        val items = compose.onAllNodes(hasAnyAncestor(isPopup()) and hasClickAction())
+        val heading = SemanticsMatcher.keyIsDefined(SemanticsProperties.Heading)
+        val items = compose.onAllNodes(hasAnyAncestor(isPopup()) and (hasClickAction() or heading))
             .fetchSemanticsNodes()
             .filter { it.config.contains(SemanticsProperties.Text) }
             .sortedBy { it.boundsInRoot.top }

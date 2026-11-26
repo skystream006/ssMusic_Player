@@ -1470,8 +1470,8 @@ class AccountRefreshTest {
         }
         compose.setContent { MusicTheme(waveAppearance = false) { TrackMenu(model, track, 0) { _, _ -> } } }
         compose.onNodeWithContentDescription("Options for ${track.displayTitle}").performClick()
-        compose.onNodeWithText("Edit song / rating").assertDoesNotExist()
-        compose.onNodeWithText("Replace File").assertIsDisplayed().performClick()
+        compose.onNodeWithText("Edit metadata").assertDoesNotExist()
+        compose.onNodeWithText("Replace file").assertIsDisplayed().performClick()
         compose.onNode(isDialog()).assertIsDisplayed()
         compose.onNodeWithText("Choose replacement file").assertExists()
     }

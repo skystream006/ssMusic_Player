@@ -169,7 +169,7 @@ cannot fix a signing-key mismatch.
 
 ### Queue actions
 
-Choose **Play Next** from a song's three-dot menu to insert a new copy immediately
+Choose **List actions > Play next** from a song's three-dot menu to insert a new copy immediately
 after the currently playing item, without restarting playback. An empty queue
 receives the song as its first item. This explicit ordering turns shuffle off;
 **Add to queue** still appends at the end. Hold a song row in Library or Queue to
@@ -268,8 +268,11 @@ it does not prove an installed app's identity. Authorize only sign-ins you start
 
 ## Native Features
 
-Three-dot menus list their available actions alphabetically, including song,
-queue, playlist, folder, and download-job menus.
+Library and Queue rows, the mini-player, and the Now Playing top bar share one song menu.
+**Current Media** contains metadata, linked playlists, and song privacy. **Other**
+contains file replacement, saving, sharing, and transcription. **List actions**
+contains playback and playlist membership commands. Actions depend on the file and
+your permissions. Playlist, folder, and download-job menus remain alphabetical.
 
 | Area | Implemented |
 | --- | --- |
@@ -316,8 +319,8 @@ playlist to open it on the server in your browser. Shared-library ownership and
 visibility are resolved by the server; this requires
 `GET /api/library/playlist-links` support.
 
-For audio songs with a saved video URL, the owning user can choose **Download song
-video** in Library, Queue, Now Playing, or the mini-player. Confirm **Download
+For audio songs with a saved video URL, the owning user can choose **Other > Retrieve
+song video** in Library, Queue, Now Playing, or the mini-player. Confirm **Download
 video** to queue it on the server; it stays linked to the song without adding
 playlist or queue entries. The dialog shows progress and errors, and failed or
 stopped downloads can be retried. **Jobs > Stop download** stops a pending linked
@@ -346,7 +349,7 @@ This requires the server's `/api/jobs/:id/files/:name/video` and
 `/api/jobs/:id/video/:name` endpoints introduced in the linked-video update.
 
 The mini-player has the same **More song actions** menu beside its progress slider,
-including Replace File, Share Media, and read-only metadata for shared accounts
+including Replace file, Share Media, and read-only metadata for shared accounts
 where permitted, without opening Now Playing or changing playback.
 Audio track ratings remain visible even at zero; tap the star beside a track's menu
 or queue controls to open **Rate song**. Shared accounts can update or clear MP3
@@ -367,7 +370,7 @@ track's rating instead opens **Rate song** for MP3 files; other formats remain
 read-only. Other metadata editing permissions remain unchanged, and the server
 still enforces library grants.
 
-Choose **Replace File** from a Library song's options or the Now Playing three-dot menu
+Choose **Other > Replace file** from the song menu
 to upload one non-empty audio file in the same format, up to 512 MB. Selecting
 a file does not upload it: confirm **Replace File** to overwrite the song.
 Convert other formats first; renaming the extension does not convert the audio.
@@ -400,14 +403,12 @@ The lock/unlock button at the top right of **Transcribe Song** hides all transcr
 options when changing the lock; confirm **Lock transcription** or **Unlock transcription**
 to save without sending a transcription request. Locked songs retain **Transcribe lyrics**
 and offer **Generate NoVocals Only**, preserving the lock unless you explicitly unlock.
-You can also change the lock in **Edit song / rating**, then **Save**. Locking does not
+You can also change the lock in **Edit metadata**, then **Save**. Locking does not
 prevent manual lyric editing.
 
 While viewing lyrics, permitted MP3 editors can choose **Edit lyrics** in the
 **Now Playing** bar's three-dot menu to edit both SYLT timestamps/text and USLT text, including
 clearing either format. This action is hidden on the Player and Queue tabs.
-On all screen sizes, **More song actions** groups editing, transcription, Replace File,
-Share Media, and Save file without crowding the header.
 Saving updates the displayed lyrics; canceling leaves them unchanged.
 
 Library and queue tracks show an icon-only transcription status to the left of
@@ -442,10 +443,10 @@ page**. Browsing queue or library pages does not seek, pause, or replace playbac
 When playback crosses a queue-page boundary (including shuffle and repeat), the
 Queue follows the playing song's page. Paging and advancing use the in-memory
 queue without track-list requests; shuffle covers the entire queue.
-Each queued song has a three-dot menu with the permitted Library song actions
-and **Remove from queue**, instead of a separate close button. Queue menus omit
-**Add to queue**, **Move to playlist**, **Remove from playlist**, and playlist
-reordering; removing a queued song does not change its playlist membership.
+**Play next** and, for eligible tracks, **Add to playlist** are available under
+**List actions** in every song menu. Only Queue rows offer **Remove from queue**;
+it removes that occurrence without changing playlist membership. Only Library
+rows offer **Move to playlist**, **Remove from playlist**, and **Add to queue**.
 Drag a song's handle up or down to reorder the current queue page or an unfiltered playlist
 page in Library. Hold near the list's top or bottom to scroll while dragging.
 Manually reordering the queue turns shuffle off so playback follows the displayed
@@ -458,8 +459,8 @@ In Queue only, swipe a song left to remove that occurrence without deleting the
 song or changing its playlist membership. Short, canceled, or rightward swipes
 do not remove songs.
 
-The expanded player's three-dot menu beside **Settings** has **Queue actions**
-at the top and the current media's alphabetically ordered actions below.
+Only the expanded player's three-dot menu beside **Settings** has **Queue list actions**
+above the song's sections.
 Choose **Save As New Playlist**, enter a name, and choose a destination folder
 (the library root by default). The entire queue is saved in its displayed order,
 including tracks on other pages, with duplicate songs included only once.

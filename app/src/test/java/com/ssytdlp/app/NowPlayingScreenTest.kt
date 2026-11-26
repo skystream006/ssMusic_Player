@@ -121,7 +121,7 @@ class NowPlayingScreenTest {
         compose.onNodeWithContentDescription("More song actions").assertDoesNotExist()
         compose.onNode(isPopup()).assertDoesNotExist()
         listOf("Edit metadata", "Edit lyrics", "View song metadata", "Transcribe lyrics",
-            "Replace File", "Share Media", "Save file").forEach {
+            "Replace file", "Share Media", "Save file").forEach {
             compose.onNodeWithText(it).assertDoesNotExist()
         }
         compose.onNodeWithContentDescription("Audio visualizer").assertDoesNotExist()
@@ -146,7 +146,7 @@ class NowPlayingScreenTest {
             }
         }
         compose.onNodeWithText("song").performTouchInput { longClick() }
-        compose.onNodeWithText("Play Next").assertIsDisplayed()
+        compose.onNodeWithText("Play next").assertIsDisplayed()
         compose.onNodeWithText("Add to queue").assertIsDisplayed()
         compose.onNodeWithText("Save file").performClick()
         compose.onNode(isPopup()).assertDoesNotExist()
@@ -156,13 +156,13 @@ class NowPlayingScreenTest {
         }
         compose.onNodeWithText("Queue").performClick()
         compose.onNodeWithTag("queue-row-1").performTouchInput { longClick(Offset(40f, centerY)) }
-        compose.onNodeWithText("Play Next").assertIsDisplayed()
+        compose.onNodeWithText("Play next").assertIsDisplayed()
         compose.onNodeWithText("Remove from queue").assertIsDisplayed()
         compose.onNodeWithText("Add to queue").assertDoesNotExist()
         compose.onNodeWithText("Save file").performClick()
         compose.onNode(isPopup()).assertDoesNotExist()
         compose.onAllNodesWithContentDescription("Options for song")[1].performClick()
-        compose.onNodeWithText("Play Next").assertIsDisplayed()
+        compose.onNodeWithText("Play next").assertIsDisplayed()
         compose.onNodeWithText("Remove from queue").assertIsDisplayed()
     }
 
@@ -188,18 +188,18 @@ class NowPlayingScreenTest {
             if (surface in listOf("Library", "Queue"))
                 compose.onNodeWithContentDescription("Options for song").performClick()
             else openSongActions()
-            compose.onNodeWithText("Play Next").assertIsEnabled()
+            compose.onNodeWithText("Play next").assertIsEnabled()
             compose.runOnIdle { playback.value = PlaybackState() }
-            compose.onNodeWithText("Play Next").assertIsNotEnabled()
+            compose.onNodeWithText("Play next").assertIsNotEnabled()
             compose.runOnIdle {
                 playback.value = PlaybackState(connected = true)
                 track.value = track.value.copy(isPlayable = false)
             }
-            compose.onNodeWithText("Play Next").assertIsNotEnabled()
+            compose.onNodeWithText("Play next").assertIsNotEnabled()
             compose.runOnIdle { track.value = track.value.copy(isPlayable = true, streamUrl = null) }
-            compose.onNodeWithText("Play Next").assertIsNotEnabled()
+            compose.onNodeWithText("Play next").assertIsNotEnabled()
             compose.runOnIdle { track.value = track.value.copy(streamUrl = "/api/stream/song.mp3") }
-            compose.onNodeWithText("Play Next").performClick()
+            compose.onNodeWithText("Play next").performClick()
             compose.onNode(isPopup()).assertDoesNotExist()
         }
     }
@@ -554,7 +554,7 @@ class NowPlayingScreenTest {
         compose.runOnIdle {
             health.value = ApiJson.parseToJsonElement("""{"transcription":{"status":"active"}}""").jsonObject
         }
-        val editableActions = listOf("Edit metadata", "Transcribe lyrics", "Replace File", "Share Media", "Save file")
+        val editableActions = listOf("Edit metadata", "Transcribe lyrics", "Replace file", "Share Media", "Save file")
         listOf("Lyrics", "Queue", "Player").forEach { tab ->
             compose.onNodeWithText(tab).performClick()
             compose.onNode(isPopup()).assertDoesNotExist()
@@ -583,7 +583,7 @@ class NowPlayingScreenTest {
             compose.runOnIdle { account.value = account.value!!.copy(user = user) }
             compose.onNode(isPopup()).assertDoesNotExist()
             openSongActions()
-            listOf("Edit metadata", "Transcribe lyrics", "Replace File", "Share Media").forEach {
+            listOf("Edit metadata", "Transcribe lyrics", "Replace file", "Share Media").forEach {
                 songAction(it).assertDoesNotExist()
             }
             songAction("Save file").assertIsEnabled()
@@ -600,7 +600,7 @@ class NowPlayingScreenTest {
             state.value = state.value.copy(track = track.copy(name = "video.mp4", mediaType = "video"))
         }
         openSongActions()
-        listOf("Edit metadata", "Transcribe lyrics", "Replace File", "Share Media").forEach {
+        listOf("Edit metadata", "Transcribe lyrics", "Replace file", "Share Media").forEach {
             songAction(it).assertDoesNotExist()
         }
         songAction("Save file").assertIsEnabled()
@@ -609,7 +609,7 @@ class NowPlayingScreenTest {
         songAction("View song metadata").assertDoesNotExist()
         compose.runOnIdle { account.value = null; state.value = state.value.copy(track = track) }
         openSongActions()
-        listOf("Edit metadata", "View song metadata", "Transcribe lyrics", "Replace File", "Share Media").forEach {
+        listOf("Edit metadata", "View song metadata", "Transcribe lyrics", "Replace file", "Share Media").forEach {
             songAction(it).assertDoesNotExist()
         }
         songAction("Save file").assertIsEnabled()
@@ -723,7 +723,7 @@ class NowPlayingScreenTest {
         }
         compose.onAllNodesWithContentDescription("More song actions").assertCountEquals(1)
         openSongActions()
-        val editableActions = listOf("Edit metadata", "Transcribe lyrics", "Replace File", "Share Media")
+        val editableActions = listOf("Edit metadata", "Transcribe lyrics", "Replace file", "Share Media")
         (editableActions + "Save file").forEach { songAction(it).assertIsDisplayed() }
         songAction("Transcribe lyrics").assertIsNotEnabled()
         songAction("Edit lyrics").assertDoesNotExist()
@@ -1161,7 +1161,7 @@ class NowPlayingScreenTest {
             assertTrue(contextBounds.right <= overflow.left)
         }
         listOf("Edit lyrics", "Edit metadata", "View song metadata", "Transcribe lyrics",
-            "Replace File", "Share Media", "Save file").forEach {
+            "Replace file", "Share Media", "Save file").forEach {
             compose.onNodeWithContentDescription(it).assertDoesNotExist()
             compose.onNodeWithText(it).assertDoesNotExist()
         }
@@ -1203,7 +1203,7 @@ class NowPlayingScreenTest {
             compose.onNodeWithText("Save file").assertIsDisplayed()
             compose.onNodeWithText("Share Media").assertDoesNotExist()
             compose.onNodeWithText("View song metadata").assertIsDisplayed()
-            compose.onNodeWithText("Edit song / rating").assertDoesNotExist()
+            compose.onNodeWithText("Edit metadata").assertDoesNotExist()
             compose.onNodeWithText("Transcribe lyrics").assertDoesNotExist()
         }
     }
@@ -1593,14 +1593,14 @@ class NowPlayingScreenTest {
         compose.onNodeWithText("USLT Lyrics").performClick()
         assertOnlySongOverflowBesideTitle(track)
         openSongActions()
-        val actions = listOf("Edit lyrics", "Edit metadata", "Transcribe lyrics", "Replace File",
+        val actions = listOf("Edit lyrics", "Edit metadata", "Transcribe lyrics", "Replace file",
             "Make song private", "Share Media", "Save file")
         actions.forEach {
             songAction(it).assertIsDisplayed().assertIsEnabled().assertHasClickAction()
         }
         songAction("Linked Playlists").assertIsDisplayed().assertIsEnabled().assertHasClickAction()
-        songAction("Play Next").assertIsDisplayed().assertIsNotEnabled()
-        songAction("Save As New Playlist").assertIsDisplayed().assertIsNotEnabled()
+        songAction("Play next").performScrollTo().assertIsDisplayed().assertIsNotEnabled()
+        songAction("Save As New Playlist").performScrollTo().assertIsDisplayed().assertIsNotEnabled()
         compose.onAllNodes(hasClickAction() and hasAnyAncestor(isPopup())).assertCountEquals(actions.size + 3)
         compose.runOnIdle { busy.value = true }
         actions.forEach { songAction(it).assertIsNotEnabled() }
@@ -1610,7 +1610,7 @@ class NowPlayingScreenTest {
         compose.runOnIdle { assertEquals(listOf(songPath(track, "download") to track.name), downloads) }
         compose.onNode(isPopup()).assertDoesNotExist()
         openSongActions()
-        songAction("Replace File").performClick()
+        songAction("Replace file").performClick()
         compose.onNode(isPopup()).assertDoesNotExist()
         compose.onNode(isDialog()).assertIsDisplayed()
         compose.onNodeWithText("Choose replacement file").assertIsDisplayed()
@@ -1654,7 +1654,7 @@ class NowPlayingScreenTest {
             compose.onNodeWithText(tab).performClick()
             assertOnlySongOverflowBesideTitle(track, showPlaylist = false)
             openSongActions()
-            listOf("Edit metadata", "Transcribe lyrics", "Replace File", "Share Media", "Save file").forEach {
+            listOf("Edit metadata", "Transcribe lyrics", "Replace file", "Share Media", "Save file").forEach {
                 songAction(it).assertIsDisplayed().assertIsEnabled().assertHasClickAction()
             }
             if (tab == "USLT Lyrics") songAction("Edit lyrics").assertIsDisplayed().assertIsEnabled()
@@ -1738,8 +1738,8 @@ class NowPlayingScreenTest {
         listOf("Add to queue", "Move to playlist", "Remove from playlist", "Move up", "Move down").forEach {
             compose.onNodeWithText(it).assertDoesNotExist()
         }
-        listOf("Save file", "Share Media", "Make song private", "Add to playlist", "Edit song / rating",
-            "Transcribe lyrics", "Replace File", "Remove from queue").forEach {
+        listOf("Save file", "Share Media", "Make song private", "Add to playlist", "Edit metadata",
+            "Transcribe lyrics", "Replace file", "Remove from queue").forEach {
             compose.onNodeWithText(it).performScrollTo().assertIsDisplayed()
         }
         compose.onNodeWithText("Add to playlist").performScrollTo().performClick()
@@ -1777,7 +1777,7 @@ class NowPlayingScreenTest {
             compose.onNodeWithText(it).assertIsDisplayed()
         }
         listOf("Add to queue", "Add to playlist", "Move to playlist", "Remove from playlist",
-            "Edit song / rating", "Transcribe lyrics", "Replace File", "Share Media", "Make song private").forEach {
+            "Edit metadata", "Transcribe lyrics", "Replace file", "Share Media", "Make song private").forEach {
             compose.onNodeWithText(it).assertDoesNotExist()
         }
         compose.onNodeWithText("Remove from queue").performClick()
@@ -1788,7 +1788,7 @@ class NowPlayingScreenTest {
             compose.onNodeWithText(it).assertIsDisplayed()
         }
         listOf("Add to queue", "Move to playlist", "Remove from playlist", "View song metadata",
-            "Edit song / rating", "Transcribe lyrics", "Replace File", "Share Media", "Make song private").forEach {
+            "Edit metadata", "Transcribe lyrics", "Replace file", "Share Media", "Make song private").forEach {
             compose.onNodeWithText(it).assertDoesNotExist()
         }
     }
