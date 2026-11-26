@@ -45,6 +45,7 @@ class MusicApplication : Application() {
         })
         DebugLog.initialize(this)
         DebugLog.event(DebugEvent.APP_STARTED)
+        LauncherIcon.initializeCar(this)
         sessions = SessionStore(this)
         serverConfig = ServerConfig(this)
         val accountOrigin = sessions.account.value?.origin

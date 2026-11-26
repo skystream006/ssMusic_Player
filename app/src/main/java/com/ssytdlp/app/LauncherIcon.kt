@@ -35,18 +35,31 @@ internal object LauncherIcon {
 
     fun update(context: Context, preferences: Preferences, waveAppearance: Boolean) {
         val selected = alias(preferences, waveAppearance)
+        if (updateComponents(context, selected)) mutableArtwork.value = artwork(context, preferences, waveAppearance)
+    }
+
+    fun initializeCar(context: Context) {
+        val launcher = requireNotNull(context.packageManager.resolveActivity(
+            Intent(Intent.ACTION_MAIN).addCategory(Intent.CATEGORY_LAUNCHER).setPackage(context.packageName), 0
+        )) { "No enabled launcher entry" }
+        updateComponents(context, launcher.activityInfo.name.substringAfterLast('.'))
+    }
+
+    private fun updateComponents(context: Context, selected: String): Boolean {
         val manager = context.packageManager
-        val changes = aliases.mapNotNull { alias ->
-            val component = ComponentName(context.packageName, "${context.packageName}.$alias")
+        val entries = aliases.map { it to (it == DEFAULT) } +
+            aliases.map { it.replace("Launcher", "CarIconService\$") to (it == DEFAULT) }
+        val changes = entries.mapNotNull { (entry, defaultEnabled) ->
+            val component = ComponentName(context.packageName, "${context.packageName}.$entry")
             val enabled = when (manager.getComponentEnabledSetting(component)) {
-                PackageManager.COMPONENT_ENABLED_STATE_DEFAULT -> alias == DEFAULT
+                PackageManager.COMPONENT_ENABLED_STATE_DEFAULT -> defaultEnabled
                 PackageManager.COMPONENT_ENABLED_STATE_ENABLED -> true
                 else -> false
             }
-            val desired = alias == selected
+            val desired = entry == selected || entry == selected.replace("Launcher", "CarIconService\$")
             if (enabled == desired) null else component to desired
         }
-        if (changes.isEmpty()) return
+        if (changes.isEmpty()) return false
         if (Build.VERSION.SDK_INT >= 33) {
             manager.setComponentEnabledSettings(changes.map { (component, enabled) ->
                 PackageManager.ComponentEnabledSetting(component, state(enabled), PackageManager.DONT_KILL_APP)
@@ -57,7 +70,7 @@ internal object LauncherIcon {
                 manager.setComponentEnabledSetting(component, state(enabled), PackageManager.DONT_KILL_APP)
             }
         }
-        mutableArtwork.value = artwork(context, preferences, waveAppearance)
+        return true
     }
 
     private fun state(enabled: Boolean) = if (enabled) PackageManager.COMPONENT_ENABLED_STATE_ENABLED

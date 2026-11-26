@@ -5,6 +5,10 @@ import android.content.ComponentName
 import android.content.Context
 import android.content.Intent
 import android.content.pm.PackageManager
+import android.graphics.Canvas
+import android.graphics.Bitmap
+import android.graphics.Color
+import android.graphics.drawable.AdaptiveIconDrawable
 import android.net.Uri
 import androidx.test.core.app.ApplicationProvider
 import com.ssytdlp.app.core.Preferences
@@ -64,6 +68,17 @@ class LauncherIconTest {
         assertEquals(R.mipmap.ic_launcher, LauncherIcon.artwork(context, Preferences("pink", "light"), true))
     }
 
+    @Test fun coldCarStartupRepairsTheCarEntryFromTheRetainedPhoneLauncher() {
+        LauncherIcon.update(context, Preferences("gold", "dark"), waveAppearance = false)
+        val manager = context.packageManager
+        manager.setComponentEnabledSetting(ComponentName(context, CarIconService.GoldDark::class.java),
+            PackageManager.COMPONENT_ENABLED_STATE_DEFAULT, PackageManager.DONT_KILL_APP)
+        manager.setComponentEnabledSetting(ComponentName(context, CarIconService.Default::class.java),
+            PackageManager.COMPONENT_ENABLED_STATE_DEFAULT, PackageManager.DONT_KILL_APP)
+        LauncherIcon.initializeCar(context)
+        assertLauncher("LauncherGoldDark", R.mipmap.ic_launcher_gold_dark)
+    }
+
     private fun assertLauncher(alias: String, artwork: Int) {
         val intent = Intent(Intent.ACTION_MAIN).addCategory(Intent.CATEGORY_LAUNCHER).setPackage(context.packageName)
         val launchers = context.packageManager.queryIntentActivities(intent, 0)
@@ -72,5 +87,23 @@ class LauncherIconTest {
         assertEquals("${context.packageName}.$alias", info.name)
         assertEquals(MainActivity::class.java.name, info.targetActivity)
         assertEquals(artwork, info.icon)
+        val cars = context.packageManager.queryIntentServices(
+            Intent("android.media.browse.MediaBrowserService").setPackage(context.packageName), 0)
+        assertEquals(1, cars.size)
+        val car = cars.single().serviceInfo
+        assertEquals("${context.packageName}.${alias.replace("Launcher", "CarIconService\$")}", car.name)
+        val carIcon = context.getDrawable(car.icon)!!
+        assertTrue(carIcon is AdaptiveIconDrawable)
+        val background = (carIcon as AdaptiveIconDrawable).background
+        val bitmap = Bitmap.createBitmap(108, 108, Bitmap.Config.ARGB_8888)
+        background.setBounds(0, 0, 108, 108)
+        background.draw(Canvas(bitmap))
+        listOf(0 to 54, 107 to 54, 54 to 0, 54 to 107).forEach { (x, y) ->
+            assertEquals(255, Color.alpha(bitmap.getPixel(x, y)))
+        }
+        assertEquals(if (alias.endsWith("Light")) Color.rgb(246, 248, 246) else Color.rgb(8, 10, 16),
+            bitmap.getPixel(0, 54))
+        assertEquals(PackageManager.COMPONENT_ENABLED_STATE_DEFAULT, context.packageManager.getComponentEnabledSetting(
+            ComponentName(context, PlaybackService::class.java)))
     }
 }

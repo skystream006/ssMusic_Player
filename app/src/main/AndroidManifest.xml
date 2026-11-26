@@ -130,8 +130,46 @@
             <intent-filter>
                 <action android:name="androidx.media3.session.MediaSessionService" />
                 <action android:name="androidx.media3.session.MediaLibraryService" />
-                <action android:name="android.media.browse.MediaBrowserService" />
             </intent-filter>
+        </service>
+        <service android:name=".CarIconService$Default" android:exported="true" android:icon="@mipmap/ic_car_default">
+            <intent-filter><action android:name="android.media.browse.MediaBrowserService" /></intent-filter>
+        </service>
+        <service android:name=".CarIconService$MidnightLight" android:enabled="false" android:exported="true" android:icon="@mipmap/ic_car_midnight_light">
+            <intent-filter><action android:name="android.media.browse.MediaBrowserService" /></intent-filter>
+        </service>
+        <service android:name=".CarIconService$MidnightDark" android:enabled="false" android:exported="true" android:icon="@mipmap/ic_car_midnight_dark">
+            <intent-filter><action android:name="android.media.browse.MediaBrowserService" /></intent-filter>
+        </service>
+        <service android:name=".CarIconService$RoyalPurpleLight" android:enabled="false" android:exported="true" android:icon="@mipmap/ic_car_royal_purple_light">
+            <intent-filter><action android:name="android.media.browse.MediaBrowserService" /></intent-filter>
+        </service>
+        <service android:name=".CarIconService$RoyalPurpleDark" android:enabled="false" android:exported="true" android:icon="@mipmap/ic_car_royal_purple_dark">
+            <intent-filter><action android:name="android.media.browse.MediaBrowserService" /></intent-filter>
+        </service>
+        <service android:name=".CarIconService$GoldLight" android:enabled="false" android:exported="true" android:icon="@mipmap/ic_car_gold_light">
+            <intent-filter><action android:name="android.media.browse.MediaBrowserService" /></intent-filter>
+        </service>
+        <service android:name=".CarIconService$GoldDark" android:enabled="false" android:exported="true" android:icon="@mipmap/ic_car_gold_dark">
+            <intent-filter><action android:name="android.media.browse.MediaBrowserService" /></intent-filter>
+        </service>
+        <service android:name=".CarIconService$GreenLight" android:enabled="false" android:exported="true" android:icon="@mipmap/ic_car_green_light">
+            <intent-filter><action android:name="android.media.browse.MediaBrowserService" /></intent-filter>
+        </service>
+        <service android:name=".CarIconService$GreenDark" android:enabled="false" android:exported="true" android:icon="@mipmap/ic_car_green_dark">
+            <intent-filter><action android:name="android.media.browse.MediaBrowserService" /></intent-filter>
+        </service>
+        <service android:name=".CarIconService$PinkLight" android:enabled="false" android:exported="true" android:icon="@mipmap/ic_car_pink_light">
+            <intent-filter><action android:name="android.media.browse.MediaBrowserService" /></intent-filter>
+        </service>
+        <service android:name=".CarIconService$PinkDark" android:enabled="false" android:exported="true" android:icon="@mipmap/ic_car_pink_dark">
+            <intent-filter><action android:name="android.media.browse.MediaBrowserService" /></intent-filter>
+        </service>
+        <service android:name=".CarIconService$BlackLight" android:enabled="false" android:exported="true" android:icon="@mipmap/ic_car_black_light">
+            <intent-filter><action android:name="android.media.browse.MediaBrowserService" /></intent-filter>
+        </service>
+        <service android:name=".CarIconService$BlackDark" android:enabled="false" android:exported="true" android:icon="@mipmap/ic_car_black_dark">
+            <intent-filter><action android:name="android.media.browse.MediaBrowserService" /></intent-filter>
         </service>
         <provider android:name=".CarArtworkProvider" android:authorities="${applicationId}.car-art"
             android:exported="false" android:grantUriPermissions="true" />

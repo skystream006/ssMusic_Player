@@ -69,12 +69,8 @@ internal class CarMediaSessionCallback(private val context: Context, private val
 
     override fun onConnect(session: MediaSession, controller: ControllerInfo): MediaSession.ConnectionResult {
         // Legacy binding initially has no caller identity. Media3 provides the real caller here.
-        if (controller.uid != Process.myUid() && !controller.isTrusted) {
-            val googleMediaHost = controller.packageName in setOf(AUTO, "com.google.android.googlequicksearchbox") &&
-                controller.uid >= 0 && Build.VERSION.SDK_INT >= 28 &&
-                context.packageManager.hasSigningCertificate(controller.uid, googleReleaseCert, PackageManager.CERT_INPUT_SHA256)
-            if (!googleMediaHost) return MediaSession.ConnectionResult.reject()
-        }
+        if (!context.isTrustedCarController(controller.packageName, controller.uid, controller.isTrusted))
+            return MediaSession.ConnectionResult.reject()
         val accepted = super.onConnect(session, controller)
         if (controller.packageName == AUTO) context.grantUriPermission(AUTO, CarArtwork.ROOT,
             Intent.FLAG_GRANT_READ_URI_PERMISSION or Intent.FLAG_GRANT_PREFIX_URI_PERMISSION)
@@ -244,8 +240,15 @@ internal class CarMediaSessionCallback(private val context: Context, private val
         const val VIDEO_AUDIO = "car_video_audio"
         val toggleVideoAudio = SessionCommand("${BuildConfig.APPLICATION_ID}.TOGGLE_VIDEO_AUDIO", Bundle.EMPTY)
         const val SIGN_IN = "When parked, sign in to ssMusic Player on your phone."
-        // Release certificate documented at developer.android.com/media/implement/assistant#signatures.
-        val googleReleaseCert = "f0fd6c5b410f25cb25c3b53346c8972fae30f8ee7411df910480ad6b2d60db83"
-            .chunked(2).map { it.toInt(16).toByte() }.toByteArray()
     }
+}
+
+internal fun Context.isTrustedCarController(packageName: String, uid: Int, trusted: Boolean): Boolean {
+    if (uid == Process.myUid() || trusted) return true
+    // Release certificate documented at developer.android.com/media/implement/assistant#signatures.
+    val certificate = "f0fd6c5b410f25cb25c3b53346c8972fae30f8ee7411df910480ad6b2d60db83"
+        .chunked(2).map { it.toInt(16).toByte() }.toByteArray()
+    return packageName in setOf("com.google.android.projection.gearhead", "com.google.android.googlequicksearchbox") &&
+        uid >= 0 && Build.VERSION.SDK_INT >= 28 &&
+        packageManager.hasSigningCertificate(uid, certificate, PackageManager.CERT_INPUT_SHA256)
 }
