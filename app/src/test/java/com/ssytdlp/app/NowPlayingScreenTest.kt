@@ -250,13 +250,39 @@ class NowPlayingScreenTest {
                 }
             }
         }
-        compose.onNodeWithTag("landscape-player-artwork").assertIsDisplayed().assertHeightIsAtLeast(1.dp)
+        compose.onNodeWithTag("landscape-player-artwork").performScrollTo().assertIsDisplayed().assertHeightIsAtLeast(1.dp)
         compose.onNodeWithContentDescription("Audio visualizer").performScrollTo().assertIsDisplayed()
         compose.onNodeWithContentDescription("Rating: 3 out of 5").performScrollTo().assertIsDisplayed()
             .assertHasNoClickAction()
         compose.onNodeWithContentDescription("Audio visualizer").performScrollTo().assertIsDisplayed()
         compose.onNodeWithContentDescription("Play").assertIsDisplayed()
         compose.onNodeWithContentDescription("Playback position").assertIsDisplayed()
+    }
+
+    @Test
+    @Config(qualifiers = "w800dp-h360dp-land")
+    fun landscapeArtworkSitsCenteredBelowDisplayButtonsWithoutRepeatingTheTitle() {
+        val track = Track("preview", "song.mp3", title = "Blue hour", artist = "Night artist")
+        compose.setContent {
+            MusicTheme { NowPlayingScreen(model, PlaybackState(track = track)) { _, _ -> } }
+        }
+        compose.onAllNodesWithText(track.displayTitle).assertCountEquals(1)
+        songHeading(track.displayTitle).assertIsDisplayed()
+        val options = compose.onNodeWithContentDescription("Player display").assertIsDisplayed()
+            .getUnclippedBoundsInRoot()
+        val artwork = compose.onNodeWithTag("landscape-player-artwork").assertIsDisplayed()
+            .getUnclippedBoundsInRoot()
+        assertTrue(artwork.top >= options.bottom)
+        assertEquals((options.left + options.right).value / 2, (artwork.left + artwork.right).value / 2, 1f)
+        compose.onNodeWithText(track.displayArtist).performScrollTo().assertIsDisplayed()
+        compose.onNodeWithContentDescription("Audio visualizer").performScrollTo().performClick()
+        compose.onNodeWithTag("landscape-player-artwork").performScrollTo().assertIsDisplayed()
+        val visualizer = compose.onNodeWithTag("landscape-player-artwork").getUnclippedBoundsInRoot()
+        val style = compose.onNodeWithContentDescription("Visualizer style").getUnclippedBoundsInRoot()
+        assertTrue(visualizer.top >= style.bottom)
+        assertEquals((style.left + style.right).value / 2, (visualizer.left + visualizer.right).value / 2, 1f)
+        compose.onAllNodesWithText(track.displayTitle).assertCountEquals(1)
+        compose.onNodeWithContentDescription("Play").assertIsDisplayed()
     }
 
     @Test

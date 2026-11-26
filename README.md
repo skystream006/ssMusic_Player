@@ -23,6 +23,10 @@ downloaded linked video, open the player actions and choose **Use video audio**;
 cannot display video pictures, even when parked. Watch video on the phone while
 parked. Account setup and library editing also stay on the phone.
 
+In landscape Now Playing, album art, the visualizer, or video is centered below
+the display-selection buttons, with the queue alongside the player. The song
+title appears only in the top info bar; artist and album details remain scrollable.
+
 The phone needs access to the server to browse or search; the existing audio
 cache still applies to playback. If your session expires, sign in again on the
 phone while parked. If the launcher hides an APK installed from GitHub, check
