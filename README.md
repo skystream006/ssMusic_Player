@@ -26,6 +26,8 @@ parked. Account setup and library editing also stay on the phone.
 In landscape Now Playing, album art, the visualizer, or video is centered below
 the display-selection buttons, with the queue alongside the player. The song
 title appears only in the top info bar; artist and album details remain scrollable.
+Unavailable song videos keep their display button disabled without extra help
+text; queued and active downloads still show their status.
 
 The phone needs access to the server to browse or search; the existing audio
 cache still applies to playback. If your session expires, sign in again on the
