@@ -627,7 +627,7 @@ internal fun PlayerArtwork(state: PlaybackState, metadata: SongMetadata?, modifi
         }
     }
     val details: @Composable () -> Unit = {
-        Text(metadata?.title?.ifBlank { null } ?: track?.displayTitle.orEmpty(), style = MaterialTheme.typography.headlineSmall,
+        if (!landscape) Text(metadata?.title?.ifBlank { null } ?: track?.displayTitle.orEmpty(), style = MaterialTheme.typography.headlineSmall,
             textAlign = TextAlign.Center, maxLines = 3, overflow = TextOverflow.Ellipsis)
         Text(metadata?.artist?.ifBlank { null } ?: track?.displayArtist.orEmpty(), style = MaterialTheme.typography.bodyMedium,
             color = MaterialTheme.colorScheme.onSurfaceVariant, textAlign = TextAlign.Center, modifier = Modifier.padding(top = 8.dp))
@@ -643,21 +643,17 @@ internal fun PlayerArtwork(state: PlaybackState, metadata: SongMetadata?, modifi
         }
     }
     if (landscape) BoxWithConstraints(modifier.fillMaxWidth().padding(8.dp)) {
-        val visualSize = minOf(maxHeight, maxWidth * 0.4f, 200.dp)
+        val visualSize = minOf((maxHeight - 56.dp - 48.dp).coerceAtLeast(48.dp), maxWidth, 200.dp)
         val scrollRating = maxHeight < 96.dp
-        Row(Modifier.fillMaxSize(), verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-            visual(Modifier.size(visualSize).testTag("landscape-player-artwork"))
-            Column(Modifier.weight(1f).fillMaxHeight(),
+        Column(Modifier.fillMaxSize(), horizontalAlignment = Alignment.CenterHorizontally) {
+            Column(Modifier.weight(1f).verticalScroll(rememberScrollState()).fillMaxWidth(),
                 horizontalAlignment = Alignment.CenterHorizontally) {
-                Column(Modifier.weight(1f).verticalScroll(rememberScrollState()),
-                    horizontalAlignment = Alignment.CenterHorizontally) {
-                    options()
-                    details()
-                    if (scrollRating) rating()
-                }
-                if (!scrollRating) rating()
+                options()
+                visual(Modifier.size(visualSize).testTag("landscape-player-artwork"))
+                details()
+                if (scrollRating) rating()
             }
+            if (!scrollRating) rating()
         }
     } else Column(modifier.fillMaxWidth().verticalScroll(rememberScrollState()).padding(horizontal = 28.dp, vertical = 24.dp),
         horizontalAlignment = Alignment.CenterHorizontally) {
