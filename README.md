@@ -45,6 +45,12 @@ uses the original blue icon. The same logo is the default album art in the playe
 and in library and queue thumbnails. Icons also follow preferences loaded from the server;
 Android retains the selected launcher entry across restarts.
 
+Android Auto's launcher and app-switcher icon follows the same theme and light/dark
+appearance. Its adaptive artwork fills the car's icon bubble without a white border.
+Blue Wave restores the original blue logo. Car entries share the existing playback
+service, so changing appearance does not create a second player or stop the queue.
+Android Auto may cache the old entry; reconnect while parked if it has not refreshed.
+
 Some launchers cache icons, so a change may take a few seconds to appear. Switching
 launcher entries, including the first upgrade to theme-aware icons, may require
 re-adding an existing home-screen shortcut on some launchers. No additional
@@ -52,6 +58,8 @@ permission is required, and changing the icon does not stop playback.
 
 To regenerate the twelve variants from the bundled icon, install Pillow in a
 Python virtual environment and run `python scripts/render-launcher-icons.py`.
+Then run `powershell -File scripts/render-car-icons.ps1` to regenerate the cropped
+car artwork and adaptive icons from those launcher variants.
 
 ## Build and Install
 

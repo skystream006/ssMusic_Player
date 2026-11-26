@@ -142,11 +142,71 @@ class AccountRefreshTest {
     }
 
     @androidx.annotation.OptIn(androidx.media3.common.util.UnstableApi::class)
+    @Test fun themedCarBrowserSharesThePlaybackTokenAndExposesSearch() {
+        compose.runOnUiThread {
+            sessions.save(account)
+            val primary = Robolectric.buildService(PlaybackService::class.java).create()
+            val action = Intent("android.media.browse.MediaBrowserService")
+            val component = android.content.ComponentName(context, PlaybackService::class.java)
+            shadowOf(application).setComponentNameAndServiceForBindService(component, primary.get().onBind(action))
+            val car = Robolectric.buildService(CarIconService.Default::class.java).create()
+            try {
+                shadowOf(Looper.getMainLooper()).idle()
+                assertNotNull(car.get().sessionToken)
+                val host = ControllerInfo.createTestOnlyControllerInfo("car", 1, 2, 0, 0, true, Bundle.EMPTY)
+                val session = primary.get().onGetSession(host)!!
+                assertEquals(session.platformToken, car.get().sessionToken!!.token)
+                assertFalse(session.player.playWhenReady)
+                val clientComponent = android.content.ComponentName(context, CarIconService.Default::class.java)
+                shadowOf(application).setComponentNameAndServiceForBindService(clientComponent, car.get().onBind(action))
+                val client = android.support.v4.media.MediaBrowserCompat(context, clientComponent,
+                    object : android.support.v4.media.MediaBrowserCompat.ConnectionCallback() {}, null)
+                try {
+                    client.connect()
+                    shadowOf(Looper.getMainLooper()).idle()
+                    assertTrue(client.isConnected)
+                    assertEquals(carRoot.mediaId, client.root)
+                    assertTrue(client.extras!!.getBoolean("android.media.browse.SEARCH_SUPPORTED"))
+                    assertEquals(car.get().sessionToken, client.sessionToken)
+                    var rootItem: android.support.v4.media.MediaBrowserCompat.MediaItem? = null
+                    client.getItem(client.root, object : android.support.v4.media.MediaBrowserCompat.ItemCallback() {
+                        override fun onItemLoaded(item: android.support.v4.media.MediaBrowserCompat.MediaItem?) { rootItem = item }
+                    })
+                    var childLoads = 0
+                    client.subscribe(client.root, object : android.support.v4.media.MediaBrowserCompat.SubscriptionCallback() {
+                        override fun onChildrenLoaded(id: String, children: List<android.support.v4.media.MediaBrowserCompat.MediaItem>) {
+                            assertEquals("Folders and playlists", children.single().description.title)
+                            childLoads++
+                        }
+                    })
+                    shadowOf(Looper.getMainLooper()).idle()
+                    assertEquals(client.root, rootItem?.mediaId)
+                    assertEquals(1, childLoads)
+                    LauncherIcon.update(context, com.ssytdlp.app.core.Preferences("gold", "dark"), false)
+                    assertEquals(session, primary.get().onGetSession(host))
+                    assertFalse(session.player.playWhenReady)
+                    sessions.clear()
+                    shadowOf(Looper.getMainLooper()).idle()
+                    var searchFailed = false
+                    client.search("test", null, object : android.support.v4.media.MediaBrowserCompat.SearchCallback() {
+                        override fun onError(query: String, extras: Bundle?) { searchFailed = true }
+                    })
+                    shadowOf(Looper.getMainLooper()).idle()
+                    assertTrue(searchFailed)
+                } finally { client.disconnect() }
+            } finally {
+                car.destroy()
+                primary.destroy()
+            }
+        }
+    }
+
+    @androidx.annotation.OptIn(androidx.media3.common.util.UnstableApi::class)
     @Test fun boundCarServiceTracksPhoneSignInAndSignOutWithoutAutoplay() {
         compose.runOnUiThread {
             val action = Intent("android.media.browse.MediaBrowserService").setPackage(context.packageName)
             assertTrue(context.packageManager.queryIntentServices(action, 0)
-                .any { it.serviceInfo.name == PlaybackService::class.java.name })
+                .any { it.serviceInfo.name.startsWith("${context.packageName}.CarIconService\$") })
             val voice = Intent(android.provider.MediaStore.INTENT_ACTION_MEDIA_PLAY_FROM_SEARCH)
                 .addCategory(Intent.CATEGORY_DEFAULT).setPackage(context.packageName)
             assertEquals(MainActivity::class.java.name, context.packageManager.resolveActivity(voice, 0)?.activityInfo?.name)
