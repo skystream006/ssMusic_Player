@@ -490,6 +490,7 @@ class NowPlayingScreenTest {
         compose.onNodeWithText("Player").performClick()
         compose.onNodeWithContentDescription("Song video").assertIsNotEnabled()
         compose.onNodeWithContentDescription("Album art").assertIsSelected()
+        compose.onNodeWithText("Video download queued.").assertIsDisplayed()
         val ready = SongVideo(source, LinkedVideo(source, "completed", streamUrl = "/api/jobs/source/video/song.mp3?v=2"))
         compose.runOnIdle {
             response.set(ready)
@@ -508,6 +509,25 @@ class NowPlayingScreenTest {
             assertEquals(listOf(track), state.value.queue)
             assertEquals(42_000L, state.value.position)
         }
+    }
+
+    @Test fun playerHidesUnavailableVideoHelpButKeepsDownloadProgress() {
+        val source = "https://www.youtube.com/watch?v=abcdefghijk"
+        val video = mutableStateOf(SongVideo(source, null))
+        val track = Track("source", "song.mp3", videoUrl = source)
+        compose.setContent {
+            MusicTheme { PlayerArtwork(PlaybackState(track = track), null, songVideo = video.value) }
+        }
+        compose.onNodeWithContentDescription("Song video").assertIsNotEnabled()
+        compose.onNodeWithText("Video becomes available after the song's owner downloads it.").assertDoesNotExist()
+        compose.runOnIdle { video.value = SongVideo(source, LinkedVideo(source, "queued")) }
+        compose.onNodeWithText("Video download queued.").assertIsDisplayed()
+        compose.runOnIdle { video.value = SongVideo(source, LinkedVideo(source, "running")) }
+        compose.onNodeWithText("Downloading song video...").assertIsDisplayed()
+        compose.onNodeWithText("Video download queued.").assertDoesNotExist()
+        compose.runOnIdle { video.value = SongVideo(source, LinkedVideo(source, "failed")) }
+        compose.onNodeWithText("Downloading song video...").assertDoesNotExist()
+        compose.onNodeWithText("Video becomes available after the song's owner downloads it.").assertDoesNotExist()
     }
 
     @Test fun retrieveSongVideoIsOwnerOnlyInLibraryQueuePlayerAndDockMenus() {

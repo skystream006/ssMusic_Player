@@ -584,11 +584,12 @@ internal fun PlayerArtwork(state: PlaybackState, metadata: SongMetadata?, modifi
                 }
             }
             if (!songVideo.available && !songVideo.videoUrl.isNullOrBlank()) {
-                Text(when (songVideo.linkedVideo?.status) {
+                val downloadStatus = when (songVideo.linkedVideo?.status) {
                     "queued" -> "Video download queued."
                     "running" -> "Downloading song video..."
-                    else -> "Video becomes available after the song's owner downloads it."
-                }, Modifier.padding(bottom = 8.dp), style = MaterialTheme.typography.bodySmall,
+                    else -> null
+                }
+                if (downloadStatus != null) Text(downloadStatus, Modifier.padding(bottom = 8.dp), style = MaterialTheme.typography.bodySmall,
                     textAlign = TextAlign.Center)
             }
             if (visibleDisplay == PlayerDisplay.AUDIO_VISUALIZER) {
