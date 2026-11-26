@@ -376,7 +376,7 @@ class LandscapeUiTest {
         assertSplit("now-playing-pane", "now-playing-queue-pane", 0.65f)
         compose.onAllNodes(SemanticsMatcher.expectValue(SemanticsProperties.Role, Role.Tab)).assertCountEquals(2)
         compose.onNodeWithText("Player").assertIsSelected()
-        compose.onNodeWithTag("landscape-player-artwork").assertIsDisplayed().assertHeightIsAtLeast(1.dp)
+        compose.onNodeWithTag("landscape-player-artwork").performScrollTo().assertIsDisplayed().assertHeightIsAtLeast(1.dp)
         compose.onNode(hasScrollToIndexAction() and hasAnyAncestor(hasTestTag("now-playing-queue-pane")))
             .performScrollToNode(hasText("Second song"))
         compose.onNodeWithText("Second song").assertIsDisplayed().assertHasClickAction()
