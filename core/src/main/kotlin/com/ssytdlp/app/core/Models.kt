@@ -39,7 +39,7 @@ data class LibraryPlaylist(
     val id: String, val playlistTitle: String = "", val songCount: Int = 0, val jobId: String? = null,
     @SerialName("private") val isPrivate: Boolean = false,
     val initiatedBy: User? = null, val status: String = "",
-    val contributors: List<User> = emptyList()
+    val contributors: List<User> = emptyList(), val playlistArtworkUrl: String? = null
 ) {
     fun canChangePrivacy(user: User?) = ownsMedia(user, initiatedBy)
     fun canRename(user: User?) = user != null && !user.isShared && user.id.isNotBlank() &&

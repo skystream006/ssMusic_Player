@@ -26,13 +26,26 @@ internal class CarArtwork(private val owner: Account, @Volatile var logo: Int) {
     private val base = ROOT.buildUpon().appendPath(scope).build()
     private val fallback get() = resourceArtwork(logo)
 
-    fun track(track: Track): Uri {
-        val path = track.artworkUrl?.takeIf(String::isNotBlank) ?: return fallback
+    fun track(track: Track): Uri = thumbnailUri(track.artworkUrl) { parts ->
+        require(parts.size == 5 && parts[0] == "api" && parts[1] == "jobs" && parts[3] == "artwork")
+        base.buildUpon().appendPath("track").appendPath(parts[2]).appendPath(parts[4])
+    }
+
+    fun playlist(id: String, version: Long, artworkUrl: String? = null): Uri {
+        // Older servers only expose track covers.
+        if (artworkUrl.isNullOrBlank()) return base.buildUpon().appendPath("playlist").appendPath(id)
+            .appendQueryParameter("version", version.toString()).appendQueryParameter("logo", logo.toString()).build()
+        return thumbnailUri(artworkUrl) { parts ->
+            require(parts.size == 5 && parts.take(3) == listOf("api", "library", "playlists") && parts[4] == "artwork")
+            base.buildUpon().appendPath("playlist-thumbnail").appendPath(parts[3]).appendQueryParameter("logo", logo.toString())
+        }
+    }
+
+    private fun thumbnailUri(path: String?, local: (List<String>) -> Uri.Builder): Uri {
+        if (path.isNullOrBlank()) return fallback
         return try {
             val source = Uri.parse(ServerResource.resolve(owner.origin, path))
-            val parts = source.pathSegments
-            require(parts.size == 5 && parts[0] == "api" && parts[1] == "jobs" && parts[3] == "artwork")
-            base.buildUpon().appendPath("track").appendPath(parts[2]).appendPath(parts[4]).apply {
+            local(source.pathSegments).apply {
                 source.getQueryParameter("v")?.let { appendQueryParameter("v", it) }
                 source.getQueryParameter("userId")?.let { appendQueryParameter("userId", it) }
             }.build()
@@ -42,13 +55,10 @@ internal class CarArtwork(private val owner: Account, @Volatile var logo: Int) {
         }
     }
 
-    fun playlist(id: String, version: Long): Uri = base.buildUpon().appendPath("playlist").appendPath(id)
-        .appendQueryParameter("version", version.toString()).appendQueryParameter("logo", logo.toString()).build()
-
     fun checkUri(uri: Uri) {
         val parts = uri.pathSegments
         if (uri.scheme != base.scheme || uri.authority != base.authority || parts.take(2) != base.pathSegments ||
-            !(parts.size == 4 && parts[2] == "playlist" || parts.size == 5 && parts[2] == "track")) {
+            !(parts.size == 4 && parts[2] in listOf("playlist", "playlist-thumbnail") || parts.size == 5 && parts[2] == "track")) {
             throw FileNotFoundException("Unknown or expired car artwork.")
         }
     }
@@ -60,7 +70,10 @@ internal class CarArtwork(private val owner: Account, @Volatile var logo: Int) {
             api.carPlaylistCover(owner, uri.lastPathSegment!!)?.let(::track)?.takeUnless { it == fallback } ?: return null
         } else uri
         val parts = target.pathSegments
-        val bytes = api.carThumbnail(owner, parts[3], parts[4], target.getQueryParameter("v"), target.getQueryParameter("userId"))
+        val revision = target.getQueryParameter("v")
+        val userId = target.getQueryParameter("userId")
+        val bytes = if (parts[2] == "playlist-thumbnail") api.carPlaylistThumbnail(owner, parts[3], revision, userId)
+            else api.carThumbnail(owner, parts[3], parts[4], revision, userId)
         return decodeArtworkBitmap(bytes, thumbnail = true) ?: throw IOException("Invalid car artwork thumbnail.")
     }
 

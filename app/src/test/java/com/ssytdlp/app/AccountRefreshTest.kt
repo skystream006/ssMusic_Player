@@ -247,6 +247,44 @@ class AccountRefreshTest {
         }
     }
 
+    @Test @GraphicsMode(GraphicsMode.Mode.NATIVE) @Config(qualifiers = "w320dp-h800dp")
+    fun libraryBrowserFollowsTheAdvertisedPlaylistCoverAndDropsItWhenTheRevisionIsMissing() {
+        val revision = AtomicInteger(1)
+        val source = "/api/library/playlists/mix%20%26%20more/artwork?userId=shared%2Bowner"
+        val thumbnail = greenThumbnail()
+        val reads = AtomicInteger()
+        val model = startModel(user = account.user.copy(role = "shared")) { request ->
+            when (request.requestUrl!!.encodedPath) {
+                "/api/library" -> MockResponse().setBody("""{"entries":[
+                    {"id":"mix & more","type":"playlist","name":"Mix"},{"id":"old","type":"playlist","name":"Legacy"},
+                    {"id":"folder","type":"folder","name":"Road"}],"playlists":[
+                    {"id":"mix & more","playlistTitle":"My mix","playlistArtworkUrl":"$source&v=${revision.get()}"},
+                    {"id":"old"}]}""")
+                source.substringBefore('?') -> {
+                    reads.incrementAndGet()
+                    if (request.path == "$source&v=1" && request.getHeader("Authorization") == "Bearer ${account.session.token}")
+                        MockResponse().setBody(okio.Buffer().write(thumbnail))
+                    else MockResponse().setResponseCode(404)
+                }
+                else -> null
+            }
+        }
+        drainRequests()
+        compose.setContent { MusicTheme { LibraryBrowser(model) {} } }
+        val cover = "Playlist artwork for My mix"
+        waitFor { compose.onAllNodesWithContentDescription(cover, useUnmergedTree = true).fetchSemanticsNodes().isNotEmpty() }
+        compose.onNodeWithText("Legacy").assertIsDisplayed()
+        compose.onNodeWithText("Road").assertIsDisplayed()
+        assertEquals(listOf("$source&v=1"), drainRequests().map { it.path })
+
+        revision.incrementAndGet()
+        perform(model) { model.refresh() }
+        waitFor { reads.get() == 2 }
+        compose.onNodeWithContentDescription(cover, useUnmergedTree = true).assertDoesNotExist()
+        compose.onNodeWithText("My mix").assertIsDisplayed()
+        assertTrue(drainRequests().any { it.path == "$source&v=2" })
+    }
+
     @Test @GraphicsMode(GraphicsMode.Mode.NATIVE)
     fun carProviderServesPrivatePlaylistAndTrackCoversAndRejectsOldSessions() {
         sessions.save(account)
@@ -254,17 +292,15 @@ class AccountRefreshTest {
         val art = CarArtwork(account, R.mipmap.ic_launcher_pink_dark)
         val source = "/api/jobs/source/artwork/%5BNoVocals%5D%2Fa%20%26%20b.mp3?v=2&userId=shared"
         val track = Track("source", "[NoVocals]/a & b.mp3", streamUrl = "/api/stream/song", artworkUrl = source)
-        val thumbnail = ByteArrayOutputStream().use { out ->
-            val bitmap = Bitmap.createBitmap(3, 2, Bitmap.Config.ARGB_8888)
-            bitmap.eraseColor(android.graphics.Color.GREEN)
-            bitmap.compress(Bitmap.CompressFormat.PNG, 100, out)
-            bitmap.recycle()
-            out.toByteArray()
-        }
+        val thumbnail = greenThumbnail()
+        val playlistPath = "/api/library/playlists/mix%20%2F%3F/artwork"
+        val playlistUrl = "$playlistPath?userId=shared%2Bowner&v=41"
         server.dispatcher = object : Dispatcher() {
             override fun dispatch(request: RecordedRequest): MockResponse = when {
                 request.getHeader("Authorization") != "Bearer ${account.session.token}" -> MockResponse().setResponseCode(401)
                 request.path == source -> MockResponse().setBody(okio.Buffer().write(thumbnail))
+                request.requestUrl!!.encodedPath == playlistPath && request.requestUrl!!.queryParameter("v") == "41" &&
+                    request.requestUrl!!.queryParameter("userId") == "shared+owner" -> MockResponse().setBody(okio.Buffer().write(thumbnail))
                 request.requestUrl!!.encodedPath == "/api/library/tracks" -> MockResponse().setBody(ApiJson.encodeToString(
                     TrackPage(files = if (request.requestUrl!!.queryParameter("entryId") == "mix") listOf(track) else emptyList())))
                 else -> MockResponse().setResponseCode(404)
@@ -277,7 +313,8 @@ class AccountRefreshTest {
             return try { resolver.openInputStream(uri)!!.use { it.readBytes() } } finally { ShadowPausedAsyncTask.reset() }
         }
         val cover = art.track(track)
-        for (uri in listOf(art.playlist("mix", 1), cover)) {
+        val collage = art.playlist("mix /?", 1, playlistUrl)
+        for (uri in listOf(collage, art.playlist("mix", 1), cover)) {
             assertEquals("content", uri.scheme)
             assertFalse(uri.toString().contains(account.session.token))
             val data = bytes(uri)
@@ -285,14 +322,27 @@ class AccountRefreshTest {
             assertEquals(3, bitmap.width)
             assertEquals(android.graphics.Color.GREEN, bitmap.getPixel(0, 0))
             bitmap.recycle()
+            if (uri == collage) assertEquals(1, server.requestCount)
         }
         val logo = context.resources.openRawResource(R.mipmap.ic_launcher_pink_dark).use { it.readBytes() }
         assertArrayEquals(logo, bytes(art.playlist("empty", 1)))
+        assertArrayEquals(logo, bytes(art.playlist("mix /?", 1, playlistUrl.replace("v=41", "v=42"))))
+        assertEquals(resourceArtwork(art.logo), art.playlist("mix", 1, "https://other.example$playlistUrl"))
+        assertEquals(resourceArtwork(art.logo), art.playlist("mix", 1, "/api/library/tracks"))
         assertArrayEquals(logo, bytes(art.track(track.copy(artworkUrl = source.replace("v=2", "v=missing")))))
-        assertEquals(5, server.requestCount)
+        assertEquals(7, server.requestCount)
         sessions.save(account.copy(session = account.session.copy(token = "new-session")))
         assertThrows(FileNotFoundException::class.java) { resolver.openFileDescriptor(cover, "r")?.close() }
-        assertEquals(5, server.requestCount)
+        assertThrows(FileNotFoundException::class.java) { resolver.openFileDescriptor(collage, "r")?.close() }
+        assertEquals(7, server.requestCount)
+    }
+
+    private fun greenThumbnail(): ByteArray = ByteArrayOutputStream().use { out ->
+        val bitmap = Bitmap.createBitmap(3, 2, Bitmap.Config.ARGB_8888)
+        bitmap.eraseColor(android.graphics.Color.GREEN)
+        bitmap.compress(Bitmap.CompressFormat.PNG, 100, out)
+        bitmap.recycle()
+        out.toByteArray()
     }
 
     @Test fun lanConfigurationAndSeparateSessionPersistEncryptedWithoutReplacingPrimary() {

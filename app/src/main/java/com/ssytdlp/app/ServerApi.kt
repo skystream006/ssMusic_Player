@@ -136,13 +136,22 @@ class ServerApi(
         }
     }
 
-    internal suspend fun carThumbnail(owner: Account, job: String, file: String, revision: String?, userId: String?): ByteArray {
-        require(listOf(job, file).all { it.isNotBlank() && it.split('/', '\\').none { part -> part == "." || part == ".." } }) {
+    internal suspend fun carPlaylistThumbnail(owner: Account, id: String, revision: String?, userId: String?): ByteArray =
+        readThumbnail(owner, "/api/library/playlists/${artworkSegment(id)}/artwork${artworkQuery(revision, userId)}")
+
+    internal suspend fun carThumbnail(owner: Account, job: String, file: String, revision: String?, userId: String?): ByteArray =
+        readThumbnail(owner, "/api/jobs/${artworkSegment(job)}/artwork/${artworkSegment(file)}${artworkQuery(revision, userId)}")
+
+    private fun artworkSegment(value: String): String {
+        require(value.isNotBlank() && value.split('/', '\\').none { it == "." || it == ".." }) {
             "Invalid artwork identifier."
         }
+        return encode(value)
+    }
+
+    private fun artworkQuery(revision: String?, userId: String?): String {
         val query = listOfNotNull(revision?.let { "v=${encode(it)}" }, userId?.let { "userId=${encode(it)}" })
-        return readThumbnail(owner, "/api/jobs/${encode(job)}/artwork/${encode(file)}" +
-            if (query.isEmpty()) "" else query.joinToString("&", prefix = "?"))
+        return if (query.isEmpty()) "" else query.joinToString("&", prefix = "?")
     }
 
     private suspend fun carCatalogRead(owner: Account, path: String): JsonElement {
