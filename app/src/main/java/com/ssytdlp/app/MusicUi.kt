@@ -623,36 +623,44 @@ fun EntryMenu(model: MusicViewModel, entry: LibraryEntry) {
 @OptIn(androidx.compose.foundation.ExperimentalFoundationApi::class)
 @Composable
 fun TrackRow(track: Track, active: Boolean = false, enabled: Boolean = true, transcription: Transcription? = null,
-    artwork: @Composable () -> ImageBitmap? = { null },
+    artwork: @Composable () -> ImageBitmap? = { null }, showCompactArtwork: Boolean = false,
     dragHandle: (@Composable () -> Unit)? = null,
     onRatingClick: () -> Unit = {}, onLongClick: (() -> Unit)? = null,
     onClick: () -> Unit, trailing: @Composable () -> Unit = {}) {
     BoxWithConstraints(Modifier.fillMaxWidth()) {
         val compact = maxWidth < if (dragHandle == null) 240.dp else 360.dp
+        val compactArtwork = compact && showCompactArtwork
+        // Leave room for the cover and title before wrapping the queue actions.
+        val compactActionsWidth = (maxWidth - 128.dp).coerceAtLeast(48.dp)
         Row(Modifier.fillMaxWidth().background(if (active) MaterialTheme.colorScheme.primary.copy(alpha = 0.08f) else Color.Transparent)
             .combinedClickable(enabled = enabled, onLongClickLabel = "Song options",
                 onLongClick = onLongClick, onClick = onClick).heightIn(min = 78.dp)
             .padding(start = if (compact) 8.dp else 20.dp, end = 8.dp, top = 10.dp, bottom = 10.dp),
             verticalAlignment = Alignment.CenterVertically) {
-            if (!compact) TrackArtwork(track, active, artwork())
+            if (!compact || compactArtwork) TrackArtwork(track, active, artwork())
             Column(Modifier.weight(1f).padding(start = if (compact) 4.dp else 14.dp, end = 4.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
                 Text(track.displayTitle, maxLines = 2, overflow = TextOverflow.Ellipsis, style = MaterialTheme.typography.titleSmall,
                     color = if (active) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurface)
                 Text(track.displayArtist, maxLines = 1, overflow = TextOverflow.Ellipsis, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
             }
-            TranscriptionStatus(transcription, iconOnly = true)
-            if (track.mediaType != "video") Row(Modifier.clickable(role = Role.Button, onClickLabel = "Rate song", onClick = onRatingClick)
-                .sizeIn(minWidth = 48.dp, minHeight = 48.dp).padding(horizontal = 4.dp).clearAndSetSemantics {
-                contentDescription = "Rating: ${track.rating} out of 5"
-            }, verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.spacedBy(4.dp, Alignment.CenterHorizontally)) {
-                Icon(if (track.rating > 0) Icons.Rounded.Star else Icons.Rounded.StarBorder,
-                    null, Modifier.size(16.dp), tint = MaterialTheme.colorScheme.primary)
-                if (!compact) Text("${track.rating}/5", style = MaterialTheme.typography.labelMedium,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 1)
+            val actions: @Composable () -> Unit = {
+                TranscriptionStatus(transcription, iconOnly = true)
+                if (track.mediaType != "video") Row(Modifier.clickable(role = Role.Button, onClickLabel = "Rate song", onClick = onRatingClick)
+                    .sizeIn(minWidth = 48.dp, minHeight = 48.dp).padding(horizontal = 4.dp).clearAndSetSemantics {
+                    contentDescription = "Rating: ${track.rating} out of 5"
+                }, verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(4.dp, Alignment.CenterHorizontally)) {
+                    Icon(if (track.rating > 0) Icons.Rounded.Star else Icons.Rounded.StarBorder,
+                        null, Modifier.size(16.dp), tint = MaterialTheme.colorScheme.primary)
+                    if (!compact) Text("${track.rating}/5", style = MaterialTheme.typography.labelMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 1)
+                }
+                dragHandle?.invoke()
+                trailing()
             }
-            if (dragHandle == null) trailing()
-            else Row(verticalAlignment = Alignment.CenterVertically) { dragHandle(); trailing() }
+            if (compactArtwork) FlowRow(Modifier.widthIn(max = compactActionsWidth),
+                horizontalArrangement = Arrangement.End, itemVerticalAlignment = Alignment.CenterVertically) { actions() }
+            else Row(verticalAlignment = Alignment.CenterVertically) { actions() }
         }
     }
 }

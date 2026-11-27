@@ -86,6 +86,7 @@ internal fun QueueContent(state: PlaybackState, library: LibraryState, modifier:
                             TrackRow(track.copy(rating = library.rating(track)), active = index == state.index,
                                 enabled = state.connected, transcription = library.transcription(track),
                                 artwork = { artwork(track.copy(artworkUrl = library.artworkUrl(track))) },
+                                showCompactArtwork = isLandscape(),
                                 dragHandle = { SongDragHandle(reorder, key, track.displayTitle, enabled = state.connected) },
                                 onRatingClick = { onRating(track) },
                                 onLongClick = onLongClick?.let { { it(track, index) } }, onClick = { onSelect(index) }) {

@@ -23,9 +23,11 @@ downloaded linked video, open the player actions and choose **Use video audio**;
 cannot display video pictures, even when parked. Watch video on the phone while
 parked. Account setup and library editing also stay on the phone.
 
-In landscape Now Playing, album art, the visualizer, or video is centered below
-the display-selection buttons, with the queue alongside the player. The song
-title appears only in the top info bar; artist and album details remain scrollable.
+In landscape Now Playing, the cover is centered below the display-selection
+buttons and grows to fill the available height above the rating and playback
+controls, up to the pane's width. The visualizer and video use the same space.
+The queue alongside the player shows a cover on each row, even in narrow panes.
+The song title appears only in the top info bar; artist and album details remain scrollable.
 Unavailable song videos keep their display button disabled without extra help
 text; queued and active downloads still show their status.
 
