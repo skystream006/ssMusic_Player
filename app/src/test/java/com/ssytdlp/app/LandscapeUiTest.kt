@@ -407,6 +407,30 @@ class LandscapeUiTest {
     }
 
     @Test
+    @Config(qualifiers = "w1280dp-h800dp-land")
+    fun albumArtFillsTheAvailableHeightAsTheLandscapePlayerResizes() {
+        val height = mutableStateOf(460.dp)
+        compose.setContent {
+            MusicTheme {
+                Box(Modifier.height(height.value)) { NowPlayingScreen(model, playback) { _, _ -> } }
+            }
+        }
+        var previousHeight = 0.dp
+        for (screenHeight in listOf(460.dp, 660.dp)) {
+            compose.runOnIdle { height.value = screenHeight }
+            val options = compose.onNodeWithContentDescription("Player display").getUnclippedBoundsInRoot()
+            val artwork = compose.onNodeWithTag("landscape-player-artwork").assertIsDisplayed().getUnclippedBoundsInRoot()
+            val rating = compose.onNode(hasContentDescription("Rating: 0 out of 5") and
+                hasAnyAncestor(hasTestTag("now-playing-pane"))).assertIsDisplayed().getUnclippedBoundsInRoot()
+            assertTrue(artwork.top >= options.bottom && artwork.top <= options.bottom + 8.dp)
+            assertEquals(rating.top.value, artwork.bottom.value, 1f)
+            assertEquals(artwork.width, artwork.height)
+            assertTrue(artwork.height > previousHeight)
+            previousHeight = artwork.height
+        }
+    }
+
+    @Test
     @GraphicsMode(GraphicsMode.Mode.NATIVE)
     fun shortLandscapeLyricsKeepBothSourcesVisible() {
         val metadata = ReflectionHelpers.getField<MutableState<SongMetadata?>>(model, "metadata\$delegate")

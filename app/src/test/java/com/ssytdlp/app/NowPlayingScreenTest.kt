@@ -2106,6 +2106,17 @@ class NowPlayingScreenTest {
     @Test
     @GraphicsMode(GraphicsMode.Mode.NATIVE)
     fun libraryAndQueueLoadVersionedArtworkForActiveAndRepeatedTracks() {
+        assertLibraryAndQueueArtwork()
+    }
+
+    @Test
+    @Config(qualifiers = "w800dp-h360dp-land")
+    @GraphicsMode(GraphicsMode.Mode.NATIVE)
+    fun narrowLandscapeQueueShowsArtworkForActiveAndRepeatedTracks() {
+        assertLibraryAndQueueArtwork()
+    }
+
+    private fun assertLibraryAndQueueArtwork() {
         val image = java.io.ByteArrayOutputStream().use { output ->
             val bitmap = android.graphics.Bitmap.createBitmap(96, 96, android.graphics.Bitmap.Config.ARGB_8888)
             bitmap.compress(android.graphics.Bitmap.CompressFormat.WEBP_LOSSLESS, 100, output)
@@ -2141,12 +2152,16 @@ class NowPlayingScreenTest {
                 .fetchSemanticsNodes().size == 1
         }
         compose.runOnIdle { showLibrary.value = false }
-        compose.onNodeWithText("Queue").performClick()
         compose.waitUntil(5_000) {
             compose.onAllNodesWithContentDescription("Album artwork for song", useUnmergedTree = true)
                 .fetchSemanticsNodes().size == 2
         }
-        compose.onAllNodesWithContentDescription("Options for song").assertCountEquals(2)
+        for (index in 0..1) {
+            val inRow = hasAnyAncestor(hasTestTag("queue-row-$index"))
+            compose.onNode(inRow and hasContentDescription("Album artwork for song"), useUnmergedTree = true)
+                .assertIsDisplayed()
+            compose.onNode(inRow and hasContentDescription("Options for song")).assertIsDisplayed()
+        }
         assertTrue(paths.isNotEmpty())
         assertTrue(paths.all { it == refreshed.artworkUrl })
         compose.runOnIdle {

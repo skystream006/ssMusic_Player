@@ -47,6 +47,7 @@ import androidx.compose.ui.input.nestedscroll.NestedScrollConnection
 import androidx.compose.ui.input.nestedscroll.NestedScrollSource
 import androidx.compose.ui.input.nestedscroll.nestedScroll
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.layout.Layout
 import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
@@ -61,6 +62,7 @@ import androidx.compose.ui.semantics.stateDescription
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.unit.Constraints
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.IntOffset
@@ -568,7 +570,7 @@ internal fun PlayerArtwork(state: PlaybackState, metadata: SongMetadata?, modifi
     val watchingVideo = track?.mediaType == "video" || visibleDisplay == PlayerDisplay.VIDEO
     val options: @Composable () -> Unit = {
         if (track != null && track.mediaType != "video") {
-            SingleChoiceSegmentedButtonRow(Modifier.widthIn(max = 380.dp).fillMaxWidth().padding(bottom = 8.dp)
+            SingleChoiceSegmentedButtonRow(Modifier.widthIn(max = 380.dp).fillMaxWidth().padding(bottom = if (landscape) 0.dp else 8.dp)
                 .semantics { contentDescription = "Player display" }) {
                 PlayerDisplay.entries.forEachIndexed { index, option ->
                     SegmentedButton(selected = visibleDisplay == option, onClick = { onDisplay(option) },
@@ -643,16 +645,17 @@ internal fun PlayerArtwork(state: PlaybackState, metadata: SongMetadata?, modifi
             Icon(Icons.Rounded.MicExternalOn, null); Spacer(Modifier.width(8.dp)); Text("Instrumental version")
         }
     }
-    if (landscape) BoxWithConstraints(modifier.fillMaxWidth().padding(8.dp)) {
-        val visualSize = minOf((maxHeight - 56.dp - 48.dp).coerceAtLeast(48.dp), maxWidth, 200.dp)
+    if (landscape) BoxWithConstraints(modifier.fillMaxWidth().padding(horizontal = 8.dp)) {
         val scrollRating = maxHeight < 96.dp
         Column(Modifier.fillMaxSize(), horizontalAlignment = Alignment.CenterHorizontally) {
-            Column(Modifier.weight(1f).verticalScroll(rememberScrollState()).fillMaxWidth(),
-                horizontalAlignment = Alignment.CenterHorizontally) {
-                options()
-                visual(Modifier.size(visualSize).testTag("landscape-player-artwork"))
-                details()
-                if (scrollRating) rating()
+            BoxWithConstraints(Modifier.weight(1f).fillMaxWidth()) {
+                val viewportHeight = maxHeight
+                Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()),
+                    horizontalAlignment = Alignment.CenterHorizontally) {
+                    LandscapePlayerVisual(viewportHeight, options, visual)
+                    details()
+                    if (scrollRating) rating()
+                }
             }
             if (!scrollRating) rating()
         }
@@ -663,6 +666,25 @@ internal fun PlayerArtwork(state: PlaybackState, metadata: SongMetadata?, modifi
             else Modifier.widthIn(max = 320.dp).fillMaxWidth().aspectRatio(1f))
         Spacer(Modifier.height(28.dp))
         details()
+    }
+}
+
+@Composable
+private fun LandscapePlayerVisual(viewportHeight: Dp, options: @Composable () -> Unit,
+    visual: @Composable (Modifier) -> Unit) {
+    Layout(modifier = Modifier.fillMaxWidth(), content = {
+        Column(horizontalAlignment = Alignment.CenterHorizontally) { options() }
+        Box { visual(Modifier.fillMaxSize().testTag("landscape-player-artwork")) }
+    }) { (controls, media), constraints ->
+        val buttons = controls.measure(constraints.copy(minWidth = 0))
+        // Keep a scrollable cover even when the controls alone are taller than the viewport.
+        val side = (viewportHeight.roundToPx() - buttons.height).coerceAtLeast(48.dp.roundToPx())
+            .coerceAtMost(constraints.maxWidth)
+        val artwork = media.measure(Constraints.fixed(side, side))
+        layout(constraints.maxWidth, buttons.height + side) {
+            buttons.placeRelative((constraints.maxWidth - buttons.width) / 2, 0)
+            artwork.placeRelative((constraints.maxWidth - side) / 2, buttons.height)
+        }
     }
 }
 
