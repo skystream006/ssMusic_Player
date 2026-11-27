@@ -47,8 +47,10 @@ class CarMediaSessionTest {
     private val owner = Account("https://music.example", User("listener"), Session("test", "2100-01-01T00:00:00Z"))
     private var account: Account? = owner
     private val entry = "mix:/? &"
+    private val playlistCover = "/api/library/playlists/${encode(entry)}/artwork?userId=shared&v=23"
     private val library = Library(entries = listOf(LibraryEntry("folder", "folder", "Road"),
-        LibraryEntry(entry, "playlist", "Original", "folder")), playlists = listOf(LibraryPlaylist(entry, "My Mix")))
+        LibraryEntry(entry, "playlist", "Original", "folder")),
+        playlists = listOf(LibraryPlaylist(entry, "My Mix", playlistArtworkUrl = playlistCover)))
     private val song = Track("job/?", "song.mp3", "First song", "Artist", streamUrl = "/api/stream/song.mp3",
         artworkUrl = "/api/jobs/job%2F%3F/artwork/song.mp3?v=1",
         linkedVideo = LinkedVideo("https://example.com/video", "completed", streamUrl = "/api/jobs/job/video/song.mp3?v=2"))
@@ -97,6 +99,8 @@ class CarMediaSessionTest {
         assertEquals(resourceArtwork(R.drawable.ic_car_folder), folder.mediaMetadata.artworkUri)
         val playlist = children(folder).single { it.mediaMetadata.title == "My Mix" }
         assertEquals("content", playlist.mediaMetadata.artworkUri?.scheme)
+        assertEquals("23", playlist.mediaMetadata.artworkUri?.getQueryParameter("v"))
+        assertEquals("shared", playlist.mediaMetadata.artworkUri?.getQueryParameter("userId"))
         assertNotEquals(folder.mediaMetadata.artworkUri, playlist.mediaMetadata.artworkUri)
         val groups = children(playlist)
         assertEquals(listOf("1 - 50", "51 - 54"), groups.map { it.mediaMetadata.title })

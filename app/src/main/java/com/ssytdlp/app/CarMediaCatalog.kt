@@ -129,8 +129,10 @@ internal class CarMediaCatalog(
     private fun Library.entryItem(entry: LibraryEntry): MediaItem = if (entry.type == "folder") {
         folder(FOLDER + entry.id, entry.name)
     } else {
-        val title = playlists.find { it.id == entry.id }?.playlistTitle.orEmpty().ifBlank { entry.name }
-        folder(TRACKS + entry.id, title, MediaMetadata.MEDIA_TYPE_PLAYLIST, artwork.playlist(entry.id, version))
+        val playlist = playlists.find { it.id == entry.id }
+        val title = playlist?.playlistTitle.orEmpty().ifBlank { entry.name }
+        folder(TRACKS + entry.id, title, MediaMetadata.MEDIA_TYPE_PLAYLIST,
+            artwork.playlist(entry.id, version, playlist?.playlistArtworkUrl))
     }
 
     private suspend fun rows(parent: String): List<MediaItem> = when {

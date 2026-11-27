@@ -28,8 +28,11 @@ import com.ssytdlp.app.core.Track
 
 @Composable
 internal fun rememberTrackArtwork(track: Track, api: ServerApi, account: Account?): ImageBitmap? =
-    key(api, account?.origin, account?.user?.id, account?.session, track.artworkUrl, track.mediaType) {
-        val path = track.artworkUrl?.takeIf { track.mediaType == "audio" || track.mediaType == "video" }
+    rememberThumbnail(track.artworkUrl?.takeIf { track.mediaType == "audio" || track.mediaType == "video" }, api, account)
+
+@Composable
+internal fun rememberThumbnail(path: String?, api: ServerApi, account: Account?): ImageBitmap? =
+    key(api, account?.origin, account?.user?.id, account?.session, path) {
         val cache = api.trackArtworkCache
         val bitmap by produceState(cache.peek(account, path)) {
             value = cache.load(account, path)

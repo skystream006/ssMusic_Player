@@ -5,13 +5,18 @@ repository. Android 8.0 (API 26) or newer; targets Android 16 (API 36). The serv
 still owns media storage, yt-dlp downloads, transcoding, transcription, and
 backups. This is not a WebView wrapper or a replacement server.
 
+The phone's library browser shows the server's playlist covers: collages of up to
+four visible tracks. Folders keep their folder icon. If a cover is missing or
+the server doesn't supply one, the playlist keeps its music-list icon.
+
 ## Android Auto
 
 While parked, configure the server and sign in on the phone. Connect the phone
 to Android Auto, then select **ssMusic Player** in the car's app launcher.
 **Folders and playlists** follows your server library. Folders have a folder icon;
-playlists use a song cover, and tracks in playlists, search and the queue show
-their album art. Missing artwork uses your selected theme's launcher logo.
+playlists show the same server covers as the phone. On older servers, Android Auto
+uses a song cover instead. Tracks in playlists, search and the queue show their
+album art. Missing artwork uses your selected theme's launcher logo.
 Large lists are split into numbered folders. Pick a track to start its queue,
 or search the whole library by text or voice (for example, “Play My Mix on ssMusic Player”).
 The phone, dashboard and steering-wheel transport controls share one player:

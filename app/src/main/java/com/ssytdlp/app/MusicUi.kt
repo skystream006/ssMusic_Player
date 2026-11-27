@@ -9,6 +9,7 @@ import androidx.activity.compose.BackHandler
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.browser.customtabs.CustomTabsIntent
+import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -34,6 +35,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.ImageBitmap
 import androidx.compose.ui.graphics.lerp
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.testTag
@@ -529,10 +531,21 @@ private fun LibraryBrowserPane(model: MusicViewModel, modifier: Modifier = Modif
         }
         items(library.entries.filter { it.parentId == parent }, key = { it.id }) { entry ->
         val playlist = library.playlists.find { it.id == entry.id }
-        ListItem(headlineContent = { Text(playlist?.playlistTitle?.ifBlank { entry.name } ?: entry.name, maxLines = 2, overflow = TextOverflow.Ellipsis) },
+        val title = playlist?.playlistTitle?.ifBlank { entry.name } ?: entry.name
+        ListItem(headlineContent = { Text(title, maxLines = 2, overflow = TextOverflow.Ellipsis) },
             supportingContent = { Text(if (entry.type == "folder") "Folder"
                 else "${playlist?.songCount ?: 0} tracks" + if (playlist?.isPrivate == true) " · Private" else "") },
-            leadingContent = { Icon(if (entry.type == "folder") Icons.Rounded.Folder else Icons.AutoMirrored.Rounded.QueueMusic, null) },
+            leadingContent = {
+                Box(Modifier.size(40.dp), contentAlignment = Alignment.Center) {
+                    if (entry.type == "folder") Icon(Icons.Rounded.Folder, null)
+                    else {
+                        val cover = rememberThumbnail(playlist?.playlistArtworkUrl, model.api, account)
+                        if (cover == null) Icon(Icons.AutoMirrored.Rounded.QueueMusic, null)
+                        else Image(cover, "Playlist artwork for $title", Modifier.fillMaxSize().clip(RoundedCornerShape(6.dp)),
+                            contentScale = ContentScale.Crop)
+                    }
+                }
+            },
             trailingContent = { EntryMenu(model, entry) }, modifier = Modifier.clickable {
                 if (entry.type == "folder") browsing.parent = entry.id else { model.selectLibrary(entry.id); onSelect() }
             })
